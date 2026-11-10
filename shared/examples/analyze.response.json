@@ -1,0 +1,84 @@
+{
+  "diagnostics": [],
+  "engine": {
+    "frontend": "Ubuntu clang version 20.1.8 (++20250804090239+87f0227cb601-1~exp1~20250804210352.139)",
+    "name": "bigolens-engine",
+    "protocol_version": "1.0",
+    "version": "0.1.0"
+  },
+  "errors": [],
+  "request_id": "example-analyze-sum-constraint",
+  "results": {
+    "feasibility": {
+      "memory": {
+        "reason": "only lower bounds are known; peak memory requires measurement or a complete allocation model",
+        "status": "unknown"
+      },
+      "time": {
+        "reason": "no runtime estimate available; structural workload alone does not determine runtime",
+        "status": "unknown"
+      }
+    },
+    "findings": [
+      {
+        "assumptions": [
+          "loop bound assumed to be at least the start value",
+          "'t' counts iterations (assumed non-negative at loop entry)"
+        ],
+        "bound_status": "proven",
+        "category": "loop_nest",
+        "confidence": "high",
+        "description": "loop nest of depth 3; time expression counts executions of the innermost loop bodies",
+        "function": "main",
+        "id": "F1",
+        "limitations": [],
+        "location": {
+          "column": 3,
+          "end_column": 3,
+          "end_line": 19,
+          "file": "09_sum_constrained_test_cases.cpp",
+          "line": 9
+        },
+        "pattern": "test-case-loop",
+        "provenance": "clang-loop-analyzer",
+        "space": null,
+        "time": {
+          "asymptotic": "O(n^2 t)",
+          "expression": "t * n * n",
+          "variables": [
+            "n",
+            "t"
+          ],
+          "workload": {
+            "assumptions": [
+              "worst case packs 1 test case(s) of maximum size (superadditive per-case cost)"
+            ],
+            "method": "sum-constraint-packing",
+            "missing_bounds": [],
+            "status": "proven",
+            "upper_bound": 40000000000.0
+          }
+        }
+      }
+    ],
+    "memory": {
+      "assumptions": [
+        "process baseline, stack frames, standard-library internals and unmodelled heap allocations are not included; figures are lower bounds, not peak usage"
+      ],
+      "estimated_minimum_bytes": 0.0,
+      "estimated_minimum_status": "proven",
+      "items": [],
+      "largest_local_array_bytes": 0,
+      "static_storage_bytes": 0,
+      "static_storage_saturated": false
+    },
+    "summary": {
+      "coverage": "partial",
+      "dominant_finding_id": "F1",
+      "finding_count": 1,
+      "max_time_workload": 40000000000.0
+    }
+  },
+  "schema_version": "1.0",
+  "status": "ok"
+}

@@ -1,0 +1,8 @@
+build/
+node_modules/
+extension/out/
+extension/schemas/
+extension/.vscode-test/
+extension/package-lock.json
+shared/examples/*.response.json
+*.md

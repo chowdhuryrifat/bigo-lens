@@ -1,0 +1,158 @@
+{
+  "name": "bigo-lens",
+  "displayName": "BigO Lens",
+  "description": "Constraint-aware C++ complexity analysis: Clang AST static analysis, symbolic workload estimation and memory feasibility.",
+  "version": "0.1.0",
+  "publisher": "bigo-lens",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chowdhuryrifat/bigo-lens.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "c++",
+    "complexity",
+    "big-o",
+    "competitive programming",
+    "static analysis"
+  ],
+  "main": "./out/src/extension.js",
+  "activationEvents": [
+    "onLanguage:cpp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "bigoLens.analyzeActiveFile",
+        "title": "Analyze Active C++ File",
+        "category": "BigO Lens",
+        "icon": "$(play)"
+      },
+      {
+        "command": "bigoLens.editConstraints",
+        "title": "Edit Constraints for Active File",
+        "category": "BigO Lens",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "bigoLens.showCapabilities",
+        "title": "Show Engine Capabilities",
+        "category": "BigO Lens"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bigoLens",
+          "title": "BigO Lens",
+          "icon": "$(graph)"
+        }
+      ]
+    },
+    "views": {
+      "bigoLens": [
+        {
+          "id": "bigoLens.results",
+          "name": "Analysis Results"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "bigoLens.results",
+        "contents": "Open a C++ file and run an analysis.\n[Analyze Active C++ File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "bigoLens.analyzeActiveFile",
+          "when": "view == bigoLens.results",
+          "group": "navigation"
+        },
+        {
+          "command": "bigoLens.editConstraints",
+          "when": "view == bigoLens.results",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "bigoLens.analyzeActiveFile",
+          "when": "editorLangId == cpp"
+        },
+        {
+          "command": "bigoLens.editConstraints",
+          "when": "editorLangId == cpp"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "BigO Lens",
+      "properties": {
+        "bigoLens.enginePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute path to the bigolens-engine executable. Leave empty to use the BIGOLENS_ENGINE_PATH environment variable, the bundled engine, or a development build."
+        },
+        "bigoLens.cppStandard": {
+          "type": "string",
+          "enum": [
+            "c++11",
+            "c++14",
+            "c++17",
+            "c++20",
+            "c++23"
+          ],
+          "default": "c++20",
+          "description": "C++ language standard used to parse the source."
+        },
+        "bigoLens.analysisTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 600000,
+          "description": "Maximum time in milliseconds to wait for the engine before it is terminated."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prepare-assets": "node scripts/prepare-assets.mjs",
+    "compile": "npm run prepare-assets && tsc -p ./",
+    "watch": "npm run prepare-assets && tsc -watch -p ./",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run compile && node --test out/test/unit/",
+    "test:integration": "npm run compile && node --test out/test/integration/",
+    "test:vscode": "npm run compile && node out/test/e2e/runTest.js",
+    "validate:schemas": "node scripts/validate-json.mjs",
+    "package": "npm run compile && vsce package --no-dependencies --out bigo-lens.vsix"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.14.0",
+    "@types/node": "^20.17.6",
+    "@types/vscode": "~1.85.0",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.2.1",
+    "eslint": "^9.14.0",
+    "prettier": "^3.3.3",
+    "typescript": "~5.6.3",
+    "typescript-eslint": "^8.13.0"
+  }
+}

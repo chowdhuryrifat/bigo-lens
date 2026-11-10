@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build (e.g. v0.1.0). Creates a draft release.
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  LLVM_VERSION: '18'
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - id: version
+        name: Check that the tag matches the CMake and extension versions
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '$TAG' is not of the form vMAJOR.MINOR.PATCH"; exit 1
+          fi
+          version="${TAG#v}"
+          cmake_version="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt)"
+          ext_version="$(node -p "require('./extension/package.json').version")"
+          if [[ "$cmake_version" != "$version" || "$ext_version" != "$version" ]]; then
+            echo "::error::tag $version != CMake $cmake_version / extension $ext_version"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - name: Install toolchain and Clang development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build \
+            clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
+            libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
+            zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
+      - name: Build and test the native engine
+        run: |
+          cmake --preset ci -G Ninja -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang \
+            -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
+          cmake --build --preset ci --parallel
+          ctest --preset ci
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Test and package the extension
+        working-directory: extension
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          BIGOLENS_ENGINE_PATH="$GITHUB_WORKSPACE/build/ci/engine/bigolens-engine" npm run test:integration
+          npm run package
+      - name: Assemble artifacts
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p dist
+          # The engine links against the system LLVM ${LLVM_VERSION} shared libraries (Ubuntu 24.04).
+          tar -C build/ci/engine -czf "dist/bigolens-engine-$VERSION-linux-x64-llvm${LLVM_VERSION}.tar.gz" bigolens-engine
+          cp extension/bigo-lens.vsix "dist/bigo-lens-$VERSION.vsix"
+          (cd dist && sha256sum * > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-artifacts
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-artifacts
+          path: dist
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          DRAFT: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          flags=(--repo "$GITHUB_REPOSITORY" --title "BigO Lens $TAG" --generate-notes --verify-tag)
+          [[ "$DRAFT" == "true" ]] && flags+=(--draft)
+          gh release create "$TAG" dist/* "${flags[@]}"
+      # Publishing to the VS Code Marketplace is intentionally not automated.

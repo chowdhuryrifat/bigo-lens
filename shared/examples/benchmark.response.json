@@ -1,0 +1,19 @@
+{
+  "diagnostics": [],
+  "engine": {
+    "frontend": "Ubuntu clang version 20.1.8 (++20250804090239+87f0227cb601-1~exp1~20250804210352.139)",
+    "name": "bigolens-engine",
+    "protocol_version": "1.0",
+    "version": "0.1.0"
+  },
+  "errors": [
+    {
+      "code": "not_implemented",
+      "message": "dynamic benchmarking is planned for milestone M4 and is not implemented"
+    }
+  ],
+  "request_id": "example-benchmark",
+  "results": null,
+  "schema_version": "1.0",
+  "status": "error"
+}

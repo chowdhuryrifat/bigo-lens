@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chowdhuryrifat/bigo-lens/shared/schemas/request.schema.json",
+  "title": "BigO Lens engine request",
+  "description": "One request sent to bigolens-engine on standard input. Protocol version 1.0. See docs/specifications/JSON_PROTOCOL.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "action"],
+  "properties": {
+    "schema_version": {
+      "description": "MAJOR.MINOR. The engine accepts the same major version and a minor version not newer than its own.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "request_id": {
+      "description": "Client-chosen identifier echoed in the response.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+    },
+    "action": {
+      "enum": ["capabilities", "analyze", "benchmark"]
+    },
+    "source": { "$ref": "#/$defs/source" },
+    "constraints": { "$ref": "#/$defs/constraints" },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpp_standard": { "enum": ["c++11", "c++14", "c++17", "c++20", "c++23"] }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "type": "object", "properties": { "action": { "enum": ["analyze", "benchmark"] } }, "required": ["action"] },
+      "then": { "type": "object", "properties": { "source": true }, "required": ["source"] }
+    }
+  ],
+  "$defs": {
+    "integer": {
+      "description": "Integer with magnitude at most 10^18. Floats with an exact integral value (e.g. 2e5) are accepted.",
+      "type": "number",
+      "minimum": -1000000000000000000,
+      "maximum": 1000000000000000000,
+      "multipleOf": 1
+    },
+    "nonNegativeInteger": {
+      "allOf": [{ "$ref": "#/$defs/integer" }, { "type": "number", "minimum": 0 }]
+    },
+    "variableName": {
+      "description": "A C++ identifier used in the analyzed source, optionally followed by .size() for container sizes.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}(\\.size\\(\\))?$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "language", "content"],
+      "properties": {
+        "path": { "description": "Display path used in reported locations.", "type": "string", "maxLength": 4096 },
+        "language": { "const": "cpp" },
+        "content": { "description": "Full translation unit (at most 2 MiB).", "type": "string", "maxLength": 2097152 }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "variables": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/variableName" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "min": { "$ref": "#/$defs/integer" },
+              "max": { "$ref": "#/$defs/integer" }
+            }
+          }
+        },
+        "sum_constraints": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["variable", "count_variable", "max_total"],
+            "properties": {
+              "variable": { "$ref": "#/$defs/variableName" },
+              "count_variable": { "$ref": "#/$defs/variableName" },
+              "max_total": { "$ref": "#/$defs/nonNegativeInteger" }
+            }
+          }
+        },
+        "product_constraints": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["variables", "max_product"],
+            "properties": {
+              "variables": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/variableName" } },
+              "max_product": { "$ref": "#/$defs/nonNegativeInteger" }
+            }
+          }
+        },
+        "linear_constraints": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["coefficients", "bound"],
+            "properties": {
+              "coefficients": {
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": { "$ref": "#/$defs/variableName" },
+                "additionalProperties": { "$ref": "#/$defs/integer" }
+              },
+              "bound": { "$ref": "#/$defs/integer" }
+            }
+          }
+        },
+        "time_limit_ms": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "memory_limit_mb": { "type": "integer", "minimum": 1, "maximum": 1048576 }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+# Build trees
+/build/
+/out/
+cmake-build-*/
+CMakeUserPresets.json
+compile_commands.json
+_deps/
+
+# Extension build output and dependencies
+node_modules/
+extension/out/
+extension/schemas/
+extension/bin/
+extension/.vscode-test/
+*.vsix
+*.tsbuildinfo
+
+# Benchmark and test scratch output
+/benchmark-runs/
+Testing/
+*.log
+
+# Archives (backups are produced outside the repository)
+*.zip
+
+# Editors and OS files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+.npmrc.local
+extension/LICENSE

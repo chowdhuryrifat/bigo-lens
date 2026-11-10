@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "request_id": "example-analyze-sum-constraint",
+  "action": "analyze",
+  "source": {
+    "path": "09_sum_constrained_test_cases.cpp",
+    "language": "cpp",
+    "content": "// Expected: `while (t--)` test-case loop around an O(n^2) body. With\n// t <= 10, n <= 200000 and sum(n) <= 200000 the workload must be\n// 200000^2 = 4e10, not t * n_max^2 = 4e11.\n#include <iostream>\n\nint main() {\n  int t = 0;\n  std::cin >> t;\n  while (t--) {\n    int n = 0;\n    std::cin >> n;\n    long long acc = 0;\n    for (int i = 0; i < n; ++i) {\n      for (int j = 0; j < n; ++j) {\n        acc += i * j;\n      }\n    }\n    std::cout << acc << '\\n';\n  }\n}\n"
+  },
+  "constraints": {
+    "variables": {
+      "t": {
+        "min": 1,
+        "max": 10
+      },
+      "n": {
+        "min": 1,
+        "max": 200000
+      }
+    },
+    "sum_constraints": [
+      {
+        "variable": "n",
+        "count_variable": "t",
+        "max_total": 200000
+      }
+    ],
+    "time_limit_ms": 2000,
+    "memory_limit_mb": 256
+  },
+  "options": {
+    "cpp_standard": "c++20"
+  }
+}

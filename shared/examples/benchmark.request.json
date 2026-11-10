@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "request_id": "example-benchmark",
+  "action": "benchmark",
+  "source": {
+    "path": "01_linear_loop.cpp",
+    "language": "cpp",
+    "content": "// Expected: single linear loop, time expression n, O(n), Proven.\n#include <iostream>\n\nint main() {\n  int n = 0;\n  std::cin >> n;\n  long long sum = 0;\n  for (int i = 0; i < n; ++i) {\n    sum += i;\n  }\n  std::cout << sum << '\\n';\n}\n"
+  }
+}

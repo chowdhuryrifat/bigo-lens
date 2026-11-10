@@ -1,0 +1,27 @@
+---
+# Checks are enabled incrementally; every enabled check must pass in CI.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  cert-err33-c,
+  cert-err58-cpp,
+  clang-analyzer-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-slicing,
+  misc-definitions-in-headers,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-*,
+  -performance-enum-size,
+  -performance-inefficient-string-concatenation,
+  readability-braces-around-statements,
+  readability-container-size-empty,
+  readability-redundant-string-init
+WarningsAsErrors: "*"
+HeaderFilterRegex: "(engine|benchmark|tests)/.*\\.(hpp|h)$"
+FormatStyle: file
+...

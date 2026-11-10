@@ -1,0 +1,146 @@
+{
+  "diagnostics": [],
+  "engine": {
+    "frontend": "Ubuntu clang version 20.1.8 (++20250804090239+87f0227cb601-1~exp1~20250804210352.139)",
+    "name": "bigolens-engine",
+    "protocol_version": "1.0",
+    "version": "0.1.0"
+  },
+  "errors": [],
+  "request_id": "example-capabilities",
+  "results": {
+    "actions": [
+      "capabilities",
+      "analyze",
+      "benchmark"
+    ],
+    "features": {
+      "benchmark": "not_implemented",
+      "constraint_workload": "partial",
+      "interprocedural_analysis": "unsupported",
+      "loop_analysis": "partial",
+      "range_for_loops": "partial",
+      "recursion_analysis": "unsupported",
+      "static_memory_estimate": "partial",
+      "stl_cost_model": "data_only",
+      "time_feasibility": "requires_runtime_estimate",
+      "while_countdown_loops": "partial"
+    },
+    "stl_cost_model": [
+      {
+        "amortized": false,
+        "average": "1",
+        "container": "std::vector",
+        "note": "[vector.access]: constant time",
+        "operation": "operator[]",
+        "worst": "1"
+      },
+      {
+        "amortized": true,
+        "average": "1",
+        "container": "std::vector",
+        "note": "[vector.modifiers]: amortized constant; a single call may reallocate and copy n elements",
+        "operation": "push_back",
+        "worst": "n"
+      },
+      {
+        "amortized": false,
+        "average": "n",
+        "container": "std::vector",
+        "note": "[vector.modifiers]: linear in the number of elements after the erased one",
+        "operation": "erase",
+        "worst": "n"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::map",
+        "note": "[associative.reqmts]: logarithmic in size",
+        "operation": "find",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::map",
+        "note": "[map.access]: logarithmic in size",
+        "operation": "operator[]",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::set",
+        "note": "[associative.reqmts]: logarithmic in size",
+        "operation": "insert",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::set",
+        "note": "[associative.reqmts]: logarithmic in size",
+        "operation": "find",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "1",
+        "container": "std::unordered_map",
+        "note": "[unord.req]: average constant, worst case linear (hash collisions)",
+        "operation": "find",
+        "worst": "n"
+      },
+      {
+        "amortized": false,
+        "average": "1",
+        "container": "std::unordered_map",
+        "note": "[unord.req]: average constant, worst case linear (hash collisions)",
+        "operation": "operator[]",
+        "worst": "n"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::priority_queue",
+        "note": "[priqueue.members]: push_heap, logarithmic comparisons",
+        "operation": "push",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "std::priority_queue",
+        "note": "[priqueue.members]: pop_heap, logarithmic comparisons",
+        "operation": "pop",
+        "worst": "log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "1",
+        "container": "std::priority_queue",
+        "note": "[priqueue.members]: constant",
+        "operation": "top",
+        "worst": "1"
+      },
+      {
+        "amortized": false,
+        "average": "n * log_2(n)",
+        "container": "algorithm",
+        "note": "[sort]: O(n log n) comparisons (C++11 and later)",
+        "operation": "sort",
+        "worst": "n * log_2(n)"
+      },
+      {
+        "amortized": false,
+        "average": "log_2(n)",
+        "container": "algorithm",
+        "note": "[lower.bound]: log n comparisons; linear iterator steps for non-random-access iterators",
+        "operation": "lower_bound",
+        "worst": "log_2(n)"
+      }
+    ]
+  },
+  "schema_version": "1.0",
+  "status": "ok"
+}

@@ -1,0 +1,14 @@
+#pragma once
+
+#include <string_view>
+
+namespace bigolens {
+
+inline constexpr std::string_view kEngineName = "bigolens-engine";
+inline constexpr std::string_view kEngineVersion = "@PROJECT_VERSION@";
+/// Protocol version spoken by this engine. Requests must share the major version.
+inline constexpr int kProtocolMajor = 1;
+inline constexpr int kProtocolMinor = 0;
+inline constexpr std::string_view kProtocolVersion = "1.0";
+
+}  // namespace bigolens

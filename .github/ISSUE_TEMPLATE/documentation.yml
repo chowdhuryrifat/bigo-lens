@@ -1,0 +1,30 @@
+name: Documentation issue
+description: Something in the documentation is wrong, missing, unclear or out of date.
+labels: [documentation, triage]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Page or file
+      placeholder: docs/specifications/CONSTRAINT_MODEL.md
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - Incorrect (contradicts the implementation)
+        - Missing
+        - Unclear
+        - Outdated
+        - Broken link or diagram
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Quote the text and describe what it should say.
+    validations:
+      required: true

@@ -1,0 +1,11 @@
+{
+  "editor.formatOnSave": true,
+  "[cpp]": { "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "clangd.arguments": ["--compile-commands-dir=${workspaceFolder}/build/dev"],
+  "cmake.useCMakePresets": "always",
+  "eslint.workingDirectories": ["extension"],
+  "files.exclude": { "**/node_modules": true, "extension/out": true },
+  "search.exclude": { "build/**": true, "extension/.vscode-test/**": true }
+}

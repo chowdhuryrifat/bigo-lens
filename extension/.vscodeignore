@@ -1,0 +1,8 @@
+**
+!out/src/**
+!schemas/**
+!bin/**
+!package.json
+!README.md
+!LICENSE
+out/src/**/*.map

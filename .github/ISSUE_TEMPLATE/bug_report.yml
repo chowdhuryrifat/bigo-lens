@@ -1,0 +1,55 @@
+name: Bug report
+description: Something produced a wrong result, crashed, or did not work as documented.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Wrong analysis results are the most valuable reports: please include the smallest C++ program that reproduces the problem.
+        Do not include secrets or private code you are not allowed to share. Report security vulnerabilities privately through the repository's Security tab instead.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Static analysis result (complexity / workload)
+        - Constraints
+        - Memory estimate
+        - Feasibility
+        - Engine crash or protocol error
+        - VS Code extension
+        - Build / CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the reported finding (pattern, expression, bound status) or the error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: C++ source and the constraints JSON (`<file>.bigolens.json`) if any.
+      render: cpp
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Engine version
+      description: 'Output of `bigolens-engine --version` and the Clang version shown by the "BigO Lens: Show Engine Capabilities" command.'
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, VS Code version, compiler/LLVM version.

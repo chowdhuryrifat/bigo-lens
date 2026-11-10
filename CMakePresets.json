@@ -1,0 +1,61 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BIGOLENS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development (Debug, Clang frontend)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BIGOLENS_ENABLE_CLANG": "ON" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (Clang frontend)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BIGOLENS_ENABLE_CLANG": "ON" }
+    },
+    {
+      "name": "no-clang",
+      "displayName": "Core only (no Clang frontend)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BIGOLENS_ENABLE_CLANG": "OFF" }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI (Release, warnings as errors)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BIGOLENS_ENABLE_CLANG": "ON",
+        "BIGOLENS_WARNINGS_AS_ERRORS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev", "configuration": "Debug" },
+    { "name": "release", "configurePreset": "release", "configuration": "Release" },
+    { "name": "no-clang", "configurePreset": "no-clang", "configuration": "Debug" },
+    { "name": "ci", "configurePreset": "ci", "configuration": "Release" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "dev", "inherits": "base", "configurePreset": "dev", "configuration": "Debug" },
+    { "name": "release", "inherits": "base", "configurePreset": "release", "configuration": "Release" },
+    { "name": "no-clang", "inherits": "base", "configurePreset": "no-clang", "configuration": "Debug" },
+    { "name": "ci", "inherits": "base", "configurePreset": "ci", "configuration": "Release" }
+  ]
+}

@@ -1,0 +1,81 @@
+name: Code quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Formatter and linter versions are pinned so results do not depend on the runner image.
+  CLANG_TOOLS_VERSION: '18.1.8'
+  LLVM_VERSION: '18'
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: pipx install "clang-format==${CLANG_TOOLS_VERSION}"
+      - name: Check C++ formatting
+        run: git ls-files '*.cpp' '*.hpp' | xargs clang-format --dry-run --Werror
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Clang development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build \
+            clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
+            libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
+            zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
+          pipx install "clang-tidy==${CLANG_TOOLS_VERSION}"
+      - name: Configure (exports compile_commands.json)
+        run: >-
+          cmake --preset dev -G Ninja
+          -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang
+          -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
+      - name: Generate configured headers and fetched dependencies
+        run: cmake --build --preset dev --target bigolens_core
+      - name: Run clang-tidy
+        run: git ls-files 'engine/src/*.cpp' 'benchmark/src/*.cpp' | xargs -n 1 clang-tidy -p build/dev --quiet
+
+  typescript:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run prepare-assets
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier
+        run: npm run format:check
+
+  cmake-strict:
+    # Configures and builds the core with warnings treated as errors on the oldest supported CMake path.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cmake --preset no-clang -DBIGOLENS_WARNINGS_AS_ERRORS=ON --warn-uninitialized
+      - run: cmake --build --preset no-clang --parallel
