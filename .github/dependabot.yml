@@ -23,6 +23,9 @@ updates:
         dependency-type: development
         update-types: [minor, patch]
     ignore:
+      # Node type definitions must match the supported runtime (Node 20); bump together with engines.node.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
       # The minimum supported VS Code version is a product decision, not a dependency update.
       - dependency-name: '@types/vscode'
         update-types: [version-update:semver-major, version-update:semver-minor]

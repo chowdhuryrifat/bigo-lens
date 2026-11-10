@@ -26,7 +26,7 @@ The same rule applies to documentation, commit messages and pull request descrip
 ### 1.1 Language and build
 
 - Use C++20 (`CMAKE_CXX_STANDARD 20`, extensions off). CMake 3.24 or newer.
-- All code must compile without warnings under the project warning policy in [`cmake/CompilerWarnings.cmake`](cmake/CompilerWarnings.cmake): `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wnull-dereference` on GCC/Clang, and `/W4 /permissive-` on MSVC. CI configures with `BIGOLENS_WARNINGS_AS_ERRORS=ON`.
+- All code must compile without warnings under the project warning policy in [`cmake/CompilerWarnings.cmake`](cmake/CompilerWarnings.cmake): `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual` on GCC/Clang (plus `-Wnull-dereference` on Clang; GCC reports false positives in libstdc++ and LLVM headers at `-O2`), and `/W4 /permissive-` on MSVC. CI configures with `BIGOLENS_WARNINGS_AS_ERRORS=ON`.
 - Apply `bigolens_set_warnings(<target>)` to every new target.
 - `bigolens_core` must **not** depend on Clang or LLVM. Only `engine/src/parser/clang_frontend.cpp` may include Clang headers. Front-end types must never appear in a public header. The boundary is the abstract interface `analyzers::SourceAnalyzer`.
 - The engine must build and pass its tests with `BIGOLENS_ENABLE_CLANG=OFF` (the `no-clang` preset). This is how Windows and macOS CI run.
