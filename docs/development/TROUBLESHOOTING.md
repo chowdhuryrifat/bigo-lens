@@ -220,3 +220,13 @@ and `engine.frontend` is `null`.
 - Multi-config generators (Visual Studio) place the binary at `build\no-clang\engine\Debug\bigolens-engine.exe`. The extension's development-build lookup checks the `Debug\` and `Release\` subdirectories.
 - Building the Clang front end on Windows requires an LLVM installation that includes the CMake packages and development libraries. This is untested. Contributions are welcome via [BL-602](IMPLEMENTATION_PLAN.md#bl-602-graduate-the-clang-front-end-on-macos-and-windows).
 - Line endings: the repository uses LF (`.gitattributes`). If Git converts files to CRLF, clang-format checks may fail. Run `git config core.autocrlf false` and re-checkout.
+
+## macOS: frontend reports errors such as `'_Tp' does not refer to a value`
+
+Observed in the experimental CI job (`macos-latest`, Homebrew `llvm@18`): the engine builds, but when it parses
+sources that include standard headers, the Clang 18 frontend picks up the system SDK's libc++ headers, which use
+builtins that Clang 18 does not know. Every analysis then fails with `source_parse_error`, and 14 of 93 CTest tests
+fail. This is why the macOS Clang frontend is marked experimental. Likely fixes (not yet verified): build against a
+Homebrew LLVM whose version matches or exceeds the SDK's libc++ expectations, or point the frontend at the
+matching LLVM's libc++ headers. Tracked as part of cross-platform validation in
+[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
