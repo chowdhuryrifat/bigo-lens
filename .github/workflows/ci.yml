@@ -68,6 +68,8 @@ jobs:
 
   native-macos-clang:
     # Experimental: building against Homebrew LLVM is not yet a supported configuration.
+    # Uses Homebrew's current llvm: older Clang releases cannot parse the libc++
+    # headers of the runner's macOS SDK (e.g. "'_Tp' does not refer to a value").
     name: Native · macOS · Clang frontend (experimental)
     runs-on: macos-latest
     timeout-minutes: 60
@@ -75,10 +77,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install LLVM
-        run: brew install llvm@${LLVM_VERSION} ninja
+        run: |
+          brew install llvm ninja
+          "$(brew --prefix llvm)/bin/clang" --version
+          xcrun --show-sdk-version
       - name: Configure
         run: |
-          prefix="$(brew --prefix llvm@${LLVM_VERSION})"
+          prefix="$(brew --prefix llvm)"
           cmake --preset dev -G Ninja \
             -DCMAKE_CXX_COMPILER="$prefix/bin/clang++" \
             -DClang_DIR="$prefix/lib/cmake/clang" -DLLVM_DIR="$prefix/lib/cmake/llvm"
