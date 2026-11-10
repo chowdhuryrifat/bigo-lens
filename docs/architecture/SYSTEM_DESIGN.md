@@ -250,7 +250,7 @@ An unopenable `--request` file or a fatal exception produces exit code 1 with a 
 
 ## 4. Extension design (Implemented scaffold)
 
-The extension is in TypeScript (Node 20, VS Code ^1.85). Its source is organised under `extension/src/{commands,services,providers,models}`. The responsibilities below are the module contracts. The file-level API is described in [COMPONENT_DESIGN.md](COMPONENT_DESIGN.md#extension-components).
+The extension is in TypeScript (Node 22 tooling, VS Code ^1.85). Its source is organised under `extension/src/{commands,services,providers,models}`. The responsibilities below are the module contracts. The file-level API is described in [COMPONENT_DESIGN.md](COMPONENT_DESIGN.md#extension-components).
 
 | Layer | Responsibility | Contract |
 |---|---|---|

@@ -9,7 +9,7 @@ The target users write C++ in an editor, often for competitive programming, and 
 
 ## Decision
 
-Implement the client as a **TypeScript VS Code extension** (Node 20, VS Code `^1.85`) in `extension/`:
+Implement the client as a **TypeScript VS Code extension** (Node 22 tooling, VS Code `^1.85`) in `extension/`:
 
 - `src/commands/`: `bigoLens.analyzeActiveFile`, `bigoLens.editConstraints`, `bigoLens.showCapabilities`.
 - `src/services/`: engine locator, constraints sidecar (`<source file>.bigolens.json`), request builder, engine client, and response validation with ajv against schemas copied from `shared/schemas/`.

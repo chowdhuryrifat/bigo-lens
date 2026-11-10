@@ -82,7 +82,7 @@ The engine runs as one process per request, and Clang types never cross the prot
 ## Technology stack
 
 C++20 · Clang LibTooling · CMake ≥ 3.24 · nlohmann/json · GoogleTest/CTest · TypeScript · VS Code Extension API ·
-Node.js 20 · ajv · ESLint · Prettier · clang-format · clang-tidy · GitHub Actions · CodeQL · Dependabot.
+Node.js 22 · ajv · ESLint · Prettier · clang-format · clang-tidy · GitHub Actions · CodeQL · Dependabot.
 
 ## Installation status
 
@@ -94,7 +94,7 @@ artifact. Alternatively, build the engine and run the extension from source in a
 
 ## Building
 
-Prerequisites: CMake ≥ 3.24, a C++20 compiler, Node.js ≥ 20 and npm. The Clang frontend also needs the
+Prerequisites: CMake ≥ 3.24, a C++20 compiler, Node.js ≥ 22 and npm. The Clang frontend also needs the
 Clang/LLVM development packages, for example on Ubuntu:
 `sudo apt install cmake ninja-build clang-18 llvm-18-dev libclang-18-dev`.
 

@@ -49,7 +49,7 @@ The same rule applies to documentation, commit messages and pull request descrip
 
 ## 2. TypeScript rules (VS Code extension)
 
-- Use TypeScript in `strict` mode, targeting Node 20 and VS Code `^1.85`. Do not use `any`. Use `unknown` and narrow it.
+- Use TypeScript in `strict` mode, with Node 22 tooling, targeting VS Code `^1.85`. Do not use `any`. Use `unknown` and narrow it.
 - Validate every value that crosses a process or file boundary (engine responses and sidecar constraint files) with ajv against the shared JSON Schemas before use. Never cast an unvalidated response to a typed interface.
 - Spawn processes only with `child_process.spawn(executable, args, { shell: false })`. Do not use `exec`, `execSync` or `shell: true`, and do not build command strings.
 - Give every engine invocation a timeout (`bigoLens.analysisTimeoutMs`) and an output cap (16 MiB). Kill the process when either is exceeded.

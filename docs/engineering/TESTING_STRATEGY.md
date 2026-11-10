@@ -69,10 +69,10 @@ These are defined in `tests/CMakeLists.txt` with the label `integration`. They d
 
 | Suite | Command | Needs | Covers |
 | --- | --- | --- | --- |
-| Unit | `npm test` | Node 20 | Engine locator order, sidecar constraint parsing and validation, request building, response schema validation, engine client against a fake engine script |
+| Unit | `npm test` | Node 22 | Engine locator order, sidecar constraint parsing and validation, request building, response schema validation, engine client against a fake engine script |
 | Integration | `npm run test:integration` | A built engine, auto-detected in `build/dev` or set through `BIGOLENS_ENGINE_PATH` | Real engine round trip. **Skips with a message** when no engine is found |
 | VS Code smoke | `npm run test:vscode` | Downloads VS Code; needs a display (`xvfb-run` on Linux) | Activation and command registration in a real extension host |
-| Schema validation | `npm run validate:schemas` | Node 20 | Schemas compile, and `shared/examples` validate against them |
+| Schema validation | `npm run validate:schemas` | Node 22 | Schemas compile, and `shared/examples` validate against them |
 
 CI runs all four on Linux. The smoke test runs under xvfb, and the integration test runs against an engine built in the same job.
 

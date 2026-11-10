@@ -60,7 +60,7 @@ jobs:
             zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: extension/package-lock.json
       - name: Build, test and package (statically linked engine bundled in the .vsix)

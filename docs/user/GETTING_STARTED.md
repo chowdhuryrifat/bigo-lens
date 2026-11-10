@@ -32,7 +32,7 @@ macOS and Windows packages are not available yet.
 | A C++20 compiler | GCC, Clang or MSVC | |
 | Clang/LLVM development libraries | 18 or newer | Needed for source analysis. Linux is the primary platform |
 | Ninja | any | Optional, but recommended |
-| Node.js | 20 or newer | For the extension |
+| Node.js | 22 or newer | For building and testing the extension |
 | VS Code | 1.85 or newer | |
 
 On Ubuntu:

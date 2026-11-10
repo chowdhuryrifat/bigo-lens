@@ -7,7 +7,7 @@ Related: [DESIGN.md](../../DESIGN.md) · [ANALYSIS_MODEL.md](ANALYSIS_MODEL.md) 
 [JSON_PROTOCOL.md](../specifications/JSON_PROTOCOL.md) · [CONFIGURATION.md](../user/CONFIGURATION.md) ·
 [GETTING_STARTED.md](../user/GETTING_STARTED.md)
 
-Platform baseline: VS Code `^1.85`, Node 20. The extension is TypeScript and talks to the native engine only through
+Platform baseline: VS Code `^1.85` (the extension runs on VS Code's bundled Node.js; development tooling needs Node 22). The extension is TypeScript and talks to the native engine only through
 the [JSON protocol](../specifications/JSON_PROTOCOL.md).
 
 ---

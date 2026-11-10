@@ -187,7 +187,7 @@ and `engine.frontend` is `null`.
 
 ## 8. Extension test problems
 
-- **`npm ci` fails with an engine-strict error.** Node 20 or newer is required, because `extension/.npmrc` sets `engine-strict=true`.
+- **`npm ci` fails with an engine-strict error.** Node 22 or newer is required, because `extension/.npmrc` sets `engine-strict=true`.
 - **`npm run test:integration` reports "skipped".** No engine was found. Build `build/dev`, or set `BIGOLENS_ENGINE_PATH`.
 - **`npm run test:vscode` fails on headless Linux** with display errors. Run it under xvfb: `xvfb-run -a npm run test:vscode`. The first run downloads VS Code into `extension/.vscode-test/`, which needs network access.
 - **Schema errors after changing `shared/schemas/`.** `npm run compile` copies the schemas into `extension/schemas/`. Re-run it, and never edit the copies.

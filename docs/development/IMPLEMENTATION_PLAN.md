@@ -215,7 +215,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-102, BL-103
 
-**Description.** A TypeScript extension (Node 20, VS Code ^1.85) with the commands `bigoLens.analyzeActiveFile`, `bigoLens.editConstraints` and `bigoLens.showCapabilities`. It locates the engine (setting, then environment variable, then bundled binary, then development build), reads sidecar constraints `<file>.bigolens.json` with ajv validation, and spawns the engine with `shell: false`, a timeout and a 16 MiB stdout cap. It validates responses, and shows results in the "Analysis Results" tree view, Problems-panel diagnostics and the "BigO Lens" output channel.
+**Description.** A TypeScript extension (Node 22 tooling, VS Code ^1.85) with the commands `bigoLens.analyzeActiveFile`, `bigoLens.editConstraints` and `bigoLens.showCapabilities`. It locates the engine (setting, then environment variable, then bundled binary, then development build), reads sidecar constraints `<file>.bigolens.json` with ajv validation, and spawns the engine with `shell: false`, a timeout and a 16 MiB stdout cap. It validates responses, and shows results in the "Analysis Results" tree view, Problems-panel diagnostics and the "BigO Lens" output channel.
 
 **Motivation.** It provides the end-to-end user path, and a client that exercises the protocol.
 

@@ -14,7 +14,7 @@ Before you write code, read [RULES.md](RULES.md). Its first rule is the most imp
 | CMake | 3.24 or newer | Engine build (presets) |
 | C++20 compiler | GCC, Clang or MSVC | Engine |
 | Clang/LLVM development libraries | 18 or newer | Clang front end (Linux is the primary platform) |
-| Node.js | 20 or newer | Extension (`engine-strict` is enabled) |
+| Node.js | 22 or newer | Extension (`engine-strict` is enabled) |
 | VS Code | 1.85 or newer | Running the extension |
 
 ### Recommended

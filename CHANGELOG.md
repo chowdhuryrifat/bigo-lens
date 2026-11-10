@@ -32,6 +32,12 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 - VS Code commands to analyze the active file, edit a constraints sidecar file and show engine capabilities; an
   Analysis Results tree view and Problems-panel diagnostics.
 
+### Changed
+
+- Development and CI tooling now require Node.js 22 (Node 20 reached end of life). Upgraded ESLint 10,
+  `@eslint/js` 10, `@vscode/test-electron` 3, `@vscode/vsce` 4 and `@types/node` 22. Test scripts use
+  `node --test` glob patterns, which Node 22 requires.
+
 ### Fixed
 
 - The packaged extension now contains its runtime dependency `ajv`. It was previously packaged with

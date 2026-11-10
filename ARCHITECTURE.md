@@ -25,7 +25,7 @@ BigO Lens has three deliverables that communicate only through narrow, explicit 
 
 | Deliverable | Language | Location | Status |
 |---|---|---|---|
-| VS Code extension | TypeScript (Node 20, VS Code ^1.85) | `extension/` | Implemented (scaffold) |
+| VS Code extension | TypeScript (Node 22 tooling, VS Code ^1.85) | `extension/` | Implemented (scaffold) |
 | Analysis engine `bigolens-engine` | C++20 | `engine/` | Partial |
 | Benchmark library `bigolens_benchmark` | C++20 | `benchmark/` | Partial (statistics and growth fitting only) |
 
