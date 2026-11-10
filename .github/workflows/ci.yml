@@ -143,3 +143,38 @@ jobs:
           BIGOLENS_ENGINE_PATH: ${{ runner.temp }}/engine/bigolens-engine
       - name: VS Code extension-host smoke test
         run: xvfb-run -a npm run test:vscode
+
+  package-linux:
+    name: Package · self-contained Linux .vsix
+    needs: native-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install toolchain and Clang development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build xvfb \
+            clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
+            libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
+            zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Build the statically linked engine and package the extension
+        run: >-
+          scripts/build/package-extension.sh -G Ninja
+          -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang
+          -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
+      - name: Verify the .vsix (clean container, VS Code with the bundled engine)
+        run: xvfb-run -a scripts/test/verify-vsix.sh extension/bigo-lens.vsix
+      - name: Report package size
+        run: ls -l extension/bigo-lens.vsix | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bigo-lens-vsix-linux-x64
+          path: extension/bigo-lens.vsix
+          retention-days: 14
+          if-no-files-found: error

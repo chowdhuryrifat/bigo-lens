@@ -6,6 +6,7 @@ import { showCapabilities } from './commands/showCapabilities';
 import { DiagnosticsPublisher } from './providers/diagnosticsPublisher';
 import { ResultsTreeProvider } from './providers/resultsTreeProvider';
 import type { ExtensionServices } from './services/context';
+import { ensureBundledEngineExecutable } from './services/engineLocator';
 import { SchemaValidator } from './services/schemaValidator';
 
 export const COMMANDS = {
@@ -35,6 +36,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(COMMANDS.editConstraints, () => editConstraints()),
     vscode.commands.registerCommand(COMMANDS.showCapabilities, () => showCapabilities(services)),
   );
+  if (ensureBundledEngineExecutable(context.extensionPath, process.platform)) {
+    output.appendLine('Bundled engine available.');
+  }
   output.appendLine('BigO Lens activated.');
 }
 

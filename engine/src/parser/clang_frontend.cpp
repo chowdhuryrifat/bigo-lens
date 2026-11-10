@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <set>
@@ -1201,13 +1202,7 @@ class AnalysisAction final : public clang::ASTFrontendAction {
 class ClangSourceAnalyzer final : public analyzers::SourceAnalyzer {
  public:
   explicit ClangSourceAnalyzer(ClangFrontendOptions options) : options_(std::move(options)) {
-    if (options_.resourceDir.empty()) {
-      if (const char* env = std::getenv("BIGOLENS_CLANG_RESOURCE_DIR"); env != nullptr && *env != '\0') {
-        options_.resourceDir = env;
-      } else {
-        options_.resourceDir = BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR;
-      }
-    }
+    options_.resourceDir = resolveResourceDir(options_);
   }
 
   analyzers::SourceAnalysis analyze(const analyzers::SourceInput& input) override {
@@ -1253,6 +1248,23 @@ class ClangSourceAnalyzer final : public analyzers::SourceAnalyzer {
 };
 
 }  // namespace
+
+std::string resolveResourceDir(const ClangFrontendOptions& options) {
+  if (!options.resourceDir.empty()) {
+    return options.resourceDir;
+  }
+  if (const char* env = std::getenv("BIGOLENS_CLANG_RESOURCE_DIR"); env != nullptr && *env != '\0') {
+    return env;
+  }
+  if (!options.bundledResourceDir.empty()) {
+    std::error_code error;
+    const std::filesystem::path marker = std::filesystem::path(options.bundledResourceDir) / "include" / "stddef.h";
+    if (std::filesystem::is_regular_file(marker, error)) {
+      return options.bundledResourceDir;
+    }
+  }
+  return BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR;
+}
 
 std::unique_ptr<analyzers::SourceAnalyzer> makeClangSourceAnalyzer(ClangFrontendOptions options) {
   return std::make_unique<ClangSourceAnalyzer>(std::move(options));

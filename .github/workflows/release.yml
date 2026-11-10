@@ -58,34 +58,30 @@ jobs:
             clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
             libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
             zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
-      - name: Build and test the native engine
-        run: |
-          cmake --preset ci -G Ninja -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang \
-            -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
-          cmake --build --preset ci --parallel
-          ctest --preset ci
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: extension/package-lock.json
-      - name: Test and package the extension
-        working-directory: extension
+      - name: Build, test and package (statically linked engine bundled in the .vsix)
         run: |
-          npm ci
-          npm run lint
-          npm test
-          BIGOLENS_ENGINE_PATH="$GITHUB_WORKSPACE/build/ci/engine/bigolens-engine" npm run test:integration
-          npm run package
+          sudo apt-get install -y --no-install-recommends xvfb
+          scripts/build/package-extension.sh -G Ninja \
+            -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang \
+            -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
+          (cd extension && npm run lint && npm test)
+      - name: Verify the .vsix
+        run: xvfb-run -a scripts/test/verify-vsix.sh extension/bigo-lens.vsix
       - name: Assemble artifacts
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir -p dist
-          # The engine links against the system LLVM ${LLVM_VERSION} shared libraries (Ubuntu 24.04).
-          tar -C build/ci/engine -czf "dist/bigolens-engine-$VERSION-linux-x64-llvm${LLVM_VERSION}.tar.gz" bigolens-engine
-          cp extension/bigo-lens.vsix "dist/bigo-lens-$VERSION.vsix"
+          # Self-contained engine (static Clang/LLVM) plus Clang builtin headers (ADR 0011).
+          tar -C extension/bin -czf "dist/bigolens-engine-$VERSION-linux-x64.tar.gz" .
+          cp extension/bigo-lens.vsix "dist/bigo-lens-$VERSION-linux-x64.vsix"
           (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts

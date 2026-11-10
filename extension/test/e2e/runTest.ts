@@ -4,9 +4,12 @@ import { runTests } from '@vscode/test-electron';
 import { join } from 'node:path';
 
 async function main(): Promise<void> {
-  const extensionDevelopmentPath = join(__dirname, '..', '..', '..');
+  // BIGOLENS_E2E_EXTENSION_PATH runs the suite against another copy of the
+  // extension, e.g. an unpacked .vsix, so its bundled engine is exercised.
+  const extensionDevelopmentPath =
+    process.env.BIGOLENS_E2E_EXTENSION_PATH ?? join(__dirname, '..', '..', '..');
   const extensionTestsPath = join(__dirname, 'suite', 'index');
-  const workspace = join(extensionDevelopmentPath, '..', 'tests', 'fixtures', 'cpp');
+  const workspace = join(__dirname, '..', '..', '..', '..', 'tests', 'fixtures', 'cpp');
   // When launched from a VS Code terminal this variable is inherited and would
   // make the downloaded VS Code behave as plain Node.js.
   delete process.env.ELECTRON_RUN_AS_NODE;
@@ -14,6 +17,7 @@ async function main(): Promise<void> {
     extensionDevelopmentPath,
     extensionTestsPath,
     launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust'],
+    extensionTestsEnv: { BIGOLENS_E2E_REQUIRE_ENGINE: process.env.BIGOLENS_E2E_REQUIRE_ENGINE ?? '' },
   });
 }
 

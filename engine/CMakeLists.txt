@@ -50,6 +50,12 @@ endif()
 bigolens_set_warnings(bigolens-engine)
 
 install(TARGETS bigolens-engine RUNTIME DESTINATION bin)
+if(BIGOLENS_ENABLE_CLANG AND BIGOLENS_CLANG_RESOURCE_DIR)
+  # Clang's builtin headers (stddef.h, ...) next to the engine, where the engine
+  # looks for them at runtime (<bin>/clang-resource). This makes an installed or
+  # packaged engine independent of the build machine's LLVM paths (ADR 0011).
+  install(DIRECTORY "${BIGOLENS_CLANG_RESOURCE_DIR}/include" DESTINATION bin/clang-resource)
+endif()
 
 if(BIGOLENS_BUILD_TESTS)
   add_subdirectory(tests)

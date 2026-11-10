@@ -5,3 +5,4 @@ schemas/
 package-lock.json
 *.vsix
 LICENSE
+bin/

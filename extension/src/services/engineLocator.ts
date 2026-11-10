@@ -1,4 +1,4 @@
-import { accessSync, constants, statSync } from 'node:fs';
+import { accessSync, chmodSync, constants, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 export interface LocatorEnvironment {
@@ -36,6 +36,35 @@ export function defaultIsExecutable(path: string): boolean {
   }
 }
 
+/** Path of the engine shipped inside the extension package. */
+export function bundledEnginePath(extensionRoot: string, platform: NodeJS.Platform): string {
+  return join(extensionRoot, 'bin', platform === 'win32' ? 'bigolens-engine.exe' : 'bigolens-engine');
+}
+
+/**
+ * Archive extraction does not always preserve the executable bit. Restores it
+ * on the bundled engine only (never on user-configured paths). Returns true if
+ * the file is executable afterwards.
+ */
+export function ensureBundledEngineExecutable(extensionRoot: string, platform: NodeJS.Platform): boolean {
+  const path = bundledEnginePath(extensionRoot, platform);
+  try {
+    if (!statSync(path).isFile()) {
+      return false;
+    }
+    if (platform !== 'win32') {
+      try {
+        accessSync(path, constants.X_OK);
+      } catch {
+        chmodSync(path, 0o755);
+      }
+    }
+    return defaultIsExecutable(path);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolves the engine executable. Explicit configuration wins and is never
  * silently replaced by a fallback: an unusable configured path is an error.
@@ -62,7 +91,7 @@ export function locateEngine(env: LocatorEnvironment): LocatorResult {
     return { path: value, searched };
   }
 
-  const candidates = [join(env.extensionRoot, 'bin', binary)];
+  const candidates = [bundledEnginePath(env.extensionRoot, env.platform)];
   // Development layout: <repo>/extension is the extension root, builds live in <repo>/build/<preset>.
   const repoRoot = join(env.extensionRoot, '..');
   for (const preset of BUILD_PRESETS) {

@@ -6,7 +6,23 @@ BigO Lens analyses a C++ solution in VS Code. It reports, for each loop nest, th
 
 ## 1. Installation
 
-BigO Lens is **not yet published** on the Visual Studio Marketplace or Open VSX, and release packages do not bundle the engine yet. For now, you build it from source and run it in VS Code's **Extension Development Host**.
+BigO Lens is **not yet published** on the Visual Studio Marketplace or Open VSX. There are two ways to run it:
+
+- **Install a Linux x64 `.vsix`** (§1.4). The package contains a self-contained engine. Build it yourself, or download
+  the `bigo-lens-vsix-linux-x64` artifact of a CI run or a GitHub release asset.
+- **Build from source** and run the extension in VS Code's **Extension Development Host** (§1.1–1.3).
+
+**Runtime requirements of the packaged extension (Linux x64):**
+
+- VS Code 1.85 or later.
+- glibc from Ubuntu 24.04 or a newer, compatible distribution. The engine is built on Ubuntu 24.04.
+- The C++ standard library headers your code includes. Install them with `sudo apt install g++` (or the
+  equivalent `libstdc++-dev` package). Without them, files that include `<iostream>`, `<vector>` and similar
+  headers fail with `source_parse_error`.
+- LLVM or Clang does **not** need to be installed. The engine is statically linked and ships Clang's builtin
+  headers ([ADR 0011](../architecture/DECISIONS/0011-self-contained-engine-packaging.md)).
+
+macOS and Windows packages are not available yet.
 
 ### 1.1 Prerequisites
 
@@ -69,14 +85,21 @@ Then open the **repository root** in VS Code and press **F5**, choosing the **"R
 
 To use an engine from somewhere else, set `bigoLens.enginePath` to its absolute path (see [CONFIGURATION.md](CONFIGURATION.md#engine-location)).
 
-### 1.4 Optional: build a `.vsix`
+### 1.4 Build and install a self-contained `.vsix` (Linux x64)
+
+You need the Clang/LLVM development packages, including the static libraries (`llvm-<v>-dev`,
+`libclang-<v>-dev`):
 
 ```bash
-cd extension
-npm run package    # produces extension/bigo-lens.vsix
+scripts/build/package-extension.sh -G Ninja     # add -DClang_DIR=... if Clang is not found automatically
+scripts/test/verify-vsix.sh                     # optional: contents, clean-container and VS Code checks (needs Docker)
 ```
 
-You can install the `.vsix` with **Extensions → … → Install from VSIX**. It does not contain the engine yet, so you must also set `bigoLens.enginePath`.
+The script builds the engine with the `package` preset (Release, statically linked Clang), runs the native tests,
+copies the stripped engine and Clang's builtin headers to `extension/bin/`, and writes `extension/bigo-lens.vsix`.
+
+Install the package with **Extensions → … → Install from VSIX…**, or run `code --install-extension
+extension/bigo-lens.vsix`. The bundled engine is found automatically; leave `bigoLens.enginePath` empty.
 
 ## 2. Your first analysis
 

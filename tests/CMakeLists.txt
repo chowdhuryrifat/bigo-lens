@@ -8,7 +8,7 @@
 set(BIGOLENS_EXAMPLES_DIR "${PROJECT_SOURCE_DIR}/shared/examples")
 
 if(BIGOLENS_ENABLE_CLANG)
-  add_executable(bigolens_integration_tests integration/frontend_pipeline_test.cpp)
+  add_executable(bigolens_integration_tests integration/frontend_pipeline_test.cpp integration/resource_dir_test.cpp)
   target_link_libraries(bigolens_integration_tests PRIVATE bigolens_clang_frontend bigolens_core GTest::gtest_main)
   target_compile_definitions(bigolens_integration_tests
                              PRIVATE BIGOLENS_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cpp")

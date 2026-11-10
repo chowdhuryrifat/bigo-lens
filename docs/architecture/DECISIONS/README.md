@@ -14,6 +14,7 @@ This directory records the significant architectural decisions for BigO Lens. Ea
 | [0008](0008-conservative-unknown-unsupported-results.md) | Report Unknown or Unsupported rather than guess | Accepted | 2026-11-10 |
 | [0009](0009-independent-benchmark-subsystem.md) | Keep benchmarking as an independent subsystem | Accepted | 2026-11-10 |
 | [0010](0010-cpp-only-mvp.md) | Support only C++ in the MVP | Accepted | 2026-11-10 |
+| [0011](0011-self-contained-engine-packaging.md) | Ship a statically linked engine with Clang's builtin headers | Accepted | 2026-11-10 |
 
 ## Process
 

@@ -36,6 +36,8 @@ cd extension && npm ci && npm run compile && npm run lint && npm test
 npm run test:integration    # needs a built engine (build/dev or BIGOLENS_ENGINE_PATH)
 npm run validate:schemas
 scripts/development/format.sh --check
+scripts/build/package-extension.sh -G Ninja   # self-contained Linux .vsix (static Clang)
+scripts/test/verify-vsix.sh                   # verify it (Docker for the clean-container check)
 ```
 
 ## Hard rules (summary)

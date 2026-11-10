@@ -4,7 +4,7 @@ import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  { ignores: ['out/**', 'node_modules/**', '.vscode-test/**', 'schemas/**'] },
+  { ignores: ['out/**', 'node_modules/**', '.vscode-test/**', 'schemas/**', 'bin/**'] },
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {

@@ -86,7 +86,9 @@ CMake Warning: Could not determine the Clang resource directory; set BIGOLENS_CL
   export BIGOLENS_CLANG_RESOURCE_DIR="$(clang-18 -print-resource-dir)"
   ```
 
-  The environment variable takes precedence over the build-time default. If you start VS Code from a desktop launcher, set the variable in a place VS Code inherits, or launch VS Code from a shell that has it set.
+  The environment variable takes precedence over the bundled headers and the build-time default. The full
+  resolution order is: explicit option, `BIGOLENS_CLANG_RESOURCE_DIR`, `<engine directory>/clang-resource` (used by
+  the packaged extension), then the build-time default. `bigolens-engine --version` prints the directory in use. If you start VS Code from a desktop launcher, set the variable in a place VS Code inherits, or launch VS Code from a shell that has it set.
 
 The resource directory must come from the **same LLVM major version** that the engine was linked against.
 

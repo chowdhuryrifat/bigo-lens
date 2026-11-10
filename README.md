@@ -86,8 +86,11 @@ Node.js 20 · ajv · ESLint · Prettier · clang-format · clang-tidy · GitHub 
 
 ## Installation status
 
-BigO Lens is **not published** to the VS Code Marketplace. To try it, build the engine and run the extension from
-source in an Extension Development Host. See [Getting started](docs/user/GETTING_STARTED.md).
+BigO Lens is **not published** to the VS Code Marketplace. A self-contained **Linux x64 `.vsix`** can be built with
+`scripts/build/package-extension.sh`. It bundles a statically linked engine, so LLVM does not need to be installed;
+only the C++ standard library headers (`g++`) are required. CI also uploads it as the `bigo-lens-vsix-linux-x64`
+artifact. Alternatively, build the engine and run the extension from source in an Extension Development Host. See
+[Getting started](docs/user/GETTING_STARTED.md).
 
 ## Building
 

@@ -17,7 +17,7 @@ backups.
 | `shared/schemas/` | JSON Schemas for protocol 1.0 requests and responses |
 | `shared/examples/` | Example requests and the responses the engine produced for them |
 | `extension/` | TypeScript VS Code extension: `src/` (commands, providers, services, models), `test/` (unit, integration, e2e), `package.json`, `tsconfig.json`, ESLint config, asset script |
-| `scripts/` | `setup/check-environment.sh`, `build/build-all.sh`, `test/run-all-tests.sh`, `development/regenerate-examples.sh`, `development/format.sh` |
+| `scripts/` | `setup/check-environment.sh`, `build/build-all.sh`, `build/package-extension.sh` (self-contained .vsix), `test/run-all-tests.sh`, `test/verify-vsix.sh`, `development/regenerate-examples.sh`, `development/format.sh` |
 | `.github/` | CI, code-quality, security and release workflows; issue and PR templates; CODEOWNERS; Dependabot |
 | `.vscode/` | Recommended extensions, launch configurations (Run Extension), tasks, workspace settings |
 | `docs/architecture/` | System design, component design, data flow, ten architecture decision records (`DECISIONS/`) |

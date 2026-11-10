@@ -2,6 +2,7 @@
 // one JSON response to stdout. See docs/specifications/JSON_PROTOCOL.md.
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -38,6 +39,28 @@ std::string readBounded(std::istream& in, std::size_t limit) {
   return data;
 }
 
+#ifdef BIGOLENS_HAS_CLANG
+/// Directory of the running executable: /proc/self/exe on Linux, otherwise
+/// argv[0] (the extension always starts the engine with an absolute path).
+std::filesystem::path executableDirectory(const char* argv0) {
+  std::error_code error;
+  std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
+  if (error || self.empty()) {
+    self = std::filesystem::absolute(argv0 != nullptr ? argv0 : "", error);
+  }
+  return error ? std::filesystem::path() : self.parent_path();
+}
+
+bigolens::parser::ClangFrontendOptions frontendOptions(const char* argv0) {
+  bigolens::parser::ClangFrontendOptions options;
+  const std::filesystem::path dir = executableDirectory(argv0);
+  if (!dir.empty()) {
+    options.bundledResourceDir = (dir / "clang-resource").string();
+  }
+  return options;
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -48,6 +71,12 @@ int main(int argc, char** argv) {
       if (arg == "--version") {
         std::cout << bigolens::kEngineName << ' ' << bigolens::kEngineVersion << " (protocol "
                   << bigolens::kProtocolVersion << ")\n";
+#ifdef BIGOLENS_HAS_CLANG
+        const std::string resourceDir = bigolens::parser::resolveResourceDir(frontendOptions(argv[0]));
+        std::cout << "clang resource directory: " << (resourceDir.empty() ? "(none)" : resourceDir) << '\n';
+#else
+        std::cout << "clang frontend: not built\n";
+#endif
         return 0;
       }
       if (arg == "--help" || arg == "-h") {
@@ -75,7 +104,8 @@ int main(int argc, char** argv) {
     }
 
 #ifdef BIGOLENS_HAS_CLANG
-    std::unique_ptr<bigolens::analyzers::SourceAnalyzer> analyzer = bigolens::parser::makeClangSourceAnalyzer();
+    std::unique_ptr<bigolens::analyzers::SourceAnalyzer> analyzer =
+        bigolens::parser::makeClangSourceAnalyzer(frontendOptions(argv[0]));
 #else
     std::unique_ptr<bigolens::analyzers::SourceAnalyzer> analyzer;
 #endif

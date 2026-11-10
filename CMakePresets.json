@@ -1,6 +1,10 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -15,19 +19,28 @@
       "name": "dev",
       "displayName": "Development (Debug, Clang frontend)",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BIGOLENS_ENABLE_CLANG": "ON" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BIGOLENS_ENABLE_CLANG": "ON"
+      }
     },
     {
       "name": "release",
       "displayName": "Release (Clang frontend)",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "BIGOLENS_ENABLE_CLANG": "ON" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BIGOLENS_ENABLE_CLANG": "ON"
+      }
     },
     {
       "name": "no-clang",
       "displayName": "Core only (no Clang frontend)",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "BIGOLENS_ENABLE_CLANG": "OFF" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BIGOLENS_ENABLE_CLANG": "OFF"
+      }
     },
     {
       "name": "ci",
@@ -38,24 +51,87 @@
         "BIGOLENS_ENABLE_CLANG": "ON",
         "BIGOLENS_WARNINGS_AS_ERRORS": "ON"
       }
+    },
+    {
+      "name": "package",
+      "displayName": "Package (Release, statically linked Clang, for the .vsix)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BIGOLENS_ENABLE_CLANG": "ON",
+        "BIGOLENS_STATIC_CLANG": "ON",
+        "BIGOLENS_WARNINGS_AS_ERRORS": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "dev", "configurePreset": "dev", "configuration": "Debug" },
-    { "name": "release", "configurePreset": "release", "configuration": "Release" },
-    { "name": "no-clang", "configurePreset": "no-clang", "configuration": "Debug" },
-    { "name": "ci", "configurePreset": "ci", "configuration": "Release" }
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "no-clang",
+      "configurePreset": "no-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "configuration": "Release"
+    },
+    {
+      "name": "package",
+      "configurePreset": "package",
+      "configuration": "Release"
+    }
   ],
   "testPresets": [
     {
       "name": "base",
       "hidden": true,
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
     },
-    { "name": "dev", "inherits": "base", "configurePreset": "dev", "configuration": "Debug" },
-    { "name": "release", "inherits": "base", "configurePreset": "release", "configuration": "Release" },
-    { "name": "no-clang", "inherits": "base", "configurePreset": "no-clang", "configuration": "Debug" },
-    { "name": "ci", "inherits": "base", "configurePreset": "ci", "configuration": "Release" }
+    {
+      "name": "dev",
+      "inherits": "base",
+      "configurePreset": "dev",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "no-clang",
+      "inherits": "base",
+      "configurePreset": "no-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ci",
+      "inherits": "base",
+      "configurePreset": "ci",
+      "configuration": "Release"
+    },
+    {
+      "name": "package",
+      "inherits": "base",
+      "configurePreset": "package",
+      "configuration": "Release"
+    }
   ]
 }

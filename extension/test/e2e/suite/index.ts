@@ -41,4 +41,28 @@ export async function run(): Promise<void> {
       assert.ok(commands.includes(id), `${id} missing`);
     }
   });
+
+  if (process.env.BIGOLENS_E2E_REQUIRE_ENGINE === '1') {
+    await check('analyzing a fixture publishes findings from the engine', async () => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      assert.ok(folder);
+      const uri = vscode.Uri.file(join(folder.uri.fsPath, '01_linear_loop.cpp'));
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+      await vscode.commands.executeCommand('bigoLens.analyzeActiveFile');
+      const deadline = Date.now() + 60000;
+      let findings: vscode.Diagnostic[] = [];
+      while (Date.now() < deadline) {
+        findings = vscode.languages.getDiagnostics(uri).filter((d) => d.source === 'BigO Lens');
+        if (findings.length > 0) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      assert.ok(findings.length > 0, 'no BigO Lens diagnostics were published');
+      assert.ok(
+        findings.some((d) => d.message.includes('linear-loop')),
+        findings.map((d) => d.message).join('\n'),
+      );
+    });
+  }
 }

@@ -139,7 +139,7 @@
     "test:integration": "npm run compile && node --test out/test/integration/",
     "test:vscode": "npm run compile && node out/test/e2e/runTest.js",
     "validate:schemas": "node scripts/validate-json.mjs",
-    "package": "npm run compile && vsce package --no-dependencies --out bigo-lens.vsix"
+    "package": "npm run compile && vsce package --out bigo-lens.vsix"
   },
   "dependencies": {
     "ajv": "^8.17.1"

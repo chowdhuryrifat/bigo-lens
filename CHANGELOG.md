@@ -8,6 +8,13 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Self-contained Linux x64 `.vsix` (BL-108). The engine is linked statically against Clang/LLVM
+  (`BIGOLENS_STATIC_CLANG`, `package` preset) and ships Clang's builtin headers, which the engine finds next to
+  its executable. Adds `scripts/build/package-extension.sh`, `scripts/test/verify-vsix.sh` and the CI job
+  `package-linux` (ADR 0011).
+- `bigolens-engine --version` prints the Clang resource directory in use.
+- The VS Code smoke suite can run an end-to-end analysis (`BIGOLENS_E2E_REQUIRE_ENGINE=1`) against an unpacked
+  `.vsix` (`BIGOLENS_E2E_EXTENSION_PATH`).
 - Project foundation: CMake build with presets, C++20 native engine, TypeScript VS Code extension, documentation,
   GitHub Actions workflows, issue and pull request templates.
 - JSON protocol 1.0 with request/response JSON schemas, request validation in the engine and response validation
@@ -24,6 +31,12 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 - Benchmark statistics (median, MAD) and growth-model fitting (linear, linearithmic, quadratic) library.
 - VS Code commands to analyze the active file, edit a constraints sidecar file and show engine capabilities; an
   Analysis Results tree view and Problems-panel diagnostics.
+
+### Fixed
+
+- The packaged extension now contains its runtime dependency `ajv`. It was previously packaged with
+  `--no-dependencies` and would have failed to activate when installed from a `.vsix`.
+- The extension restores the executable bit of the bundled engine if archive extraction dropped it.
 
 ### Not yet implemented
 

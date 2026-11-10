@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { locateEngine } from '../../src/services/engineLocator';
+import {
+  bundledEnginePath,
+  ensureBundledEngineExecutable,
+  locateEngine,
+} from '../../src/services/engineLocator';
 
 const root = join('/', 'opt', 'ext', 'extension');
 const base = { environmentPath: undefined, extensionRoot: root, platform: 'linux' as NodeJS.Platform };
@@ -59,5 +65,29 @@ describe('locateEngine', () => {
     assert.equal(result.path, undefined);
     assert.ok(result.searched.length > 4);
     assert.equal(result.problem, undefined);
+  });
+});
+
+describe('ensureBundledEngineExecutable', () => {
+  it('restores the executable bit on the bundled engine', { skip: process.platform === 'win32' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'bigolens-bundle-'));
+    try {
+      mkdirSync(join(root, 'bin'));
+      const engine = bundledEnginePath(root, process.platform);
+      writeFileSync(engine, '#!/bin/sh\n', { mode: 0o644 });
+      assert.equal(ensureBundledEngineExecutable(root, process.platform), true);
+      assert.equal(statSync(engine).mode & 0o111, 0o111);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports false when no engine is bundled', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bigolens-bundle-'));
+    try {
+      assert.equal(ensureBundledEngineExecutable(root, process.platform), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

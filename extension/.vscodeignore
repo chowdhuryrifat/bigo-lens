@@ -1,7 +1,11 @@
+# Allow-list: everything is excluded except what the installed extension needs.
+# vsce adds production dependencies (npm ls --omit=dev) itself; they still have
+# to pass this filter, hence the node_modules entry.
 **
 !out/src/**
 !schemas/**
 !bin/**
+!node_modules/**
 !package.json
 !README.md
 !LICENSE

@@ -12,9 +12,11 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-106: Publish the repository and verify CI green on all platforms](#bl-106-publish-the-repository-and-verify-ci-green-on-all-platforms).**
+> **[BL-201: Fixture coverage audit with near-miss negatives](#bl-201-fixture-coverage-audit-with-near-miss-negatives).**
 >
-> The workflows exist but have never run on GitHub. Until they are green, no other change can be validated in CI, and the platform-support claims (Linux full, macOS and Windows core) remain unverified. After that comes [BL-108](#bl-108-bundle-the-engine-binary-into-the-vsix-linux), which turns the release `.vsix` into something a user can install without building the engine.
+> BL-106 (CI green) and BL-108 (self-contained Linux `.vsix`) are done. M2 changes the analyzer, so full fixture
+> coverage of every supported loop form must come first. Without it, regressions in classification would go
+> unnoticed.
 
 ## Dependency graph
 
@@ -29,9 +31,9 @@ flowchart TD
   BL103["BL-103 Engine CLI + limits"]:::done
   BL104["BL-104 Extension scaffold"]:::done
   BL105["BL-105 CI workflows authored"]:::done
-  BL106["BL-106 Publish repo, CI green"]:::crit
+  BL106["BL-106 Publish repo, CI green"]:::done
   BL107["BL-107 Branch protection + reporting"]:::todo
-  BL108["BL-108 Bundle engine in .vsix"]:::crit
+  BL108["BL-108 Bundle engine in .vsix"]:::done
 
   BL201["BL-201 Fixture coverage audit"]:::crit
   BL202["BL-202 Recurrence interface"]:::crit
@@ -251,7 +253,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-106: Publish the repository and verify CI green on all platforms
 
-- **Status:** **Next.** Not started.
+- **Status:** Done. Ubuntu (Clang frontend), Windows and macOS (core) and all extension jobs pass. CodeQL, clang-tidy, clang-format and ESLint pass. Fixes needed on the first runs: GCC `-Wnull-dereference` false positives at `-O2`, and the retired `macos-14` runner image. The experimental macOS Clang job still fails (header mismatch, see TROUBLESHOOTING.md).
 - **Priority:** P0
 - **Estimated complexity:** M (relative). There is uncertainty: the workflows have never run, so platform-specific fixes are likely.
 - **Dependencies:** BL-104, BL-105
@@ -296,7 +298,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-108: Bundle the engine binary into the .vsix (Linux)
 
-- **Status:** Not started
+- **Status:** Done. `BIGOLENS_STATIC_CLANG` / `package` preset, bundled resource headers, `scripts/build/package-extension.sh`, `scripts/test/verify-vsix.sh`, CI job `package-linux`, [ADR 0011](../architecture/DECISIONS/0011-self-contained-engine-packaging.md). Local result: `.vsix` 18 MB, engine 48 MB stripped.
 - **Priority:** P0
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
