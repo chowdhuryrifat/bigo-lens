@@ -32,6 +32,9 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 - VS Code commands to analyze the active file, edit a constraints sidecar file and show engine capabilities; an
   Analysis Results tree view and Problems-panel diagnostics.
 
+- Loop-form coverage fixtures (BL-201): `tests/fixtures/cpp/forms/` has positive and near-miss cases for every
+  supported form and status rule, checked by the table-driven `tests/integration/loop_forms_test.cpp`.
+
 ### Changed
 
 - Development and CI tooling now require Node.js 22 (Node 20 reached end of life). Upgraded ESLint 10,
@@ -39,6 +42,11 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   `node --test` glob patterns, which Node 22 requires.
 
 ### Fixed
+
+- `while` loops with an unbraced single-statement body (`while (x != 0) x /= 10;`) are now recognised. They were
+  reported as Unknown.
+- Range-for loops over user-defined containers are no longer downgraded to Estimated because of the implicit
+  `begin()`/`end()` calls in the loop header.
 
 - The packaged extension now contains its runtime dependency `ajv`. It was previously packaged with
   `--no-dependencies` and would have failed to activate when installed from a `.vsix`.

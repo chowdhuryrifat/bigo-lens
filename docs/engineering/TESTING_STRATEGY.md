@@ -112,6 +112,33 @@ Each fixture is a small, self-contained C++ program. Every new pattern or bug fi
 
 The integration suite also checks that missing constraints leave the workload Unknown, and that the front-end version is reported.
 
+### 3.1 Loop-form coverage (`tests/fixtures/cpp/forms/`, BL-201)
+
+Every supported form in [COMPLEXITY_MODEL.md §2](../specifications/COMPLEXITY_MODEL.md#2-supported-loop-forms)
+and every status rule in §3 has a positive case and at least one near miss. `tests/integration/loop_forms_test.cpp`
+is table-driven. For each finding, in source order, it asserts the function, the pattern, the exact time
+expression (or that none is reported), the bound status, the confidence and the leading limitation. It also checks
+the invariant "no expression ⇒ unknown/unsupported with confidence none". The fixtures include no standard headers,
+so the suite is fast and does not depend on the installed C++ library.
+
+| Form | Fixture | Positive cases (expression) | Near misses (expected result) |
+| --- | --- | --- | --- |
+| L1 `i < b`, `++i`/`i++`, assignment init, `!=` unit step | `L01_increasing_unit_step.cpp` | `n`; start 2 → `n - 2`; reversed comparison `n > i` | `!=` with stride (unknown); index written (unsupported); bound written (estimated, low); `double` index (unsupported); bound read from an array (unknown) |
+| L2 `i <= b` | `L02_increasing_inclusive.cpp` | `1..n` → `n` | increasing index with `>=` (unknown) |
+| L3 `i += c` | `L03_constant_stride.cpp` | `0.333333 * (n - 1) + 1`, `0.25 * n + 1` | variable step, zero step (unknown) |
+| L4 `i > b`, `--i`, `!=` | `L04_decreasing_exclusive.cpp` | `n` | variable decrement, `<` with a decreasing index (unknown) |
+| L5 `i >= b`, `i -= c` | `L05_decreasing_inclusive.cpp` | `n + 1`, `0.5 * (n - 1) + 1` | unsigned `>= 0` (unsupported) |
+| L6 `i *= c`, `i <<= k` | `L06_geometric_growth.cpp` | `log_2(n) + 1`, `log_3(n) + 1`, `log_4(n) + 1` | start 0, variable start (unknown) |
+| L7 `i /= c`, `i >>= k` | `L07_geometric_decay.cpp` | `log_2(n) + 1`, `log_10(n) + 1` | stop at `i > 1` (unknown) |
+| L8 `i * i <= n` | `L08_square_root.cpp` | `n^0.5 + 1` (early return gives confidence medium) | stride 2 (unknown) |
+| L9 `while (t--)`, `while (t-- > 0)` | `L09_test_case_loop.cpp` | `t * n`, `t` | counter written (unsupported); `while (--t)` (unknown) |
+| L10 countdown `while` | `L10_countdown_while.cpp` | `x` for `> 0`, truthy, `!= 0`, `>= 1` | two updates, conditional update (unknown) |
+| L11 halving `while` | `L11_halving_while.cpp` | `log_2(x) + 1`; unbraced body `log_10(x) + 1` | `x /= 1`, `x = x / 2` (unknown) |
+| L12 range-for over a named container | `L12_range_for_container.cpp` | `v.size()` (user-defined container, Proven) | temporary range; element used as an inner bound (unknown) |
+| L13 range-for over a constant array | `L13_range_for_array.cpp` | `16`, `8` | — (no meaningful near miss: every array range has a constant size) |
+| Composition (§2.1) | `C01_nesting_and_dependence.cpp` | lower/upper triangles as summations, sequential inner loops `n * (n + m)`, nested log `n * (log_2(n) + 1)` | strided dependent outer loop; one unknown inner loop (unknown nest) |
+| Status rules (§3) | `C02_status_rules.cpp` | user call (estimated, low); library call (proven, medium); early exit (proven, medium); direct recursion (unsupported) | `do-while` (unsupported); `for (;;)` (unknown) |
+
 ## 4. Determinism
 
 - No assertions depend on wall-clock time, CPU speed, thread scheduling or the current date.
@@ -130,7 +157,7 @@ The integration suite also checks that missing constraints leave the workload Un
 | Unsupported syntax: modified index | Finding with `unsupported` status, confidence `none` | **Exists** | `neg_modified_index.cpp`, `ModifiedIndexIsUnsupported` |
 | Unsupported: recursion | `unsupported`, no time expression | **Exists** | `07_naive_fibonacci.cpp` |
 | Unsupported: data-dependent termination | `unknown`, not guessed | **Exists** | `06_binary_search.cpp`, `10_data_dependent_termination.cpp` |
-| Unsupported: `do-while` | `unsupported` | Implemented; **dedicated fixture planned (M2)** | none yet |
+| Unsupported: `do-while` | `unsupported` | **Exists** | `forms/C02_status_rules.cpp` (`do_while`) |
 | Numeric overflow in evaluation | `Overflow` status, never a non-finite number | **Exists** | `Evaluator.OverflowIsReportedNotReturned` |
 | Memory total overflow | Saturates and sets `static_storage_saturated` | **Exists** | `MemoryEstimator.StaticStorageSaturatesInsteadOfOverflowing` |
 | Constraint magnitude above 10^18 or out of range | `invalid_request` with a path | **Exists** | `ConstraintValidation.MagnitudeLimitIsEnforced`, `Protocol.ConstraintValuesAreRangeChecked` |

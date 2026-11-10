@@ -59,7 +59,7 @@ The analyzer runs Clang with `-fsyntax-only` on an in-memory file. Per function 
 | L7 | `for (i = a; i > 0 / i >= 1 / i != 0; i /= c)` or `i >>= k` | `log_c(a) + 1` | `logarithmic-loop` |
 | L8 | `for (i = …; i * i <= b / i * i < b; ++i)` | `b^0.5 + 1` (index assumed to start ≥ 0) | `sqrt-loop` |
 | L9 | `while (t--)`, `while (t-- > 0)` | `t` | `test-case-loop` |
-| L10 | `while (x > 0)`, `while (x)`, `while (x != 0)`, `while (x >= 1)` with exactly one top-level update `x--`/`--x`/`x -= 1` | `x` | `linear-loop` |
+| L10 | `while (x > 0)`, `while (x)`, `while (x != 0)`, `while (x >= 1)` with exactly one top-level update `x--`/`--x`/`x -= 1` (an unbraced body counts as one top-level statement) | `x` | `linear-loop` |
 | L11 | Same conditions with exactly one update `x /= c` (`c ≥ 2`) or `x >>= k` (`1 ≤ k ≤ 30`) | `log_c(x) + 1` | `logarithmic-loop` |
 | L12 | Range-for over a named container `v` | `v.size()` | `range-for-loop` |
 | L13 | Range-for over a constant-size array | its size (constant) | `range-for-loop` |
@@ -123,8 +123,8 @@ Applied per loop and combined with "weakest wins" (proven > estimated > unknown 
 | Unsigned index compared `>= 0` | `unsupported` | `unsigned index compared with >= 0 never terminates` |
 | `do … while` | `unsupported` | `do-while loops are not modelled yet` |
 | Bound variable possibly written in the body | `estimated` | limitation `bound variable 'n' may be modified inside the loop; the count assumes its initial value` |
-| Call to a user-defined function (defined in the main file) in the nest | `estimated` | limitation `calls user function 'f'; its cost is not included (interprocedural analysis is not implemented)` |
-| Library calls in the nest (excluding operator calls and constructors) | unchanged | limitation `per-iteration cost of library calls is not included: …` (up to 6 names) |
+| Call to a user-defined function (defined in the main file) in the nest, excluding the implicit `begin()`/`end()` calls of a range-for header | `estimated` | limitation `calls user function 'f'; its cost is not included (interprocedural analysis is not implemented)` |
+| Library calls in the nest (excluding operator calls, constructors and the implicit `begin()`/`end()` calls of a range-for header) | unchanged | limitation `per-iteration cost of library calls is not included: …` (up to 6 names) |
 | Early exit (`break`, `return`, `goto`, `throw`) | unchanged (still an upper bound) | assumption, see §2.2 |
 | Non-canonical `for`, unsupported bound expression, other `while` shapes (e.g. `while (lo < hi)` binary search, Collatz) | `unknown` | `data-dependent termination: the iteration count depends on values computed in the loop` or a more specific reason |
 

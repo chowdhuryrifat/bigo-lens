@@ -12,11 +12,11 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-201: Fixture coverage audit with near-miss negatives](#bl-201-fixture-coverage-audit-with-near-miss-negatives).**
+> **[BL-202: Recurrence-solver interface](#bl-202-recurrence-solver-interface).**
 >
-> BL-106 (CI green) and BL-108 (self-contained Linux `.vsix`) are done. M2 changes the analyzer, so full fixture
-> coverage of every supported loop form must come first. Without it, regressions in classification would go
-> unnoticed.
+> BL-201 is done: every supported loop form has positive and near-miss fixtures (`tests/fixtures/cpp/forms/`).
+> The audit found two analyzer bugs, both fixed (unbraced `while` bodies; range-for header calls counted as user
+> calls). Next is the recurrence representation that BL-203 will solve.
 
 ## Dependency graph
 
@@ -324,7 +324,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-201: Fixture coverage audit with near-miss negatives
 
-- **Status:** Not started
+- **Status:** Done. 15 fixture files under `tests/fixtures/cpp/forms/`, a table-driven `tests/integration/loop_forms_test.cpp`, and the coverage table in TESTING_STRATEGY.md §3.1. Bugs found and fixed: unbraced `while` bodies in L10/L11 were Unknown; implicit range-for `begin()`/`end()` calls were counted as user-function calls.
 - **Priority:** P0
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
