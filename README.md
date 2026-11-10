@@ -31,7 +31,7 @@ status and the confidence.
 | Constraint workload: variable bounds, **sum constraints across test cases** (exact packing for superadditive costs) | Implemented |
 | Product and linear constraints | Parsed and validated; not yet used to tighten bounds |
 | Static memory: global/static storage (exact), local arrays, sized `std::vector` buffers | Implemented (lower bounds only) |
-| Recursion | Detected and reported as *Unsupported*; recurrences are not solved |
+| Recursion | Detected; the recurrence is extracted and explained (e.g. `T(n) = 2 T(n/2) + O(n)`), but not solved yet, so the bound stays *Unsupported* |
 | STL cost model (vector, map, set, unordered_map average/worst, priority_queue, sort, lower_bound) | Data table only; not yet applied to findings |
 | Time feasibility | Always *Unknown* until a runtime estimate exists (needs benchmarking, M4) |
 | Benchmarking | Statistics and growth-model fitting library only. The `benchmark` action returns `not_implemented` |

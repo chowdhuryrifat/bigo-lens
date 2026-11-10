@@ -2,10 +2,13 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "bigolens/analyzers/source_analyzer.hpp"
+#include "bigolens/complexity/recurrence.hpp"
 
 namespace bigolens::api {
 
@@ -15,6 +18,9 @@ class RequestHandler {
  public:
   /// `analyzer` may be null when the engine was built without a frontend.
   explicit RequestHandler(analyzers::SourceAnalyzer* analyzer) noexcept : analyzer_(analyzer) {}
+  /// `solvers` (non-owning, may be empty) resolve extracted recurrences, in order.
+  RequestHandler(analyzers::SourceAnalyzer* analyzer, std::vector<const complexity::RecurrenceSolver*> solvers)
+      : analyzer_(analyzer), solvers_(std::move(solvers)) {}
 
   [[nodiscard]] nlohmann::json handle(const nlohmann::json& request) const;
   /// Parses raw text first; malformed JSON yields a "malformed_json" error response.
@@ -25,6 +31,7 @@ class RequestHandler {
   [[nodiscard]] nlohmann::json handleParsed(const nlohmann::json& request) const;
 
   analyzers::SourceAnalyzer* analyzer_;
+  std::vector<const complexity::RecurrenceSolver*> solvers_;
 };
 
 }  // namespace bigolens::api

@@ -64,6 +64,11 @@ class Expr {
 /// Variables that occur free (Summation indices are bound within their body).
 [[nodiscard]] std::set<std::string> freeVariables(const Expr& expr);
 
+/// Replaces free occurrences of variable `name` by `replacement` (variables
+/// bound by an enclosing Summation with the same name are left untouched).
+/// The result is rebuilt with the simplifying factories.
+[[nodiscard]] ExprPtr substitute(const ExprPtr& expr, const std::string& name, const ExprPtr& replacement);
+
 /// Human-readable rendering, e.g. "sum_{i=0}^{n - 1} i". Not a parse format.
 [[nodiscard]] std::string toString(const Expr& expr);
 

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "bigolens/complexity/expression.hpp"
+#include "bigolens/complexity/recurrence.hpp"
 #include "bigolens/models/types.hpp"
 
 namespace bigolens::models {
@@ -40,6 +41,10 @@ struct Finding {
   std::vector<std::string> assumptions;
   std::vector<std::string> limitations;
   std::string provenance;  ///< Which analyzer produced the finding.
+
+  /// Recurrence extracted for Recursion findings; resolved (solved or
+  /// explained) by analyzers::resolveRecurrences before serialisation.
+  std::optional<complexity::Recurrence> recurrence;
 };
 
 }  // namespace bigolens::models

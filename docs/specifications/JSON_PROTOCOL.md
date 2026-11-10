@@ -178,6 +178,7 @@ Features reported by engine 0.1.0:
 | `while_countdown_loops` | `partial` |
 | `range_for_loops` | `partial` |
 | `recursion_analysis` | `unsupported` |
+| `recurrence_extraction` | `partial` (direct recursion; reported in `limitations`, not solved) |
 | `stl_cost_model` | `data_only` |
 | `interprocedural_analysis` | `unsupported` |
 | `constraint_workload` | `partial` |

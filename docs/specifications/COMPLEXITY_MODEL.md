@@ -232,46 +232,34 @@ follow-up). Until then, library calls appear only as limitations.
 
 ## 9. Recursion
 
-**Implemented:** detection of direct self-calls (canonical declaration identity). Each recursive function yields one
-`recursion` finding with pattern `direct-recursion` or `multiple-direct-recursion`, status `unsupported`,
-confidence `none`, `time: null`, provenance `clang-recursion-detector`, limitation "time and stack depth of recursive
-functions are not estimated yet (milestone M2+)". Mutual recursion is not detected.
+**Implemented (BL-202): detection and recurrence extraction.** Direct self-calls are found by canonical
+declaration identity; mutual recursion is not detected. Each recursive function yields one `recursion` finding:
+pattern `direct-recursion` or `multiple-direct-recursion`, provenance `clang-recursion-detector`. The front end
+extracts a front-end-independent `complexity::Recurrence`
+(`engine/include/bigolens/complexity/recurrence.hpp`):
 
-**Planned (M2 follow-up) — recurrence-analysis interface sketch.** Not implemented; names are provisional.
+| Part | How it is determined |
+| --- | --- |
+| Size measure `n` | The first integer parameter `p` whose argument at every self-call is linear in `p` alone and shrinks: `p − c` (c ≥ 1, **Decrement**) or `β·p + γ` with `β = 1/b`, `b ≥ 2` an integer, `γ ≤ 1` (**Divide**). Otherwise a pair `(lo, hi)` of integer parameters whose new difference `hi' − lo'` is linear, translation invariant, and shrinks in the same way, giving `n = hi − lo`. Arguments may go through locals that are never written (`const int mid = lo + (hi − lo) / 2`). Linear forms are determined exactly from 2–3 evaluations; integer division is treated as real division, which is recorded as an assumption. |
+| Calls | One `RecursiveCall` per self-call site, with its change (Decrement / Divide / Unknown), the arguments as written, and whether it is inside a loop. |
+| Calls per invocation | The largest number of self-calls on any single execution path. `if`/`else`, `?:` and `return` are path-sensitive, so binary search has two call sites but at most one call per invocation. A self-call inside a loop makes it unknown. |
+| Work `f(n)` | The sum of the function's loop-nest costs (1 if there are none), rewritten in terms of `n`. For intervals, `lo → 0, hi → n`, checked to depend only on `hi − lo`. Unknown if a loop has an unknown count or contains a self-call. Calls to other user functions are listed as not included. |
 
-```cpp
-namespace bigolens::complexity {
+Without a solver the finding stays `unsupported` / confidence `none` / `time: null`. Its limitations start with the
+recurrence and the reason, for example:
 
-/// T(size) = Σ_k calls[k].count · T(calls[k].argument) + work(size), for size > base.
-struct RecursiveCall {
-  ExprPtr argument;      // e.g. n - 1, n / 2 (in terms of the size variable)
-  ExprPtr count;         // number of such calls per invocation (usually constant)
-};
-
-struct Recurrence {
-  std::string sizeVariable;          // the parameter that decreases
-  std::vector<RecursiveCall> calls;
-  ExprPtr work;                      // non-recursive cost per invocation (structural count)
-  ExprPtr baseThreshold;             // recursion stops when size <= baseThreshold
-};
-
-enum class RecurrenceMethod { MasterTheorem, LinearDecrement, Unsolved };
-
-struct RecurrenceSolution {
-  models::BoundStatus status;        // proven only when the extraction and the method's preconditions hold
-  RecurrenceMethod method;
-  ExprPtr callCount;                 // number of invocations (for stack/time)
-  ExprPtr totalWork;                 // structural count
-  ExprPtr maxDepth;                  // for stack-depth estimation
-  std::vector<std::string> assumptions;
-};
-
-[[nodiscard]] RecurrenceSolution solve(const Recurrence& recurrence);
-
-}  // namespace bigolens::complexity
+```text
+extracted recurrence: T(n) = T(n - 1) + T(n - 2) + O(1)
+recurrence solving is not implemented yet; no bound is reported
 ```
 
-Planned rules: extraction must prove that the size argument strictly decreases on every path; memoised recursion
-(lookup before recursing) must be detected or the result is `estimated`; `fib(n−1) + fib(n−2)`-style recurrences
-produce an exponential bound that the asymptotic module must learn to represent, or `asymptotic: null`. Anything not
-matched stays `unsupported`.
+Other renderings: `T(n) = 2 T(n/2) + O(n), where n = hi - lo` (merge sort); `T(n) = at most 1 of {T(n/2),
+T(n/2)} + O(1), where n = hi - lo` (binary search); `T(m) = T(m - 1) + O(1), where m = limit - n` (counting up;
+the symbol avoids clashing with a source identifier `n`). Shapes that are not recognised render as `T(?)`, with "no
+parameter that shrinks at every call".
+
+**Solving (planned, BL-203).** `complexity::RecurrenceSolver` implementations, passed to the `RequestHandler`,
+are tried in order by `analyzers::resolveRecurrences`. A solution sets the time expression, status and confidence,
+and moves the recurrence into `assumptions`. Planned solvers: the master theorem for `a·T(n/b) + f(n)` and
+summation for `T(n − c) + f(n)`. Fibonacci-like multiple subtractive recursion stays unsupported. The capability
+`recurrence_extraction` is `partial`; `recursion_analysis` stays `unsupported` until a solver exists.

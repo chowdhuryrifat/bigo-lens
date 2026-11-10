@@ -139,6 +139,9 @@ TEST_F(FrontendPipeline, NaiveFibonacciRecursionIsUnsupported) {
   EXPECT_EQ(f["pattern"], "multiple-direct-recursion");
   EXPECT_EQ(f["bound_status"], "unsupported");
   EXPECT_TRUE(f["time"].is_null());
+  // BL-202: two calls with arguments n - 1 and n - 2 and constant non-recursive work.
+  ASSERT_FALSE(f["limitations"].empty());
+  EXPECT_EQ(f["limitations"][0], "extracted recurrence: T(n) = T(n - 1) + T(n - 2) + O(1)");
 }
 
 TEST_F(FrontendPipeline, LinearSpaceVectorAndStaticArray) {

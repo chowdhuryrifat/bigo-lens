@@ -38,3 +38,13 @@ TEST(Expression, AllKindsRender) {
   EXPECT_FALSE(toString(*maximum({n, variable("m")})).empty());
   EXPECT_NE(toString(*summation("i", constant(0), n, variable("i"))).find("sum"), std::string::npos);
 }
+
+TEST(Expression, SubstituteReplacesFreeOccurrencesOnly) {
+  const auto e = add({variable("hi"), multiply({constant(-1), variable("lo")}), constant(1)});
+  const auto shifted = substitute(substitute(e, "lo", constant(0)), "hi", variable("n"));
+  EXPECT_EQ(toString(*shifted), "n + 1");
+  // A summation index with the same name shadows the substituted variable in its body.
+  const auto sum = summation("i", constant(0), variable("i"), variable("i"));
+  const auto replaced = substitute(sum, "i", variable("n"));
+  EXPECT_EQ(freeVariables(*replaced), std::set<std::string>{"n"});
+}

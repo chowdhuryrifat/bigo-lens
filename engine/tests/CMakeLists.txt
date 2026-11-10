@@ -7,6 +7,7 @@ add_executable(
   feasibility_test.cpp
   memory_estimator_test.cpp
   protocol_test.cpp
+  recurrence_test.cpp
   stl_cost_model_test.cpp
   workload_test.cpp)
 target_link_libraries(bigolens_engine_tests PRIVATE bigolens_core GTest::gtest_main)

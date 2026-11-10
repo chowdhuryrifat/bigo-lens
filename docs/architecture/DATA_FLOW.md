@@ -212,7 +212,7 @@ The command **BigO Lens: Show Engine Capabilities** (`bigoLens.showCapabilities`
 The engine validates it and returns `results` **without using the frontend**. The test `CapabilitiesSucceedWithoutFrontend` shows this works on a build without Clang. The results contain:
 
 - `actions`: `["capabilities", "analyze", "benchmark"]`. `benchmark` is listed because the protocol defines it, but its feature status is `not_implemented`.
-- `features`: `loop_analysis: partial`, `while_countdown_loops: partial`, `range_for_loops: partial`, `recursion_analysis: unsupported`, `stl_cost_model: data_only`, `interprocedural_analysis: unsupported`, `constraint_workload: partial`, `static_memory_estimate: partial`, `time_feasibility: requires_runtime_estimate`, `benchmark: not_implemented`.
+- `features`: `loop_analysis: partial`, `while_countdown_loops: partial`, `range_for_loops: partial`, `recursion_analysis: unsupported`, `recurrence_extraction: partial`, `stl_cost_model: data_only`, `interprocedural_analysis: unsupported`, `constraint_workload: partial`, `static_memory_estimate: partial`, `time_feasibility: requires_runtime_estimate`, `benchmark: not_implemented`.
 - `stl_cost_model`: the table from `estimation::stlCostTable()`, with each entry's `container`, `operation`, `average`, `worst`, `amortized` and `note`.
 
 `engine.frontend` tells the client whether `analyze` is available: it is a Clang version string, or `null` when the engine was built with `BIGOLENS_ENABLE_CLANG=OFF`. The extension shows the results in the output channel.

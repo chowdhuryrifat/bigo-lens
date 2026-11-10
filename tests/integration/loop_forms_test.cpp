@@ -57,7 +57,7 @@ const std::vector<FormCase>& formCases() {
            {"endless_for", "data-dependent-loop", "unknown", "none", nullptr,
             "loop is not in canonical counted form (init"},
            {"factorial", "direct-recursion", "unsupported", "none", nullptr,
-            "time and stack depth of recursive functions are not estimate"},
+            "extracted recurrence: T(n) = T(n - 1) + O(1)"},
        }},
       {"L01_increasing_unit_step.cpp",
        {
@@ -173,6 +173,30 @@ const std::vector<FormCase>& formCases() {
        {
            {"over_local_array", "range-for-loop", "proven", "high", "16", ""},
            {"over_array_reference", "range-for-loop", "proven", "high", "8", ""},
+       }},
+      {"R01_recursion.cpp",
+       {
+           {"linear_sum", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = T(n - 1) + O(1)"},
+           {"halving_depth", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = T(n/2) + O(1)"},
+           {"binary_search", "multiple-direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = at most 1 of {T(n/2), T(n/2)} + O(1), where n = hi - lo"},
+           {"merge_sort", "multiple-direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = 2 T(n/2) + O(n), where n = hi - lo"},
+           {"merge_sort", "linear-loop", "proven", "high", "hi - lo", ""},
+           {"fibonacci", "multiple-direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = T(n - 1) + T(n - 2) + O(1)"},
+           {"count_up", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(m) = T(m - 1) + O(1), where m = limit - n"},
+           {"near_miss_growing", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = T(?) + O(1), with no parameter that shrinks at every call"},
+           {"near_miss_dfs", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = (calls inside a loop: T(?)) + f(n) (unknown), with no parameter that shrinks "
+            "at every call"},
+           {"near_miss_dfs", "linear-loop", "estimated", "low", "count", "calls user function 'near_miss_dfs'"},
+           {"near_miss_variable_divisor", "direct-recursion", "unsupported", "none", nullptr,
+            "extracted recurrence: T(n) = T(?) + O(1), with no parameter that shrinks at every call"},
        }},
   };
   return cases;

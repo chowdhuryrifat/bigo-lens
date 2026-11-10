@@ -9,11 +9,13 @@ configure_file(src/version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/bigolen
 
 add_library(
   bigolens_core STATIC
+  src/analyzers/recurrence_resolution.cpp
   src/api/protocol.cpp
   src/api/request_handler.cpp
   src/complexity/asymptotic.cpp
   src/complexity/evaluator.cpp
   src/complexity/expression.cpp
+  src/complexity/recurrence.cpp
   src/constraints/constraint_set.cpp
   src/constraints/workload.cpp
   src/estimation/memory_estimator.cpp

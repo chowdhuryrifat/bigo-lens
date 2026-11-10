@@ -35,6 +35,11 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 - Loop-form coverage fixtures (BL-201): `tests/fixtures/cpp/forms/` has positive and near-miss cases for every
   supported form and status rule, checked by the table-driven `tests/integration/loop_forms_test.cpp`.
 
+- Recurrence extraction for direct recursion (BL-202). The extracted recurrence is reported first in the
+  finding's limitations, e.g. `T(n) = 2 T(n/2) + O(n), where n = hi - lo` for merge sort. Adds the solver interface
+  `complexity::RecurrenceSolver` (no solvers yet) and the capability `recurrence_extraction: partial`.
+- `complexity::substitute` for symbolic expressions.
+
 ### Changed
 
 - Development and CI tooling now require Node.js 22 (Node 20 reached end of life). Upgraded ESLint 10,

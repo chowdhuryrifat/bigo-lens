@@ -12,11 +12,11 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-202: Recurrence-solver interface](#bl-202-recurrence-solver-interface).**
+> **[BL-203: Solve common recurrences](#bl-203-solve-common-recurrences).**
 >
-> BL-201 is done: every supported loop form has positive and near-miss fixtures (`tests/fixtures/cpp/forms/`).
-> The audit found two analyzer bugs, both fixed (unbraced `while` bodies; range-for header calls counted as user
-> calls). Next is the recurrence representation that BL-203 will solve.
+> BL-202 is done: recursive functions carry an extracted, front-end-independent recurrence (size measure, call
+> shapes, calls per invocation, non-recursive work), and a `RecurrenceSolver` interface is wired into the request
+> handler. BL-203 adds the first solvers.
 
 ## Dependency graph
 
@@ -35,8 +35,8 @@ flowchart TD
   BL107["BL-107 Branch protection + reporting"]:::todo
   BL108["BL-108 Bundle engine in .vsix"]:::done
 
-  BL201["BL-201 Fixture coverage audit"]:::crit
-  BL202["BL-202 Recurrence interface"]:::crit
+  BL201["BL-201 Fixture coverage audit"]:::done
+  BL202["BL-202 Recurrence interface"]:::done
   BL203["BL-203 Recurrence solving"]:::crit
   BL204["BL-204 Interprocedural cost"]:::todo
   BL205["BL-205 Apply STL cost model"]:::todo
@@ -345,7 +345,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-202: Recurrence-solver interface
 
-- **Status:** Not started
+- **Status:** Done. `complexity/recurrence.hpp` (types, `describe`, `RecurrenceSolver`, `solveRecurrence`), `analyzers/recurrence_resolution.hpp`, extraction in the Clang front end (single shrinking parameter or `(lo, hi)` interval, path-sensitive call counting, non-recursive work), fixture `forms/R01_recursion.cpp`. Fibonacci extracts `T(n) = T(n - 1) + T(n - 2) + O(1)`. The protocol is unchanged apart from the additive capability `recurrence_extraction: partial`.
 - **Priority:** P0
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-201

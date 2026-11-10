@@ -267,6 +267,43 @@ std::string render(const Expr& expr) {
 
 }  // namespace
 
+ExprPtr substitute(const ExprPtr& expr, const std::string& name, const ExprPtr& replacement) {
+  requireNonNull(expr, "substitute expression");
+  requireNonNull(replacement, "substitute replacement");
+  const auto& ops = expr->operands();
+  auto rebuild = [&]() {
+    std::vector<ExprPtr> out;
+    out.reserve(ops.size());
+    for (const auto& op : ops) {
+      out.push_back(substitute(op, name, replacement));
+    }
+    return out;
+  };
+  switch (expr->kind()) {
+    case ExprKind::Constant:
+      return expr;
+    case ExprKind::Variable:
+      return expr->name() == name ? replacement : expr;
+    case ExprKind::Add:
+      return add(rebuild());
+    case ExprKind::Multiply:
+      return multiply(rebuild());
+    case ExprKind::Maximum:
+      return maximum(rebuild());
+    case ExprKind::Power:
+      return power(substitute(ops[0], name, replacement), expr->number());
+    case ExprKind::Logarithm:
+      return logarithm(substitute(ops[0], name, replacement), expr->number());
+    case ExprKind::Summation: {
+      ExprPtr lower = substitute(ops[0], name, replacement);
+      ExprPtr upper = substitute(ops[1], name, replacement);
+      ExprPtr body = expr->name() == name ? ops[2] : substitute(ops[2], name, replacement);
+      return summation(expr->name(), std::move(lower), std::move(upper), std::move(body));
+    }
+  }
+  return expr;
+}
+
 std::set<std::string> freeVariables(const Expr& expr) {
   std::set<std::string> bound;
   std::set<std::string> out;

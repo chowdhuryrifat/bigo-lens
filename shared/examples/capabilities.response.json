@@ -20,6 +20,7 @@
       "interprocedural_analysis": "unsupported",
       "loop_analysis": "partial",
       "range_for_loops": "partial",
+      "recurrence_extraction": "partial",
       "recursion_analysis": "unsupported",
       "static_memory_estimate": "partial",
       "stl_cost_model": "data_only",

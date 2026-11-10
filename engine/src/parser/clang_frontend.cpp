@@ -27,15 +27,18 @@
 #include <clang/Basic/Version.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendAction.h>
+#include <clang/Lex/Lexer.h>
 #include <clang/Tooling/Tooling.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/VirtualFileSystem.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -44,7 +47,10 @@
 #include <utility>
 #include <vector>
 
+#include "bigolens/complexity/asymptotic.hpp"
+#include "bigolens/complexity/evaluator.hpp"
 #include "bigolens/complexity/expression.hpp"
+#include "bigolens/complexity/recurrence.hpp"
 
 #ifndef BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR
 #define BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR ""
@@ -890,6 +896,468 @@ class LoopAnalyzer {
 };
 
 // ---------------------------------------------------------------------------
+// Recurrence extraction (direct recursion)
+// ---------------------------------------------------------------------------
+
+struct SelfCallSite {
+  const clang::CallExpr* call;
+  bool insideLoop;
+};
+
+/// Extracts T(n) = sum T(call sizes) + work(n) for a directly recursive
+/// function. Only the shapes documented in COMPLEXITY_MODEL.md §9 are
+/// classified; everything else is left as SizeChange::Unknown.
+class RecurrenceExtractor {
+ public:
+  RecurrenceExtractor(clang::ASTContext& ctx, const clang::FunctionDecl& function)
+      : ctx_(ctx), function_(function), canonical_(function.getCanonicalDecl()) {}
+
+  [[nodiscard]] std::vector<SelfCallSite> selfCalls() const {
+    std::vector<SelfCallSite> sites;
+    collect(function_.getBody(), false, sites);
+    return sites;
+  }
+
+  [[nodiscard]] cx::Recurrence extract(const std::vector<SelfCallSite>& sites,
+                                       const std::function<models::SourceLocation(const clang::Stmt&)>& where) {
+    cx::Recurrence recurrence;
+    recurrence.function = function_.getNameAsString();
+    recurrence.maxCallsPerInvocation = pathCalls(function_.getBody());
+    for (const auto& site : sites) {
+      cx::RecursiveCall call;
+      call.insideLoop = site.insideLoop;
+      call.argument = argumentsAsWritten(*site.call);
+      call.location = where(*site.call);
+      recurrence.calls.push_back(std::move(call));
+    }
+
+    if (!classifySingleParameter(sites, recurrence) && !classifyInterval(sites, recurrence)) {
+      for (auto& call : recurrence.calls) {
+        call.change = cx::SizeChange::Unknown;
+      }
+    }
+    if (usesIntegerDivision_) {
+      recurrence.assumptions.push_back("integer division in call arguments is treated as real division");
+    }
+    computeWork(recurrence);
+    return recurrence;
+  }
+
+ private:
+  bool isSelfCall(const clang::Stmt* stmt) const {
+    const auto* call = llvm::dyn_cast_or_null<clang::CallExpr>(stmt);
+    const clang::FunctionDecl* callee = call ? call->getDirectCallee() : nullptr;
+    return callee != nullptr && callee->getCanonicalDecl() == canonical_;
+  }
+
+  void collect(const clang::Stmt* stmt, bool inLoop, std::vector<SelfCallSite>& out) const {
+    if (stmt == nullptr) {
+      return;
+    }
+    if (isSelfCall(stmt)) {
+      out.push_back({llvm::cast<clang::CallExpr>(stmt), inLoop});
+    }
+    const bool loop = inLoop || isLoop(stmt);
+    for (const clang::Stmt* child : stmt->children()) {
+      collect(child, loop, out);
+    }
+  }
+
+  std::size_t countSelfCalls(const clang::Stmt* stmt) const {
+    std::vector<SelfCallSite> sites;
+    collect(stmt, false, sites);
+    return sites.size();
+  }
+
+  /// Self-calls along the paths through a statement: the most calls on a path
+  /// that falls through to the next statement and on a path that returns.
+  /// kNever marks "no such path"; `unknown` is set when a loop contains a call.
+  struct PathCalls {
+    static constexpr int kNever = -1;
+    int fall = 0;
+    int exit = kNever;
+    bool unknown = false;
+  };
+
+  static int plus(int a, int b) { return a == PathCalls::kNever || b == PathCalls::kNever ? PathCalls::kNever : a + b; }
+
+  /// Statements in sequence: a return in an earlier statement ends the path.
+  static PathCalls sequence(const PathCalls& first, const PathCalls& second) {
+    PathCalls out;
+    out.unknown = first.unknown || second.unknown;
+    out.fall = plus(first.fall, second.fall);
+    out.exit = std::max(first.exit, plus(first.fall, second.exit));
+    return out;
+  }
+
+  /// Exclusive alternatives after a shared head (if/else, ?:).
+  static PathCalls alternatives(const PathCalls& head, const PathCalls& a, const PathCalls& b) {
+    PathCalls choice;
+    choice.unknown = a.unknown || b.unknown;
+    choice.fall = std::max(a.fall, b.fall);
+    choice.exit = std::max(a.exit, b.exit);
+    return sequence(head, choice);
+  }
+
+  PathCalls paths(const clang::Stmt* stmt) const {
+    PathCalls out;
+    if (stmt == nullptr) {
+      return out;
+    }
+    if (isLoop(stmt)) {
+      out.unknown = countSelfCalls(stmt) != 0;
+      return out;
+    }
+    if (const auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
+      PathCalls head = sequence(paths(ifStmt->getInit()), paths(ifStmt->getConditionVariableDeclStmt()));
+      head = sequence(head, paths(ifStmt->getCond()));
+      return alternatives(head, paths(ifStmt->getThen()), paths(ifStmt->getElse()));
+    }
+    if (const auto* conditional = llvm::dyn_cast<clang::ConditionalOperator>(stmt)) {
+      return alternatives(paths(conditional->getCond()), paths(conditional->getTrueExpr()),
+                          paths(conditional->getFalseExpr()));
+    }
+    if (const auto* ret = llvm::dyn_cast<clang::ReturnStmt>(stmt)) {
+      const PathCalls value = paths(ret->getRetValue());
+      out.unknown = value.unknown;
+      out.fall = PathCalls::kNever;
+      out.exit = std::max(value.fall, value.exit);
+      return out;
+    }
+    // Children evaluated in order (compound statements, expressions).
+    for (const clang::Stmt* child : stmt->children()) {
+      out = sequence(out, paths(child));
+    }
+    if (isSelfCall(stmt)) {
+      out = sequence(out, PathCalls{1, PathCalls::kNever, false});
+    }
+    return out;
+  }
+
+  /// Largest number of self-calls on any single path; empty if a loop contains one.
+  std::optional<int> pathCalls(const clang::Stmt* stmt) const {
+    const PathCalls result = paths(stmt);
+    if (result.unknown) {
+      return std::nullopt;
+    }
+    return std::max({0, result.fall, result.exit});
+  }
+
+  std::string argumentsAsWritten(const clang::CallExpr& call) const {
+    const auto& sm = ctx_.getSourceManager();
+    std::string out;
+    for (unsigned i = 0; i < call.getNumArgs(); ++i) {
+      const clang::SourceRange range = call.getArg(i)->getSourceRange();
+      const auto text =
+          clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(range), sm, ctx_.getLangOpts());
+      out += (i == 0 ? "" : ", ") + text.str();
+    }
+    return out;
+  }
+
+  bool isOwnParameter(const clang::VarDecl* var) const {
+    const auto* param = llvm::dyn_cast_or_null<clang::ParmVarDecl>(var);
+    return param != nullptr && param->getDeclContext() == &function_;
+  }
+
+  /// Integer expression over the function's parameters; locals with an
+  /// initializer that are never written are substituted (e.g. mid).
+  cx::ExprPtr toExpr(const clang::Expr* expr, int substitutions = 0) {
+    if (expr == nullptr || substitutions > 4) {
+      return nullptr;
+    }
+    if (auto value = constantValue(expr, ctx_)) {
+      return cx::constant(static_cast<double>(*value));
+    }
+    const clang::Expr* e = expr->IgnoreParenCasts();
+    if (const clang::VarDecl* var = referencedVar(e)) {
+      if (!var->getType()->isIntegerType()) {
+        return nullptr;
+      }
+      if (isOwnParameter(var)) {
+        return cx::variable(var->getNameAsString());
+      }
+      if (var->hasLocalStorage() && var->getInit() != nullptr && !mayModify(function_.getBody(), var)) {
+        return toExpr(var->getInit(), substitutions + 1);
+      }
+      return nullptr;
+    }
+    if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(e)) {
+      cx::ExprPtr lhs = toExpr(binary->getLHS(), substitutions);
+      cx::ExprPtr rhs = toExpr(binary->getRHS(), substitutions);
+      if (!lhs || !rhs) {
+        return nullptr;
+      }
+      const bool rhsConstant = rhs->kind() == cx::ExprKind::Constant;
+      switch (binary->getOpcode()) {
+        case clang::BO_Add:
+          return cx::add({lhs, rhs});
+        case clang::BO_Sub:
+          return cx::subtract(lhs, rhs);
+        case clang::BO_Mul:
+          return cx::multiply({lhs, rhs});
+        case clang::BO_Div:
+          if (rhsConstant && rhs->number() > 0.0) {
+            usesIntegerDivision_ = true;
+            return cx::multiply({lhs, cx::constant(1.0 / rhs->number())});
+          }
+          return nullptr;
+        case clang::BO_Shr:
+          if (rhsConstant && rhs->number() >= 1.0 && rhs->number() <= 30.0) {
+            usesIntegerDivision_ = true;
+            return cx::multiply({lhs, cx::constant(1.0 / std::ldexp(1.0, static_cast<int>(rhs->number())))});
+          }
+          return nullptr;
+        default:
+          return nullptr;
+      }
+    }
+    return nullptr;
+  }
+
+  /// value(expr) with the given bindings, or nullopt.
+  static std::optional<double> at(const cx::ExprPtr& expr, const cx::Bindings& bindings) {
+    const auto result = cx::evaluate(*expr, bindings);
+    return result.ok() ? std::optional<double>(result.value) : std::nullopt;
+  }
+
+  /// True if expr is at most linear (the converter emits only +, -, constant
+  /// multiples and products; the degree check excludes products of variables).
+  static bool isLinear(const cx::ExprPtr& expr) {
+    const auto bound = cx::asymptoticUpperBound(*expr);
+    if (!bound) {
+      return false;
+    }
+    for (const auto& term : bound->terms) {
+      double degree = 0.0;
+      for (const auto& [name, factor] : term) {
+        degree += factor.power;
+        if (factor.logPower != 0.0) {
+          return false;
+        }
+      }
+      if (degree > 1.0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// newSize = beta * n + gamma (exact for linear forms) -> change.
+  static void classify(double beta, double gamma, cx::RecursiveCall& call) {
+    constexpr double kEps = 1e-9;
+    call.change = cx::SizeChange::Unknown;
+    if (std::fabs(beta - 1.0) < kEps && gamma <= -1.0 + kEps) {
+      call.change = cx::SizeChange::Decrement;
+      call.amount = -gamma;
+    } else if (beta > kEps && beta <= 0.5 + kEps && gamma <= 1.0 + kEps) {
+      const double b = 1.0 / beta;
+      if (std::fabs(b - std::round(b)) < 1e-6) {
+        call.change = cx::SizeChange::Divide;
+        call.amount = std::round(b);
+      }
+    }
+  }
+
+  bool allClassified(const cx::Recurrence& recurrence) const {
+    return std::all_of(recurrence.calls.begin(), recurrence.calls.end(),
+                       [](const cx::RecursiveCall& c) { return c.change != cx::SizeChange::Unknown; });
+  }
+
+  /// One integer parameter p with every call argument at that position linear
+  /// in p alone and shrinking: p - c or p / b.
+  bool classifySingleParameter(const std::vector<SelfCallSite>& sites, cx::Recurrence& recurrence) {
+    for (unsigned k = 0; k < function_.getNumParams(); ++k) {
+      const clang::ParmVarDecl* param = function_.getParamDecl(k);
+      if (!param->getType()->isIntegerType() || param->getName().empty()) {
+        continue;
+      }
+      const std::string name = param->getNameAsString();
+      bool ok = true;
+      for (std::size_t i = 0; i < sites.size() && ok; ++i) {
+        const clang::CallExpr& call = *sites[i].call;
+        if (k >= call.getNumArgs()) {
+          ok = false;
+          break;
+        }
+        cx::ExprPtr arg = toExpr(call.getArg(k));
+        if (!arg || !isLinear(arg)) {
+          ok = false;
+          break;
+        }
+        const auto free = cx::freeVariables(*arg);
+        if (!(free.empty() || (free.size() == 1 && free.count(name) == 1))) {
+          ok = false;
+          break;
+        }
+        const auto v0 = at(arg, {{name, 0.0}});
+        const auto v1 = at(arg, {{name, 1.0}});
+        if (!v0 || !v1) {
+          ok = false;
+          break;
+        }
+        classify(*v1 - *v0, *v0, recurrence.calls[i]);
+        ok = recurrence.calls[i].change != cx::SizeChange::Unknown;
+      }
+      if (ok && !sites.empty()) {
+        recurrence.size = name;
+        sizeParams_ = {name};
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Two integer parameters (lo, hi) whose difference shrinks at every call:
+  /// the new difference is linear and translation invariant, beta*(hi-lo)+gamma.
+  bool classifyInterval(const std::vector<SelfCallSite>& sites, cx::Recurrence& recurrence) {
+    const unsigned params = function_.getNumParams();
+    for (unsigned i = 0; i < params; ++i) {
+      for (unsigned j = 0; j < params; ++j) {
+        if (i == j || !function_.getParamDecl(i)->getType()->isIntegerType() ||
+            !function_.getParamDecl(j)->getType()->isIntegerType()) {
+          continue;
+        }
+        const std::string lo = function_.getParamDecl(i)->getNameAsString();
+        const std::string hi = function_.getParamDecl(j)->getNameAsString();
+        if (lo.empty() || hi.empty()) {
+          continue;
+        }
+        bool ok = true;
+        for (std::size_t c = 0; c < sites.size() && ok; ++c) {
+          const clang::CallExpr& call = *sites[c].call;
+          if (std::max(i, j) >= call.getNumArgs()) {
+            ok = false;
+            break;
+          }
+          cx::ExprPtr newLo = toExpr(call.getArg(i));
+          cx::ExprPtr newHi = toExpr(call.getArg(j));
+          if (!newLo || !newHi) {
+            ok = false;
+            break;
+          }
+          cx::ExprPtr size = cx::subtract(newHi, newLo);
+          const auto free = cx::freeVariables(*size);
+          if (!isLinear(size) ||
+              std::any_of(free.begin(), free.end(), [&](const std::string& v) { return v != lo && v != hi; })) {
+            ok = false;
+            break;
+          }
+          const auto g = at(size, {{lo, 0.0}, {hi, 0.0}});
+          const auto a = at(size, {{lo, 1.0}, {hi, 0.0}});
+          const auto b = at(size, {{lo, 0.0}, {hi, 1.0}});
+          if (!g || !a || !b) {
+            ok = false;
+            break;
+          }
+          const double alpha = *a - *g;
+          const double beta = *b - *g;
+          if (std::fabs(alpha + beta) > 1e-9) {  // depends on the interval position
+            ok = false;
+            break;
+          }
+          classify(beta, *g, recurrence.calls[c]);
+          ok = recurrence.calls[c].change != cx::SizeChange::Unknown;
+        }
+        if (ok && !sites.empty()) {
+          recurrence.size = hi + " - " + lo;
+          sizeParams_ = {lo, hi};
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Non-recursive structural cost: the loop nests of the body (1 if none),
+  /// rewritten in terms of the size variable n.
+  void computeWork(cx::Recurrence& recurrence) {
+    std::vector<const clang::Stmt*> loops;
+    collectChildLoops(function_.getBody(), loops);
+    std::vector<cx::ExprPtr> terms;
+    for (const clang::Stmt* loop : loops) {
+      if (countSelfCalls(loop) != 0) {
+        recurrence.workLimitations.push_back("self-calls inside loops are not modelled; f(n) is unknown");
+        recurrence.work = nullptr;
+        return;
+      }
+      LoopAnalyzer analyzer(ctx_);
+      NestResult nest = analyzer.analyzeNest(loop);
+      if (!nest.cost) {
+        recurrence.workLimitations.push_back("a loop in the body has an unknown iteration count; f(n) is unknown");
+        recurrence.work = nullptr;
+        return;
+      }
+      appendUnique(recurrence.workLimitations, nest.limitations);
+      terms.push_back(nest.cost);
+    }
+    cx::ExprPtr work = terms.empty() ? cx::constant(1.0) : cx::add(std::move(terms));
+
+    if (sizeParams_.size() == 1) {
+      work = cx::substitute(work, sizeParams_[0], cx::variable("n"));
+    } else if (sizeParams_.size() == 2) {
+      const std::string& lo = sizeParams_[0];
+      const std::string& hi = sizeParams_[1];
+      cx::ExprPtr shifted = cx::substitute(cx::substitute(work, lo, cx::constant(0.0)), hi, cx::variable("n"));
+      // f must depend on the interval only through its length. Checked at
+      // sample points when f has no other free variables.
+      const auto free = cx::freeVariables(*work);
+      const bool onlyInterval =
+          std::all_of(free.begin(), free.end(), [&](const std::string& v) { return v == lo || v == hi; });
+      for (const auto& [l, h] : std::vector<std::pair<double, double>>{{3, 103}, {1000, 5000}, {17, 17}}) {
+        if (!onlyInterval) {
+          break;
+        }
+        const auto original = at(work, {{lo, l}, {hi, h}});
+        const auto rewritten = at(shifted, {{"n", h - l}});
+        if (!original || !rewritten || std::fabs(*original - *rewritten) > 1e-6 * std::max(1.0, *original)) {
+          recurrence.workLimitations.push_back(
+              "the non-recursive work depends on the interval position; f(n) is unknown");
+          recurrence.work = nullptr;
+          return;
+        }
+      }
+      work = shifted;
+    }
+    recurrence.work = work;
+
+    // Calls to other user functions are not included in f(n).
+    std::set<std::string> userCalls;
+    std::vector<const clang::Stmt*> stack{function_.getBody()};
+    while (!stack.empty()) {
+      const clang::Stmt* current = stack.back();
+      stack.pop_back();
+      if (current == nullptr) {
+        continue;
+      }
+      if (const auto* call = llvm::dyn_cast<clang::CallExpr>(current); call != nullptr && !isSelfCall(call)) {
+        if (const clang::FunctionDecl* callee = call->getDirectCallee()) {
+          const clang::FunctionDecl* definition = callee->getDefinition();
+          if (definition != nullptr && ctx_.getSourceManager().isInMainFile(definition->getLocation()) &&
+              !callee->isImplicit()) {
+            userCalls.insert(callee->getNameAsString());
+          }
+        }
+      }
+      for (const clang::Stmt* child : current->children()) {
+        stack.push_back(child);
+      }
+    }
+    for (const auto& name : userCalls) {
+      recurrence.workLimitations.push_back("calls user function '" + name +
+                                           "'; its cost is not included in f(n) (interprocedural analysis is not "
+                                           "implemented)");
+    }
+  }
+
+  clang::ASTContext& ctx_;
+  const clang::FunctionDecl& function_;
+  const clang::FunctionDecl* canonical_;
+  std::vector<std::string> sizeParams_;
+  bool usesIntegerDivision_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // Translation-unit walker
 // ---------------------------------------------------------------------------
 
@@ -1123,40 +1591,24 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
   }
 
   void detectRecursion(const clang::FunctionDecl& function) {
-    const clang::FunctionDecl* canonical = function.getCanonicalDecl();
-    std::size_t selfCalls = 0;
-    std::vector<const clang::Stmt*> stack{function.getBody()};
-    while (!stack.empty()) {
-      const clang::Stmt* current = stack.back();
-      stack.pop_back();
-      if (current == nullptr) {
-        continue;
-      }
-      if (const auto* call = llvm::dyn_cast<clang::CallExpr>(current)) {
-        if (const clang::FunctionDecl* callee = call->getDirectCallee();
-            callee != nullptr && callee->getCanonicalDecl() == canonical) {
-          ++selfCalls;
-        }
-      }
-      for (const clang::Stmt* child : current->children()) {
-        stack.push_back(child);
-      }
-    }
-    if (selfCalls == 0) {
+    RecurrenceExtractor extractor(ctx_, function);
+    const std::vector<SelfCallSite> sites = extractor.selfCalls();
+    if (sites.empty()) {
       return;
     }
     models::Finding finding;
     finding.id = nextId();
     finding.category = models::FindingCategory::Recursion;
-    finding.pattern = selfCalls == 1 ? "direct-recursion" : "multiple-direct-recursion";
+    finding.pattern = sites.size() == 1 ? "direct-recursion" : "multiple-direct-recursion";
     finding.functionName = function.getNameAsString();
-    finding.description = "function '" + finding.functionName + "' calls itself at " + std::to_string(selfCalls) +
-                          " call site(s); recurrence analysis is not implemented";
+    finding.description =
+        "function '" + finding.functionName + "' calls itself at " + std::to_string(sites.size()) + " call site(s)";
     finding.location = location(function.getBeginLoc(), function.getEndLoc());
     finding.boundStatus = BoundStatus::Unsupported;
     finding.confidence = Confidence::None;
     finding.provenance = kRecursionProvenance;
-    finding.limitations.push_back("time and stack depth of recursive functions are not estimated yet (milestone M2+)");
+    finding.recurrence = extractor.extract(
+        sites, [this](const clang::Stmt& stmt) { return location(stmt.getBeginLoc(), stmt.getEndLoc()); });
     out_.findings.push_back(std::move(finding));
   }
 

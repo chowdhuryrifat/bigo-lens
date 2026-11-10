@@ -4,6 +4,7 @@
 #include <iostream>
 #include <optional>
 
+#include "bigolens/analyzers/recurrence_resolution.hpp"
 #include "bigolens/api/protocol.hpp"
 #include "bigolens/complexity/asymptotic.hpp"
 #include "bigolens/constraints/workload.hpp"
@@ -144,6 +145,7 @@ json capabilities() {
             {"while_countdown_loops", "partial"},
             {"range_for_loops", "partial"},
             {"recursion_analysis", "unsupported"},
+            {"recurrence_extraction", "partial"},
             {"stl_cost_model", "data_only"},
             {"interprocedural_analysis", "unsupported"},
             {"constraint_workload", "partial"},
@@ -218,7 +220,8 @@ json RequestHandler::handleParsed(const json& document) const {
     }
 
     analyzers::SourceInput input{request.sourcePath, request.sourceContent, request.cppStandard};
-    const analyzers::SourceAnalysis analysis = analyzer_->analyze(input);
+    analyzers::SourceAnalysis analysis = analyzer_->analyze(input);
+    analyzers::resolveRecurrences(analysis.findings, solvers_);
     for (const auto& diagnostic : analysis.diagnostics) {
       response["diagnostics"].push_back(toJson(diagnostic));
     }
