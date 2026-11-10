@@ -730,9 +730,15 @@ class LoopAnalyzer {
       Update update = Update::None;
       std::int64_t divisor = 0;
       int updates = 0;
-      const auto* body = llvm::dyn_cast_or_null<clang::CompoundStmt>(loop.getBody());
-      if (body != nullptr) {
-        for (const clang::Stmt* stmt : body->body()) {
+      // Top-level statements of the body; an unbraced body is a single statement.
+      std::vector<const clang::Stmt*> statements;
+      if (const auto* compound = llvm::dyn_cast_or_null<clang::CompoundStmt>(loop.getBody())) {
+        statements.assign(compound->body_begin(), compound->body_end());
+      } else if (loop.getBody() != nullptr) {
+        statements.push_back(loop.getBody());
+      }
+      {
+        for (const clang::Stmt* stmt : statements) {
           const auto* expr = llvm::dyn_cast<clang::Expr>(stmt);
           if (expr == nullptr) {
             if (mayModify(stmt, var)) {
@@ -821,6 +827,14 @@ class LoopAnalyzer {
       const clang::Stmt* current = stack.back();
       stack.pop_back();
       if (current == nullptr) {
+        continue;
+      }
+      if (const auto* rangeFor = llvm::dyn_cast<clang::CXXForRangeStmt>(current)) {
+        // The implicit begin()/end()/iterator calls of the loop header are part
+        // of the iteration itself; only the range expression (evaluated once)
+        // and the body contain calls written by the user.
+        stack.push_back(rangeFor->getRangeInit());
+        stack.push_back(rangeFor->getBody());
         continue;
       }
       if (const auto* call = llvm::dyn_cast<clang::CallExpr>(current)) {
@@ -1089,7 +1103,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
                               "; time expression counts executions of the innermost loop bodies";
       } else {
         finding.description = "loop nest whose iteration count could not be determined: " + nest.unknownReason;
-        finding.limitations.push_back(nest.unknownReason);
+        finding.limitations.insert(finding.limitations.begin(), nest.unknownReason);
       }
 
       switch (finding.boundStatus) {
