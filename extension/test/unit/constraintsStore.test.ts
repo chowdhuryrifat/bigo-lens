@@ -44,13 +44,38 @@ describe('constraints sidecar', () => {
     assert.equal(loaded.kind, 'ok');
   });
 
-  it('reports malformed JSON and schema violations', async () => {
+  it('reports malformed JSON and schema violations with diagnostics', async () => {
     const malformed = join(dir, 'malformed.json');
     writeFileSync(malformed, '{ "variables": ');
     assert.equal((await loadConstraints(malformed, validator)).kind, 'invalid');
     const wrong = join(dir, 'wrong.json');
-    writeFileSync(wrong, JSON.stringify({ variables: { n: { max: 'big' } } }));
+    writeFileSync(wrong, JSON.stringify({ variables: { n: { max: 'big' } } }, null, 2));
     const loaded = await loadConstraints(wrong, validator);
     assert.ok(loaded.kind === 'invalid' && loaded.errors.length > 0);
+    assert.ok(loaded.diagnostics.length > 0);
+    assert.ok(loaded.diagnostics[0]?.range);
+  });
+
+  it('maps an inverted range {min: 10, max: 1} to the variable entry in the sidecar', async () => {
+    const invertedPath = join(dir, 'inverted.json');
+    const content = `{
+  "variables": {
+    "n": {
+      "min": 10,
+      "max": 1
+    }
+  }
+}`;
+    writeFileSync(invertedPath, content);
+    const loaded = await loadConstraints(invertedPath, validator);
+    assert.equal(loaded.kind, 'invalid');
+    assert.ok(loaded.errors.some((e) => e.includes("variable 'n' has min")));
+    const diag = loaded.diagnostics.find((d) => d.path === '/variables/n');
+    assert.ok(diag, 'diagnostic for /variables/n not found');
+    assert.ok(diag.range, 'range for /variables/n missing');
+    assert.equal(diag.range.start.line, 2);
+    assert.equal(diag.range.start.character, 4);
+    assert.equal(diag.range.end.line, 2);
+    assert.equal(diag.range.end.character, 7);
   });
 });

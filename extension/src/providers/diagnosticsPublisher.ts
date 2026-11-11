@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import type { AnalyzeResults, Diagnostic as EngineDiagnostic } from '../models/protocol';
 import { summarizeFinding } from '../services/format';
+import type { TextRange } from '../services/jsonPointer';
 
 /** Publishes findings and compiler diagnostics to the Problems panel. */
 export class DiagnosticsPublisher implements vscode.Disposable {
@@ -35,6 +36,30 @@ export class DiagnosticsPublisher implements vscode.Disposable {
       diagnostics.push(diagnostic);
     }
     this.collection.set(uri, diagnostics);
+  }
+
+  publishConstraints(
+    sidecarUri: vscode.Uri,
+    diagnostics: Array<{ message: string; range?: TextRange | undefined }>,
+  ): void {
+    const vsDiagnostics: vscode.Diagnostic[] = diagnostics.map((d) => {
+      const range = d.range
+        ? new vscode.Range(
+            d.range.start.line,
+            d.range.start.character,
+            d.range.end.line,
+            d.range.end.character,
+          )
+        : new vscode.Range(0, 0, 0, 0);
+      const diagnostic = new vscode.Diagnostic(range, d.message, vscode.DiagnosticSeverity.Error);
+      diagnostic.source = 'BigO Lens (constraints)';
+      return diagnostic;
+    });
+    this.collection.set(sidecarUri, vsDiagnostics);
+  }
+
+  clearConstraints(sidecarUri: vscode.Uri): void {
+    this.collection.delete(sidecarUri);
   }
 
   clear(uri: vscode.Uri): void {

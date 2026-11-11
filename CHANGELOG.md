@@ -8,6 +8,8 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Map validation errors to positions in sidecar files (BL-307). When ajv or the engine reports validation errors or inverted ranges (`{min: 10, max: 1}`) with a JSON-pointer path under `/constraints`, the extension maps the pointer using an RFC 6901 JSON scanner to source lines/columns and publishes diagnostics directly on `<file>.bigolens.json`. Underlines keys, handles array indices, and decodes escaped pointer tokens.
+
 - End-to-end sum-constrained extension integration tests (BL-306). Adds end-to-end integration and smoke test coverage for `09_sum_constrained_test_cases.cpp` with a sidecar constraints file ($t \le 10, n \le 2\cdot 10^5, \sum n \le 2\cdot 10^5$), verifying $4\cdot 10^{10}$ workload derivation with the `sum-constraint-packing` method.
 - Memory estimates for node-based containers (BL-305). Loops inserting into `std::set` or `std::map` report estimated memory based on libstdc++/libc++ 32-byte node overhead plus value size, marked as `Estimated` with an explicit assumption string (noting upper bounds on conditional insertions and excluded allocator overhead).
 - Rust engine architecture (ADR 0012). Re-architects the standalone engine as a modular Cargo workspace in `crates/`:
