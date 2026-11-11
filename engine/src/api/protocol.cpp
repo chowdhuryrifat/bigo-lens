@@ -338,7 +338,15 @@ ParseOutcome parseRequest(const json& document) {
   if (const json* constraintsNode = v.object(document, "constraints", "", false)) {
     parseConstraints(v, *constraintsNode, request.constraints);
     for (auto& problem : constraints::validate(request.constraints)) {
-      v.error("/constraints", std::move(problem));
+      std::string path = "/constraints";
+      const std::string prefix = "variable '";
+      if (const auto pos = problem.find(prefix); pos != std::string::npos) {
+        const auto endPos = problem.find('\'', pos + prefix.size());
+        if (endPos != std::string::npos) {
+          path = "/constraints/variables/" + problem.substr(pos + prefix.size(), endPos - (pos + prefix.size()));
+        }
+      }
+      v.error(path, std::move(problem));
     }
   }
 

@@ -48,7 +48,7 @@ flowchart TD
   BL304["BL-304 Nested vectors + strings memory"]:::done
   BL305["BL-305 Map/set memory estimate"]:::done
   BL306["BL-306 End-to-end T/N/sum-N test"]:::done
-  BL307["BL-307 Sidecar error positions"]:::todo
+  BL307["BL-307 Sidecar error positions"]:::done
 
   BL401["BL-401 Isolation ADR + spec"]:::todo
   BL402["BL-402 Compiler adapter"]:::todo
@@ -608,7 +608,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-307: Map validation errors to positions in the sidecar file
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-104
@@ -620,7 +620,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: pointer-to-range mapping for sidecar files. Out of scope: a form UI (BL-501).
 
 **Acceptance criteria.**
-- [ ] An inverted range `{min: 10, max: 1}` underlines the `n` entry in the sidecar file.
+- [x] An inverted range `{min: 10, max: 1}` underlines the `n` entry in the sidecar file.
 
 **Test cases.** Unit tests for the pointer-to-offset mapping, including escaped keys (`~0`, `~1`) and `v.size()` keys.
 

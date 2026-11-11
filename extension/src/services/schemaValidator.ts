@@ -10,13 +10,26 @@ export function defaultSchemaDirectory(): string {
   return join(__dirname, '..', '..', '..', 'schemas');
 }
 
+export interface ValidationError {
+  message: string;
+  path: string;
+}
+
 export interface ValidationOutcome<T> {
   value?: T;
   errors: string[];
+  details?: ValidationError[];
 }
 
 function describe(errors: ErrorObject[] | null | undefined): string[] {
   return (errors ?? []).map((e) => `${e.instancePath || '/'} ${e.message ?? 'is invalid'}`);
+}
+
+function errorDetails(errors: ErrorObject[] | null | undefined): ValidationError[] {
+  return (errors ?? []).map((e) => ({
+    message: `${e.instancePath || '/'} ${e.message ?? 'is invalid'}`,
+    path: e.instancePath || '/',
+  }));
 }
 
 /** Validates protocol documents at the extension boundary. */
@@ -54,8 +67,8 @@ export class SchemaValidator {
 
   private run<T>(validate: ValidateFunction, document: unknown): ValidationOutcome<T> {
     if (validate(document)) {
-      return { value: document as T, errors: [] };
+      return { value: document as T, errors: [], details: [] };
     }
-    return { errors: describe(validate.errors) };
+    return { errors: describe(validate.errors), details: errorDetails(validate.errors) };
   }
 }

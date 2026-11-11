@@ -7,6 +7,7 @@ import type { ResultsTreeProvider } from '../providers/resultsTreeProvider';
 import { constraintsPathFor, loadConstraints } from '../services/constraintsStore';
 import { createEngineClient, readSettings, type ExtensionServices } from '../services/context';
 import { EngineError } from '../services/engineClient';
+import { findJsonPointerRange } from '../services/jsonPointer';
 import { analyzeRequest } from '../services/requestBuilder';
 
 export interface AnalyzeDependencies extends ExtensionServices {
@@ -28,10 +29,13 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
   }
 
   let constraints: Constraints | undefined;
+  let sidecarUri: vscode.Uri | undefined;
   if (document.uri.scheme === 'file') {
     const sidecar = constraintsPathFor(document.uri.fsPath);
+    sidecarUri = vscode.Uri.file(sidecar);
     const loaded = await loadConstraints(sidecar, deps.validator);
     if (loaded.kind === 'invalid') {
+      deps.diagnostics.publishConstraints(sidecarUri, loaded.diagnostics);
       deps.output.appendLine(`Invalid constraints in ${sidecar}:`);
       loaded.errors.forEach((e) => {
         deps.output.appendLine(`  ${e}`);
@@ -42,6 +46,7 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
       );
       return;
     }
+    deps.diagnostics.clearConstraints(sidecarUri);
     constraints = loaded.kind === 'ok' ? loaded.constraints : undefined;
   }
 
@@ -71,6 +76,29 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
           response.diagnostics,
         );
         if (response.status === 'error') {
+          if (sidecarUri) {
+            const constraintsErrors = response.errors.filter(
+              (e): e is typeof e & { path: string } =>
+                typeof e.path === 'string' && e.path.startsWith('/constraints'),
+            );
+            if (constraintsErrors.length > 0) {
+              try {
+                const sidecarBytes = await vscode.workspace.fs.readFile(sidecarUri);
+                const sidecarText = new TextDecoder().decode(sidecarBytes);
+                const sidecarDiagnostics = constraintsErrors.map((e) => {
+                  const relPath = e.path.replace(/^\/constraints/, '');
+                  return {
+                    message: e.message,
+                    path: relPath,
+                    range: findJsonPointerRange(sidecarText, relPath),
+                  };
+                });
+                deps.diagnostics.publishConstraints(sidecarUri, sidecarDiagnostics);
+              } catch {
+                // Ignore failure to read sidecar text
+              }
+            }
+          }
           const message = response.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
           deps.output.appendLine(`Analysis failed: ${message}`);
           deps.tree.show(undefined);
