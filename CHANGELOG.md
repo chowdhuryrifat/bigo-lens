@@ -81,6 +81,11 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   sum-constrained variable, each term is packed independently, giving exact tight bounds (e.g. `t·(n + m)` evaluates to
   `S₁ + S₂`, Proven, method `sum-constraint-packing`). Interacting non-separable shapes fall back soundly to
   `sum-constraint-cases`, while sum constraints with different count variables remain Unknown with an explicit limitation.
+- Memory estimates for nested vectors and sized strings (BL-304). Extends storage analysis in the C++ engine to recognize
+  2D vectors (e.g. `std::vector<std::vector<T>> v(n, std::vector<T>(m))`), reporting symbolic bytes
+  `n·m·sizeof(T) + n·sizeof(vector<T>)` using Clang type layout, and sized `std::string` constructions (`std::string s(n, 'c')`)
+  reporting symbolic bytes `n`. Both emit `Estimated` bounds with explicit exclusions for allocator overhead and container
+  bookkeeping. Triggers `high_risk` memory feasibility when evaluations exceed configured memory limits.
 
 ### Changed
 
@@ -102,4 +107,4 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 ### Not yet implemented
 
 - Runtime estimation and the benchmark runner (the `benchmark` action returns `not_implemented`).
-- Vector/string/map/set memory estimations (BL-304, BL-305) and benchmarking runner (M4).
+- Map/set memory estimations (BL-305) and benchmarking runner (M4).
