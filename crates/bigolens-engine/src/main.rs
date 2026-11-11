@@ -3,6 +3,7 @@
 //! Provides the command-line interface and executes the versioned JSON protocol over stdin/stdout.
 
 pub mod compiler;
+pub mod runner;
 
 use bigolens_core::api::{
     Request, ENGINE_NAME, ENGINE_VERSION, MAX_REQUEST_BYTES, PROTOCOL_VERSION,

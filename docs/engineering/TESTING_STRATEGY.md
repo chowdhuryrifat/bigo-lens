@@ -176,10 +176,10 @@ so the suite is fast and does not depend on the installed C++ library.
 | Malformed engine response (extension side) | Rejected by ajv and reported | **Exists** | extension unit tests (response validation) |
 | Engine executable not found (extension side) | Actionable error naming the settings to check | **Exists** | extension unit tests (engine locator) |
 | Engine timeout (extension side) | Process killed, `timeout` error reported | **Exists** | `extension/test/unit/engineClient.test.ts` ("kills an engine that exceeds the timeout", fake engine in `extension/test/fixtures/fake-engine.mjs`) |
-| Benchmark compile errors | Structured compile error from the compiler adapter | **Planned (M4)** | none |
-| Benchmark timeouts | Process tree killed, `timeout` result | **Planned (M4)** | none |
-| Benchmark memory-limit violations | Run terminated, `memory_limit_exceeded` | **Planned (M4)** | none |
-| Missing compiler for benchmarks | Structured error naming the compiler searched for | **Planned (M4)** | none |
+| Benchmark compile errors | Structured compile error from the compiler adapter | **Exists** | `compiler::tests::test_compile_success_and_error_with_system_compiler` |
+| Benchmark timeouts | Process tree killed, `timeout` result | **Exists** | `runner::tests::test_infinite_loop_killed_at_timeout` |
+| Benchmark memory-limit violations | Run terminated, `memory_limit_exceeded` | **Exists** | `runner::tests::test_memory_limit_exceeded` |
+| Missing compiler for benchmarks | Structured error naming the compiler searched for | **Exists** | `compiler::tests::test_missing_compiler_returns_structured_error` |
 | Benchmark sandbox escape attempts (file or network access) | Denied by isolation | **Planned (M4)** | none |
 
 ## 6. Running tests

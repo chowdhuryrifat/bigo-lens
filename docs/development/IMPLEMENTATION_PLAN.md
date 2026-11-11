@@ -700,23 +700,23 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-404: Runner with timeouts, memory limits and cleanup (Linux)
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-402, BL-403
 
-**Description.** Run the compiled program with the generated input on stdin, with wall-clock and CPU timeouts, rlimits (`AS`, `CPU`, `NPROC`, `FSIZE`, `NOFILE`), a process group with kill-tree on every exit path, and peak-RSS measurement. Use warm-up runs, then repeated runs summarized with `bigolens::benchmark::summarize`.
+**Description.** Run the compiled program with the generated input on stdin, with wall-clock and CPU timeouts, rlimits (`AS`, `CPU`, `NPROC`, `FSIZE`, `NOFILE`), a process group with kill-tree on every exit path, and peak-RSS measurement. Use warm-up runs, then repeated runs summarized with `bigolens::benchmark::summarize` (or `bigolens_core::statistics::summarize`).
 
 **Motivation.** It provides the measurements for runtime ranges.
 
 **Scope.** In scope: Linux. Out of scope: namespaces and seccomp (BL-405), and Windows (BL-406).
 
 **Acceptance criteria.**
-- [ ] An infinite-loop program is killed at the timeout and the result is `timeout`.
-- [ ] A fork bomb is contained by `RLIMIT_NPROC` and cleaned up.
-- [ ] A program exceeding memory returns `memory_limit_exceeded`.
-- [ ] No processes or temporary files remain after any test.
-- [ ] Until BL-405 lands, the UI and responses state "not sandboxed".
+- [x] An infinite-loop program is killed at the timeout and the result is `timeout`.
+- [x] A fork bomb is contained by `RLIMIT_NPROC` and cleaned up.
+- [x] A program exceeding memory returns `memory_limit_exceeded`.
+- [x] No processes or temporary files remain after any test.
+- [x] Until BL-405 lands, the UI and responses state "not sandboxed".
 
 **Test cases.** Infinite loop, fork bomb, memory hog, a program writing a large file, a crash (signal), and a normal program.
 
