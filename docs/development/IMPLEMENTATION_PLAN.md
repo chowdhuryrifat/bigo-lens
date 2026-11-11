@@ -51,7 +51,7 @@ flowchart TD
   BL307["BL-307 Sidecar error positions"]:::done
 
   BL401["BL-401 Isolation ADR + spec"]:::done
-  BL402["BL-402 Compiler adapter"]:::todo
+  BL402["BL-402 Compiler adapter"]:::done
   BL403["BL-403 Input generators"]:::todo
   BL404["BL-404 Runner + limits (Linux)"]:::todo
   BL405["BL-405 Linux isolation"]:::todo
@@ -656,7 +656,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-402: Compiler adapter with a fixed argv
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-401
@@ -668,9 +668,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: compilation only. Out of scope: running the program.
 
 **Acceptance criteria.**
-- [ ] A compile error returns structured diagnostics.
-- [ ] A missing compiler returns a structured error naming what was searched for.
-- [ ] Argument construction is unit-tested to contain no request-derived strings except validated enums.
+- [x] A compile error returns structured diagnostics.
+- [x] A missing compiler returns a structured error naming what was searched for.
+- [x] Argument construction is unit-tested to contain no request-derived strings except validated enums.
 
 **Test cases.** Compile success, a compile error, a missing compiler (via a PATH override), and a source file named like a flag.
 
