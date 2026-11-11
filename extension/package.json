@@ -1,7 +1,7 @@
 {
   "name": "bigo-lens",
   "displayName": "BigO Lens",
-  "description": "Constraint-aware C++ complexity analysis: Clang AST static analysis, symbolic workload estimation and memory feasibility.",
+  "description": "Constraint-aware code complexity analysis for Python, C++, and competitive programming: AST static analysis, symbolic workload estimation and memory feasibility.",
   "version": "0.1.0",
   "publisher": "bigo-lens",
   "license": "MIT",
@@ -28,13 +28,14 @@
   ],
   "main": "./out/src/extension.js",
   "activationEvents": [
-    "onLanguage:cpp"
+    "onLanguage:cpp",
+    "onLanguage:python"
   ],
   "contributes": {
     "commands": [
       {
         "command": "bigoLens.analyzeActiveFile",
-        "title": "Analyze Active C++ File",
+        "title": "Analyze Active File",
         "category": "BigO Lens",
         "icon": "$(play)"
       },
@@ -70,7 +71,7 @@
     "viewsWelcome": [
       {
         "view": "bigoLens.results",
-        "contents": "Open a C++ file and run an analysis.\n[Analyze Active C++ File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)"
+        "contents": "Open a Python or C++ file and run an analysis.\n[Analyze Active File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)"
       }
     ],
     "menus": {
@@ -89,11 +90,11 @@
       "commandPalette": [
         {
           "command": "bigoLens.analyzeActiveFile",
-          "when": "editorLangId == cpp"
+          "when": "editorLangId == cpp || editorLangId == python"
         },
         {
           "command": "bigoLens.editConstraints",
-          "when": "editorLangId == cpp"
+          "when": "editorLangId == cpp || editorLangId == python"
         }
       ]
     },

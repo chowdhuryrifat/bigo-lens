@@ -5,9 +5,11 @@ import { constraintsPathFor, createConstraintsTemplate } from '../services/const
 /** Opens (creating from a template if needed) the constraints sidecar of the active file. */
 export async function editConstraints(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'cpp' || editor.document.uri.scheme !== 'file') {
+  const isSupportedLanguage =
+    editor?.document.languageId === 'cpp' || editor?.document.languageId === 'python';
+  if (!editor || !isSupportedLanguage || editor.document.uri.scheme !== 'file') {
     void vscode.window.showWarningMessage(
-      'BigO Lens: open a C++ file saved on disk to edit its constraints.',
+      'BigO Lens: open a supported file (Python or C++) saved on disk to edit its constraints.',
     );
     return;
   }

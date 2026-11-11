@@ -14,7 +14,8 @@ export interface AnalyzeInput {
   displayPath: string;
   content: string;
   constraints: Constraints | undefined;
-  cppStandard: CppStandard;
+  cppStandard?: CppStandard | undefined;
+  language?: string | undefined;
 }
 
 export function analyzeRequest(input: AnalyzeInput, requestId: string = newRequestId()): EngineRequest {
@@ -22,9 +23,11 @@ export function analyzeRequest(input: AnalyzeInput, requestId: string = newReque
     schema_version: PROTOCOL_VERSION,
     request_id: requestId,
     action: 'analyze',
-    source: { path: input.displayPath, language: 'cpp', content: input.content },
-    options: { cpp_standard: input.cppStandard },
+    source: { path: input.displayPath, language: input.language ?? 'cpp', content: input.content },
   };
+  if (input.cppStandard) {
+    request.options = { cpp_standard: input.cppStandard };
+  }
   if (input.constraints) {
     request.constraints = input.constraints;
   }

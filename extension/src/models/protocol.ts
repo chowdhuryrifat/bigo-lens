@@ -29,7 +29,7 @@ export interface EngineRequest {
   schema_version: string;
   request_id: string;
   action: Action;
-  source?: { path: string; language: 'cpp'; content: string };
+  source?: { path: string; language: string; content: string };
   constraints?: Constraints;
   options?: { cpp_standard?: CppStandard };
 }
