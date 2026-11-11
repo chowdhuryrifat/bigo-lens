@@ -12,6 +12,26 @@ pub struct VariableBound {
     pub max: Option<f64>,
 }
 
+impl VariableBound {
+    pub fn new(min: Option<f64>, max: Option<f64>) -> Self {
+        Self { min, max }
+    }
+
+    pub fn range(min: f64, max: f64) -> Self {
+        Self {
+            min: Some(min),
+            max: Some(max),
+        }
+    }
+
+    pub fn max_only(max: f64) -> Self {
+        Self {
+            min: None,
+            max: Some(max),
+        }
+    }
+}
+
 /// A sum constraint: \sum_{count_variable} variable <= max_total.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SumConstraint {
@@ -20,11 +40,34 @@ pub struct SumConstraint {
     pub max_total: f64,
 }
 
+impl SumConstraint {
+    pub fn new(
+        variable: impl Into<String>,
+        count_variable: impl Into<String>,
+        max_total: f64,
+    ) -> Self {
+        Self {
+            variable: variable.into(),
+            count_variable: count_variable.into(),
+            max_total,
+        }
+    }
+}
+
 /// A product constraint: \prod variables <= max_product.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProductConstraint {
     pub variables: Vec<String>,
     pub max_product: f64,
+}
+
+impl ProductConstraint {
+    pub fn new(variables: Vec<impl Into<String>>, max_product: f64) -> Self {
+        Self {
+            variables: variables.into_iter().map(Into::into).collect(),
+            max_product,
+        }
+    }
 }
 
 /// A term in a linear constraint: coeff * variable.
@@ -37,9 +80,49 @@ pub struct LinearTerm {
 /// A linear constraint: \sum coeff_i * var_i <= bound.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinearConstraint {
+    #[serde(default)]
+    pub coefficients: HashMap<String, f64>,
+    #[serde(default)]
     pub terms: Vec<LinearTerm>,
+    #[serde(default = "default_linear_op")]
     pub op: String,
     pub bound: f64,
+}
+
+fn default_linear_op() -> String {
+    "<=".to_string()
+}
+
+impl LinearConstraint {
+    pub fn new(coefficients: HashMap<String, f64>, bound: f64) -> Self {
+        Self {
+            coefficients,
+            terms: Vec::new(),
+            op: "<=".to_string(),
+            bound,
+        }
+    }
+
+    pub fn from_terms(terms: Vec<LinearTerm>, bound: f64) -> Self {
+        let mut coefficients = HashMap::new();
+        for t in &terms {
+            *coefficients.entry(t.variable.clone()).or_insert(0.0) += t.coefficient;
+        }
+        Self {
+            coefficients,
+            terms,
+            op: "<=".to_string(),
+            bound,
+        }
+    }
+
+    pub fn get_coefficients(&self) -> HashMap<String, f64> {
+        let mut map = self.coefficients.clone();
+        for term in &self.terms {
+            *map.entry(term.variable.clone()).or_insert(0.0) += term.coefficient;
+        }
+        map
+    }
 }
 
 /// Complete set of constraints for a solution.
@@ -69,105 +152,7 @@ pub struct WorkloadResult {
 
 /// Evaluate worst-case upper bound of an expression under the given constraints.
 pub fn evaluate_workload(expr: &Expr, constraints: &ConstraintSet) -> WorkloadResult {
-    let free_vars = expr.free_variables();
-    let mut missing = Vec::new();
-    let mut max_values = HashMap::new();
-
-    for var in &free_vars {
-        if let Some(bound) = constraints.variables.get(var) {
-            if let Some(max) = bound.max {
-                max_values.insert(var.clone(), max);
-            } else {
-                missing.push(var.clone());
-            }
-        } else {
-            missing.push(var.clone());
-        }
-    }
-
-    if !missing.is_empty() {
-        return WorkloadResult {
-            status: BoundStatus::Unknown,
-            upper_bound: None,
-            method: None,
-            assumptions: Vec::new(),
-            missing_bounds: missing,
-        };
-    }
-
-    // Check for sum constraints (e.g. t * n where sum(n) <= S).
-    for sc in &constraints.sum_constraints {
-        if free_vars.contains(&sc.variable) && free_vars.contains(&sc.count_variable) {
-            // Check if expr matches t * n or t * (n + ...)
-            // Sum constraint packing yields max_total * inner_cost or similar
-            let method = "sum-constraint-packing".to_string();
-            let assumptions = vec![format!(
-                "sum of '{}' over '{}' bounded by {}",
-                sc.variable, sc.count_variable, sc.max_total
-            )];
-
-            // Evaluate expression with count variable replaced by 1 and variable by max_total
-            let mut sum_vars = max_values.clone();
-            sum_vars.insert(sc.count_variable.clone(), 1.0);
-            sum_vars.insert(sc.variable.clone(), sc.max_total);
-
-            if let Ok(val) = expr.evaluate(&sum_vars) {
-                return WorkloadResult {
-                    status: BoundStatus::Proven,
-                    upper_bound: Some(val),
-                    method: Some(method),
-                    assumptions,
-                    missing_bounds: Vec::new(),
-                };
-            }
-        }
-    }
-
-    // Check for product constraints (e.g. n * m <= P).
-    for pc in &constraints.product_constraints {
-        if pc.variables.len() == 2
-            && free_vars.contains(&pc.variables[0])
-            && free_vars.contains(&pc.variables[1])
-        {
-            let method = "product-constraint-substitution".to_string();
-            let assumptions = vec![format!(
-                "product of '{}' and '{}' bounded by {}",
-                pc.variables[0], pc.variables[1], pc.max_product
-            )];
-
-            let mut prod_vars = max_values.clone();
-            prod_vars.insert(pc.variables[0].clone(), pc.max_product);
-            prod_vars.insert(pc.variables[1].clone(), 1.0);
-
-            if let Ok(val) = expr.evaluate(&prod_vars) {
-                return WorkloadResult {
-                    status: BoundStatus::Proven,
-                    upper_bound: Some(val),
-                    method: Some(method),
-                    assumptions,
-                    missing_bounds: Vec::new(),
-                };
-            }
-        }
-    }
-
-    // Standard worst-case evaluation using maximum bounds for all variables.
-    match expr.evaluate(&max_values) {
-        Ok(val) => WorkloadResult {
-            status: BoundStatus::Proven,
-            upper_bound: Some(val),
-            method: Some("variable-upper-bounds".to_string()),
-            assumptions: Vec::new(),
-            missing_bounds: Vec::new(),
-        },
-        Err(_) => WorkloadResult {
-            status: BoundStatus::Unknown,
-            upper_bound: None,
-            method: None,
-            assumptions: Vec::new(),
-            missing_bounds: Vec::new(),
-        },
-    }
+    crate::solvers::evaluate_workload_tightened(expr, constraints)
 }
 
 #[cfg(test)]
