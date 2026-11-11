@@ -1,0 +1,19 @@
+{
+  "variables": {
+    "t": {
+      "min": 1,
+      "max": 10
+    },
+    "n": {
+      "min": 1,
+      "max": 200000
+    }
+  },
+  "sum_constraints": [
+    {
+      "variable": "n",
+      "count_variable": "t",
+      "max_total": 200000
+    }
+  ]
+}

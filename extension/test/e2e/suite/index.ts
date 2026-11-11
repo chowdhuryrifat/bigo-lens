@@ -64,5 +64,27 @@ export async function run(): Promise<void> {
         findings.map((d) => d.message).join('\n'),
       );
     });
+
+    await check('analyzing sum-constrained fixture with sidecar shows 4e10 workload', async () => {
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      assert.ok(folder);
+      const uri = vscode.Uri.file(join(folder.uri.fsPath, '09_sum_constrained_test_cases.cpp'));
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+      await vscode.commands.executeCommand('bigoLens.analyzeActiveFile');
+      const deadline = Date.now() + 60000;
+      let findings: vscode.Diagnostic[] = [];
+      while (Date.now() < deadline) {
+        findings = vscode.languages.getDiagnostics(uri).filter((d) => d.source === 'BigO Lens');
+        if (findings.length > 0) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      assert.ok(findings.length > 0, 'no BigO Lens diagnostics were published for sum-constrained fixture');
+      assert.ok(
+        findings.some((d) => d.message.includes('4.000e10') || d.message.includes('test-case-loop')),
+        findings.map((d) => d.message).join('\n'),
+      );
+    });
   }
 }

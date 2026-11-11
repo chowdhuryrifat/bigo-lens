@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { isAnalyzeResults } from '../../src/models/protocol';
+import { constraintsPathFor, loadConstraints } from '../../src/services/constraintsStore';
 import { EngineClient } from '../../src/services/engineClient';
 import { locateEngine } from '../../src/services/engineLocator';
+import { formatCount, statusLabel, summarizeFinding } from '../../src/services/format';
 import { analyzeRequest, capabilitiesRequest } from '../../src/services/requestBuilder';
 import { SchemaValidator } from '../../src/services/schemaValidator';
 import { extensionRoot, fixturesDirectory, schemaDirectory } from '../helpers';
@@ -36,16 +38,18 @@ describe('real engine', { skip }, () => {
     assert.equal(response.engine.protocol_version, '1.0');
   });
 
-  it('analyzes a sum-constrained fixture end to end', async (t) => {
+  it('analyzes a sum-constrained fixture end to end using sidecar constraints', async (t) => {
+    const sourcePath = join(fixturesDirectory, '09_sum_constrained_test_cases.cpp');
+    const sidecarPath = constraintsPathFor(sourcePath);
+    const loaded = await loadConstraints(sidecarPath, new SchemaValidator(schemaDirectory));
+    assert.equal(loaded.kind, 'ok', 'failed to load sidecar constraints');
+
     const response = await client!.send(
       analyzeRequest({
         displayPath: '09_sum_constrained_test_cases.cpp',
-        content: readFileSync(join(fixturesDirectory, '09_sum_constrained_test_cases.cpp'), 'utf8'),
+        content: readFileSync(sourcePath, 'utf8'),
         cppStandard: 'c++20',
-        constraints: {
-          variables: { t: { min: 1, max: 10 }, n: { min: 1, max: 200000 } },
-          sum_constraints: [{ variable: 'n', count_variable: 't', max_total: 200000 }],
-        },
+        constraints: loaded.constraints,
       }),
     );
     if (response.status === 'error' && response.errors[0]?.code === 'frontend_unavailable') {
@@ -55,5 +59,18 @@ describe('real engine', { skip }, () => {
     assert.equal(response.status, 'ok', JSON.stringify(response.errors));
     assert.ok(isAnalyzeResults(response.results));
     assert.equal(response.results.summary.max_time_workload, 4e10);
+
+    const finding = response.results.findings.find((f) => f.pattern === 'test-case-loop');
+    assert.ok(finding, 'test-case-loop finding not found');
+    assert.ok(finding.time, 'finding has no time bound');
+    assert.equal(finding.time.workload.upper_bound, 4e10);
+    assert.equal(finding.time.workload.method, 'sum-constraint-packing');
+
+    // Assert that the formatted workload detail matches tree item representation
+    const workloadDetail = `≤ ${formatCount(finding.time.workload.upper_bound)} [${statusLabel(
+      finding.time.workload.status,
+    )}, ${finding.time.workload.method}]`;
+    assert.equal(workloadDetail, '≤ 4.000e10 [Proven, sum-constraint-packing]');
+    assert.match(summarizeFinding(finding), /≤ 4\.000e10 body executions/);
   });
 });
