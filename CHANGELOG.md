@@ -8,6 +8,8 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Benchmark isolation architecture and specification (BL-401). Defines ADR 0014 selecting platform-specific isolation (Linux unprivileged user/mount/network/PID namespaces, seccomp-bpf, rlimits, and process-group kill-tree; Windows Job Objects with restricted tokens; macOS process limits with explicit "not sandboxed" labelling; fail-closed policy requiring explicit `allow_unsandboxed: true`). Finalizes the Protocol 1.1 `benchmark` action request and response schema in `BENCHMARK_SPECIFICATION.md` and updates `THREAT_MODEL.md`.
+
 - Multi-language complexity analysis expansion in Rust (`bigolens-syntax`). Expands language support to compute algorithmic complexity and memory allocations regardless of source language across C++, Python, Java, Rust, and JavaScript/TypeScript:
   - `java.rs`: parses Java standard `for` loops, enhanced `for` loops (`arr.length`), logarithmic `while` loops, recursive divide-and-conquer (`mergeSort`) and linear decrement methods, and array/heap allocations (`new int[n]`).
   - `rust_lang.rs`: parses Rust range `for` loops (`0..n`, `0..=n`), triangular nested loops, halving `while` loops, recursive functions (`merge_sort`), and vector allocations (`vec![0; n]`, `Vec::with_capacity(n)`).

@@ -50,7 +50,7 @@ flowchart TD
   BL306["BL-306 End-to-end T/N/sum-N test"]:::done
   BL307["BL-307 Sidecar error positions"]:::done
 
-  BL401["BL-401 Isolation ADR + spec"]:::todo
+  BL401["BL-401 Isolation ADR + spec"]:::done
   BL402["BL-402 Compiler adapter"]:::todo
   BL403["BL-403 Input generators"]:::todo
   BL404["BL-404 Runner + limits (Linux)"]:::todo
@@ -634,7 +634,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-401: Benchmark isolation ADR and specification finalization
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P0 (for M4)
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
@@ -646,9 +646,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the ADR, the specification, and threat-model updates. Out of scope: code.
 
 **Acceptance criteria.**
-- [ ] The ADR is accepted.
-- [ ] The specification defines the `benchmark` request and response fields as a minor protocol bump.
-- [ ] The threat model is updated.
+- [x] The ADR is accepted.
+- [x] The specification defines the `benchmark` request and response fields as a minor protocol bump.
+- [x] The threat model is updated.
 
 **Test cases.** Not applicable (design). The ADR lists the tests that BL-404 to BL-406 must include.
 

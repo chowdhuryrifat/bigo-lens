@@ -17,6 +17,7 @@ This directory records the significant architectural decisions for BigO Lens. Ea
 | [0011](0011-self-contained-engine-packaging.md) | Ship a statically linked engine with Clang's builtin headers | Accepted | 2026-11-10 |
 | [0012](0012-rust-engine-architecture.md) | Re-architect the native engine in Rust | Accepted | 2026-11-11 |
 | [0013](0013-multi-language-complexity-analysis.md) | Multi-Language Complexity Analysis and Pluggable Frontends | Accepted | 2026-11-12 |
+| [0014](0014-benchmark-isolation-architecture.md) | Benchmark Isolation Architecture | Accepted | 2026-11-12 |
 
 ## Process
 
