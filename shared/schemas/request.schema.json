@@ -58,7 +58,7 @@
       "required": ["path", "language", "content"],
       "properties": {
         "path": { "description": "Display path used in reported locations.", "type": "string", "maxLength": 4096 },
-        "language": { "const": "cpp" },
+        "language": { "description": "Source programming language (e.g. cpp, python, java, rust, javascript).", "type": "string", "maxLength": 64 },
         "content": { "description": "Full translation unit (at most 2 MiB).", "type": "string", "maxLength": 2097152 }
       }
     },

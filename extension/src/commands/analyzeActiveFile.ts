@@ -15,10 +15,46 @@ export interface AnalyzeDependencies extends ExtensionServices {
   diagnostics: DiagnosticsPublisher;
 }
 
+export const SUPPORTED_LANGUAGES = new Set([
+  'cpp',
+  'c',
+  'python',
+  'java',
+  'rust',
+  'javascript',
+  'typescript',
+  'javascriptreact',
+  'typescriptreact',
+]);
+
+export function normalizeLanguageId(id: string): string {
+  switch (id) {
+    case 'cpp':
+    case 'c':
+      return 'cpp';
+    case 'python':
+      return 'python';
+    case 'java':
+      return 'java';
+    case 'rust':
+      return 'rust';
+    case 'javascript':
+    case 'javascriptreact':
+      return 'javascript';
+    case 'typescript':
+    case 'typescriptreact':
+      return 'typescript';
+    default:
+      return id;
+  }
+}
+
 export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || (editor.document.languageId !== 'cpp' && editor.document.languageId !== 'python')) {
-    void vscode.window.showWarningMessage('BigO Lens: open a supported file (Python or C++) to analyze.');
+  if (!editor || !SUPPORTED_LANGUAGES.has(editor.document.languageId)) {
+    void vscode.window.showWarningMessage(
+      'BigO Lens: open a supported file (C++, Python, Java, Rust, JavaScript, TypeScript) to analyze.',
+    );
     return;
   }
   const document = editor.document;
@@ -50,7 +86,7 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
     constraints = loaded.kind === 'ok' ? loaded.constraints : undefined;
   }
 
-  const language = document.languageId === 'python' ? 'python' : 'cpp';
+  const language = normalizeLanguageId(document.languageId);
   const displayPath =
     vscode.workspace.asRelativePath(document.uri, false) || path.basename(document.fileName);
   const request = analyzeRequest({

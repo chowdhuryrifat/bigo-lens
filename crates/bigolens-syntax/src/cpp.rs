@@ -1,10 +1,20 @@
 //! C++ syntax analysis via Tree-sitter.
 
 use crate::SyntaxError;
-use bigolens_core::complexity::{constant, variable, ExprPtr};
-use bigolens_core::ir::{LoopDirection, LoopNestIR, StepKind};
+use bigolens_core::complexity::{constant, multiply, variable, ExprPtr};
+use bigolens_core::ir::{LoopDirection, LoopNestIR, RecursiveFunctionIR, StepKind};
 use bigolens_core::models::SourceLocation;
 use tree_sitter::{Node, Parser};
+
+/// Information about a detected C++ dynamic memory allocation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CppMemoryAlloc {
+    pub location: SourceLocation,
+    pub space_expr: ExprPtr,
+    pub pattern: String,
+    pub description: String,
+    pub function_name: String,
+}
 
 /// Parse C++ source code and extract all top-level loop nests as `LoopNestIR`.
 pub fn parse_cpp_loops(source: &str, file_name: &str) -> Result<Vec<LoopNestIR>, SyntaxError> {
@@ -316,6 +326,281 @@ fn parse_expr(node: Node, source: &[u8]) -> Result<ExprPtr, SyntaxError> {
     }
 }
 
+/// Parse C++ recursive functions into `RecursiveFunctionIR`.
+pub fn parse_cpp_recursion(
+    source: &str,
+    file_name: &str,
+) -> Result<Vec<RecursiveFunctionIR>, SyntaxError> {
+    let mut parser = Parser::new();
+    let language = tree_sitter_cpp::LANGUAGE.into();
+    parser
+        .set_language(&language)
+        .map_err(|_| SyntaxError::ParseFailure)?;
+
+    let tree = parser
+        .parse(source, None)
+        .ok_or(SyntaxError::ParseFailure)?;
+    let root = tree.root_node();
+
+    let mut recursions = Vec::new();
+    collect_functions(root, source.as_bytes(), file_name, &mut recursions)?;
+    Ok(recursions)
+}
+
+fn collect_functions(
+    node: Node,
+    source: &[u8],
+    file_name: &str,
+    recursions: &mut Vec<RecursiveFunctionIR>,
+) -> Result<(), SyntaxError> {
+    if node.kind() == "function_definition" {
+        if let Some(rec) = analyze_function_recursion(node, source, file_name)? {
+            recursions.push(rec);
+        }
+    }
+
+    for child in node.children(&mut node.walk()) {
+        collect_functions(child, source, file_name, recursions)?;
+    }
+    Ok(())
+}
+
+fn analyze_function_recursion(
+    func_node: Node,
+    source: &[u8],
+    file_name: &str,
+) -> Result<Option<RecursiveFunctionIR>, SyntaxError> {
+    let decl_node = match func_node.child_by_field_name("declarator") {
+        Some(d) => d,
+        None => return Ok(None),
+    };
+
+    let mut func_name = String::new();
+    let mut param_name = "n".to_string();
+
+    let mut cursor = decl_node.walk();
+    for child in decl_node.children(&mut cursor) {
+        if child.kind() == "identifier" || child.kind() == "field_identifier" {
+            if let Ok(name) = child.utf8_text(source) {
+                func_name = name.to_string();
+            }
+        } else if child.kind() == "parameter_list" {
+            for param in child.children(&mut child.walk()) {
+                if param.kind() == "parameter_declaration" {
+                    if let Some(p_decl) = param.child_by_field_name("declarator") {
+                        if let Ok(name) = p_decl.utf8_text(source) {
+                            param_name = name.to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if func_name.is_empty() {
+        // Fallback: search for identifier in declarator tree
+        let mut found_id = None;
+        let mut id_finder = |n: Node| {
+            if n.kind() == "identifier" && found_id.is_none() {
+                if let Ok(name) = n.utf8_text(source) {
+                    found_id = Some(name.to_string());
+                }
+            }
+        };
+        walk_node(decl_node, &mut id_finder);
+        func_name = match found_id {
+            Some(n) => n,
+            None => return Ok(None),
+        };
+    }
+
+    let body_node = match func_node.child_by_field_name("body") {
+        Some(b) => b,
+        None => return Ok(None),
+    };
+
+    let mut call_nodes = Vec::new();
+    collect_calls(body_node, &func_name, source, &mut call_nodes);
+
+    if call_nodes.is_empty() {
+        return Ok(None);
+    }
+
+    let branch_factor = call_nodes.len() as u32;
+
+    let mut reduction_divisor = 1.0;
+    let mut reduction_step = 1.0;
+
+    for call in &call_nodes {
+        if let Some(args_node) = call.child_by_field_name("arguments") {
+            let args_text = args_node.utf8_text(source).unwrap_or("");
+            if args_text.contains('/') {
+                if let Some((_, div_str)) = args_text.split_once('/') {
+                    let div_clean = div_str
+                        .trim_matches(|c: char| !c.is_ascii_digit())
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("2");
+                    if let Ok(d) = div_clean.parse::<f64>() {
+                        reduction_divisor = d;
+                    }
+                }
+            } else if args_text.contains('-') {
+                if let Some((_, step_str)) = args_text.split_once('-') {
+                    let step_clean = step_str
+                        .trim_matches(|c: char| !c.is_ascii_digit())
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("1");
+                    if let Ok(s) = step_clean.parse::<f64>() {
+                        reduction_step = s;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut has_loop = false;
+    let mut loop_checker = |n: Node| {
+        if n.kind() == "for_statement" || n.kind() == "while_statement" {
+            has_loop = true;
+        }
+    };
+    walk_node(body_node, &mut loop_checker);
+
+    let work_exponent = if has_loop { 1.0 } else { 0.0 };
+    let reduction_subtrahend = if reduction_divisor > 1.0 {
+        None
+    } else {
+        Some(reduction_step)
+    };
+
+    let start_pos = func_node.start_position();
+    let end_pos = func_node.end_position();
+
+    Ok(Some(RecursiveFunctionIR {
+        name: func_name,
+        parameter_name: param_name,
+        branch_factor,
+        reduction_divisor,
+        reduction_subtrahend,
+        work_exponent,
+        location: SourceLocation {
+            file: file_name.to_string(),
+            line: (start_pos.row + 1) as u32,
+            column: (start_pos.column + 1) as u32,
+            end_line: Some((end_pos.row + 1) as u32),
+            end_column: Some((end_pos.column + 1) as u32),
+        },
+    }))
+}
+
+fn collect_calls<'a>(node: Node<'a>, func_name: &str, source: &[u8], calls: &mut Vec<Node<'a>>) {
+    if node.kind() == "call_expression" {
+        if let Some(func_node) = node.child_by_field_name("function") {
+            if let Ok(name) = func_node.utf8_text(source) {
+                if name == func_name {
+                    calls.push(node);
+                }
+            }
+        }
+    }
+
+    for child in node.children(&mut node.walk()) {
+        collect_calls(child, func_name, source, calls);
+    }
+}
+
+fn walk_node<F: FnMut(Node)>(node: Node, f: &mut F) {
+    f(node);
+    for child in node.children(&mut node.walk()) {
+        walk_node(child, f);
+    }
+}
+
+/// Parse C++ dynamic allocations into `CppMemoryAlloc`.
+pub fn parse_cpp_memory_allocations(
+    source: &str,
+    file_name: &str,
+) -> Result<Vec<CppMemoryAlloc>, SyntaxError> {
+    let mut parser = Parser::new();
+    let language = tree_sitter_cpp::LANGUAGE.into();
+    parser
+        .set_language(&language)
+        .map_err(|_| SyntaxError::ParseFailure)?;
+
+    let tree = parser
+        .parse(source, None)
+        .ok_or(SyntaxError::ParseFailure)?;
+    let root = tree.root_node();
+
+    let mut allocations = Vec::new();
+    collect_allocations(root, source.as_bytes(), file_name, &mut allocations)?;
+    Ok(allocations)
+}
+
+fn collect_allocations(
+    node: Node,
+    source: &[u8],
+    file_name: &str,
+    allocs: &mut Vec<CppMemoryAlloc>,
+) -> Result<(), SyntaxError> {
+    if node.kind() == "new_expression" {
+        // e.g. new int[n]
+        let text = node.utf8_text(source).unwrap_or("");
+        let elem_size = if text.contains("long long") || text.contains("double") {
+            8.0
+        } else if text.contains("char") || text.contains("bool") {
+            1.0
+        } else if text.contains("short") {
+            2.0
+        } else {
+            4.0
+        };
+
+        let mut dim_var = "n".to_string();
+        if let Some((_, rhs)) = text.split_once('[') {
+            let clean = rhs.trim_end_matches(']').trim();
+            if !clean.is_empty() {
+                dim_var = clean.to_string();
+            }
+        }
+
+        let var_expr = if let Ok(val) = dim_var.parse::<f64>() {
+            constant(val).unwrap()
+        } else {
+            variable(&dim_var).unwrap_or_else(|_| variable("n").unwrap())
+        };
+
+        let space_expr = multiply(vec![constant(elem_size).unwrap(), var_expr]);
+        let start = node.start_position();
+        let end = node.end_position();
+
+        allocs.push(CppMemoryAlloc {
+            location: SourceLocation {
+                file: file_name.to_string(),
+                line: (start.row + 1) as u32,
+                column: (start.column + 1) as u32,
+                end_line: Some((end.row + 1) as u32),
+                end_column: Some((end.column + 1) as u32),
+            },
+            space_expr,
+            pattern: "dynamic-array".to_string(),
+            description: format!(
+                "heap allocation via new with element size {} bytes",
+                elem_size
+            ),
+            function_name: "main".to_string(),
+        });
+    }
+
+    for child in node.children(&mut node.walk()) {
+        collect_allocations(child, source, file_name, allocs)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +661,40 @@ int main() {
         let outcome = loops[0].analyze();
         assert_eq!(outcome.pattern, "triangular-loop");
         assert_eq!(outcome.total_cost.unwrap().asymptotic_bound(), "O(n^2)");
+    }
+
+    #[test]
+    fn test_cpp_recursion_merge_sort() {
+        let code = r#"
+void merge_sort(int n) {
+    if (n <= 1) return;
+    for (int i = 0; i < n; ++i) {
+        // merge step
+    }
+    merge_sort(n / 2);
+    merge_sort(n / 2);
+}
+"#;
+        let recs = parse_cpp_recursion(code, "merge_sort.cpp").unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].branch_factor, 2);
+        assert_eq!(recs[0].reduction_divisor, 2.0);
+        let (cost, status, conf, _) = recs[0].solve();
+        assert_eq!(cost.asymptotic_bound(), "O(n * log_2(n))");
+        assert_eq!(status, bigolens_core::models::BoundStatus::Proven);
+        assert_eq!(conf, bigolens_core::models::Confidence::High);
+    }
+
+    #[test]
+    fn test_cpp_memory_allocation() {
+        let code = r#"
+int main() {
+    int* arr = new int[n];
+    return 0;
+}
+"#;
+        let allocs = parse_cpp_memory_allocations(code, "alloc.cpp").unwrap();
+        assert_eq!(allocs.len(), 1);
+        assert_eq!(allocs[0].space_expr.to_string(), "4 * n");
     }
 }

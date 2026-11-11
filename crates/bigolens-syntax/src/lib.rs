@@ -1,10 +1,17 @@
 //! Multi-language AST parser mapping source code across languages into BigO Lens IR.
 
 pub mod cpp;
+pub mod java;
+pub mod javascript;
 pub mod python;
+pub mod rust_lang;
 
+use bigolens_core::complexity::ExprPtr;
 use bigolens_core::constraints::{evaluate_workload, ConstraintSet, WorkloadResult};
-use bigolens_core::models::{BoundStatus, Confidence, Finding, FindingCategory, Quantity};
+use bigolens_core::ir::{LoopNestIR, RecursiveFunctionIR};
+use bigolens_core::models::{
+    BoundStatus, Confidence, Finding, FindingCategory, Quantity, SourceLocation,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SyntaxError {
@@ -27,146 +34,168 @@ pub fn analyze_source(
 
     match normalized_lang.as_str() {
         "python" | "py" => {
-            // 1. Python loops
             if let Ok(loops) = python::parse_python_loops(source, file_name) {
-                for lp in loops {
-                    let outcome = lp.analyze();
-                    if let Some(ref total_cost) = outcome.total_cost {
-                        let wl_res = evaluate_workload(total_cost, constraints);
-                        candidate_workloads.push(wl_res.clone());
-
-                        let time_qty = Quantity {
-                            expression: total_cost.to_string(),
-                            asymptotic: Some(total_cost.asymptotic_bound()),
-                            variables: total_cost.free_variables().into_iter().collect(),
-                            workload: wl_res.into(),
-                        };
-
-                        raw_findings.push(Finding {
-                            id: String::new(),
-                            category: FindingCategory::LoopNest,
-                            pattern: outcome.pattern.clone(),
-                            description: format!("loop nest with trip count {}", total_cost),
-                            function_name: "main".to_string(),
-                            location: lp.location,
-                            time: Some(time_qty),
-                            space: None,
-                            bound_status: outcome.bound_status,
-                            confidence: outcome.confidence,
-                            assumptions: outcome.assumptions,
-                            limitations: outcome.limitations,
-                            provenance: "bigolens-syntax".to_string(),
-                        });
-                    }
-                }
+                process_loops(
+                    loops,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
             }
-
-            // 2. Python recursion
             if let Ok(recs) = python::parse_python_recursion(source, file_name) {
-                for rec in recs {
-                    let (cost_expr, status, confidence, note) = rec.solve();
-                    let wl_res = evaluate_workload(&cost_expr, constraints);
-                    candidate_workloads.push(wl_res.clone());
-
-                    let time_qty = Quantity {
-                        expression: cost_expr.to_string(),
-                        asymptotic: Some(cost_expr.asymptotic_bound()),
-                        variables: cost_expr.free_variables().into_iter().collect(),
-                        workload: wl_res.into(),
-                    };
-
-                    let pattern = if rec.reduction_divisor > 1.0 {
-                        "master-theorem".to_string()
-                    } else {
-                        "linear-decrement".to_string()
-                    };
-
-                    let limitations = if status == BoundStatus::Unsupported {
-                        vec![note.clone()]
-                    } else {
-                        Vec::new()
-                    };
-
-                    raw_findings.push(Finding {
-                        id: String::new(),
-                        category: FindingCategory::Recursion,
-                        pattern,
-                        description: format!("recursive function '{}': {}", rec.name, note),
-                        function_name: rec.name,
-                        location: rec.location,
-                        time: Some(time_qty),
-                        space: None,
-                        bound_status: status,
-                        confidence,
-                        assumptions: Vec::new(),
-                        limitations,
-                        provenance: "bigolens-syntax".to_string(),
-                    });
-                }
+                process_recursions(
+                    recs,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
             }
-
-            // 3. Python memory allocation
             if let Ok(mems) = python::parse_python_memory_allocations(source, file_name) {
-                for mem in mems {
-                    let wl_res = evaluate_workload(&mem.space_expr, constraints);
-
-                    let space_qty = Quantity {
-                        expression: mem.space_expr.to_string(),
-                        asymptotic: Some(mem.space_expr.asymptotic_bound()),
-                        variables: mem.space_expr.free_variables().into_iter().collect(),
-                        workload: wl_res.into(),
-                    };
-
-                    raw_findings.push(Finding {
-                        id: String::new(),
-                        category: FindingCategory::DynamicAllocation,
-                        pattern: mem.pattern,
-                        description: mem.description,
-                        function_name: mem.function_name,
-                        location: mem.location,
-                        time: None,
-                        space: Some(space_qty),
-                        bound_status: BoundStatus::Proven,
-                        confidence: Confidence::High,
-                        assumptions: Vec::new(),
-                        limitations: Vec::new(),
-                        provenance: "bigolens-syntax".to_string(),
-                    });
-                }
+                let mapped = mems
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            m.location,
+                            m.space_expr,
+                            m.pattern,
+                            m.description,
+                            m.function_name,
+                        )
+                    })
+                    .collect();
+                process_allocations(mapped, constraints, &mut raw_findings);
             }
         }
         "cpp" | "c++" => {
             if let Ok(loops) = cpp::parse_cpp_loops(source, file_name) {
-                for lp in loops {
-                    let outcome = lp.analyze();
-                    if let Some(ref total_cost) = outcome.total_cost {
-                        let wl_res = evaluate_workload(total_cost, constraints);
-                        candidate_workloads.push(wl_res.clone());
-
-                        let time_qty = Quantity {
-                            expression: total_cost.to_string(),
-                            asymptotic: Some(total_cost.asymptotic_bound()),
-                            variables: total_cost.free_variables().into_iter().collect(),
-                            workload: wl_res.into(),
-                        };
-
-                        raw_findings.push(Finding {
-                            id: String::new(),
-                            category: FindingCategory::LoopNest,
-                            pattern: outcome.pattern.clone(),
-                            description: format!("loop nest with trip count {}", total_cost),
-                            function_name: "main".to_string(),
-                            location: lp.location,
-                            time: Some(time_qty),
-                            space: None,
-                            bound_status: outcome.bound_status,
-                            confidence: outcome.confidence,
-                            assumptions: outcome.assumptions,
-                            limitations: outcome.limitations,
-                            provenance: "bigolens-syntax".to_string(),
-                        });
-                    }
-                }
+                process_loops(
+                    loops,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(recs) = cpp::parse_cpp_recursion(source, file_name) {
+                process_recursions(
+                    recs,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(mems) = cpp::parse_cpp_memory_allocations(source, file_name) {
+                let mapped = mems
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            m.location,
+                            m.space_expr,
+                            m.pattern,
+                            m.description,
+                            m.function_name,
+                        )
+                    })
+                    .collect();
+                process_allocations(mapped, constraints, &mut raw_findings);
+            }
+        }
+        "java" => {
+            if let Ok(loops) = java::parse_java_loops(source, file_name) {
+                process_loops(
+                    loops,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(recs) = java::parse_java_recursion(source, file_name) {
+                process_recursions(
+                    recs,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(mems) = java::parse_java_memory_allocations(source, file_name) {
+                let mapped = mems
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            m.location,
+                            m.space_expr,
+                            m.pattern,
+                            m.description,
+                            m.function_name,
+                        )
+                    })
+                    .collect();
+                process_allocations(mapped, constraints, &mut raw_findings);
+            }
+        }
+        "rust" | "rs" => {
+            if let Ok(loops) = rust_lang::parse_rust_loops(source, file_name) {
+                process_loops(
+                    loops,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(recs) = rust_lang::parse_rust_recursion(source, file_name) {
+                process_recursions(
+                    recs,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(mems) = rust_lang::parse_rust_memory_allocations(source, file_name) {
+                let mapped = mems
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            m.location,
+                            m.space_expr,
+                            m.pattern,
+                            m.description,
+                            m.function_name,
+                        )
+                    })
+                    .collect();
+                process_allocations(mapped, constraints, &mut raw_findings);
+            }
+        }
+        "javascript" | "js" | "typescript" | "ts" => {
+            if let Ok(loops) = javascript::parse_js_loops(source, file_name) {
+                process_loops(
+                    loops,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(recs) = javascript::parse_js_recursion(source, file_name) {
+                process_recursions(
+                    recs,
+                    constraints,
+                    &mut raw_findings,
+                    &mut candidate_workloads,
+                );
+            }
+            if let Ok(mems) = javascript::parse_js_memory_allocations(source, file_name) {
+                let mapped = mems
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            m.location,
+                            m.space_expr,
+                            m.pattern,
+                            m.description,
+                            m.function_name,
+                        )
+                    })
+                    .collect();
+                process_allocations(mapped, constraints, &mut raw_findings);
             }
         }
         _ => return (Vec::new(), None),
@@ -197,6 +226,124 @@ pub fn analyze_source(
     }
 
     (raw_findings, max_workload)
+}
+
+fn process_loops(
+    loops: Vec<LoopNestIR>,
+    constraints: &ConstraintSet,
+    raw_findings: &mut Vec<Finding>,
+    candidate_workloads: &mut Vec<WorkloadResult>,
+) {
+    for lp in loops {
+        let outcome = lp.analyze();
+        if let Some(ref total_cost) = outcome.total_cost {
+            let wl_res = evaluate_workload(total_cost, constraints);
+            candidate_workloads.push(wl_res.clone());
+
+            let time_qty = Quantity {
+                expression: total_cost.to_string(),
+                asymptotic: Some(total_cost.asymptotic_bound()),
+                variables: total_cost.free_variables().into_iter().collect(),
+                workload: wl_res.into(),
+            };
+
+            raw_findings.push(Finding {
+                id: String::new(),
+                category: FindingCategory::LoopNest,
+                pattern: outcome.pattern.clone(),
+                description: format!("loop nest with trip count {}", total_cost),
+                function_name: "main".to_string(),
+                location: lp.location,
+                time: Some(time_qty),
+                space: None,
+                bound_status: outcome.bound_status,
+                confidence: outcome.confidence,
+                assumptions: outcome.assumptions,
+                limitations: outcome.limitations,
+                provenance: "bigolens-syntax".to_string(),
+            });
+        }
+    }
+}
+
+fn process_recursions(
+    recursions: Vec<RecursiveFunctionIR>,
+    constraints: &ConstraintSet,
+    raw_findings: &mut Vec<Finding>,
+    candidate_workloads: &mut Vec<WorkloadResult>,
+) {
+    for rec in recursions {
+        let (cost_expr, status, confidence, note) = rec.solve();
+        let wl_res = evaluate_workload(&cost_expr, constraints);
+        candidate_workloads.push(wl_res.clone());
+
+        let time_qty = Quantity {
+            expression: cost_expr.to_string(),
+            asymptotic: Some(cost_expr.asymptotic_bound()),
+            variables: cost_expr.free_variables().into_iter().collect(),
+            workload: wl_res.into(),
+        };
+
+        let pattern = if rec.reduction_divisor > 1.0 {
+            "master-theorem".to_string()
+        } else {
+            "linear-decrement".to_string()
+        };
+
+        let limitations = if status == BoundStatus::Unsupported {
+            vec![note.clone()]
+        } else {
+            Vec::new()
+        };
+
+        raw_findings.push(Finding {
+            id: String::new(),
+            category: FindingCategory::Recursion,
+            pattern,
+            description: format!("recursive function '{}': {}", rec.name, note),
+            function_name: rec.name,
+            location: rec.location,
+            time: Some(time_qty),
+            space: None,
+            bound_status: status,
+            confidence,
+            assumptions: Vec::new(),
+            limitations,
+            provenance: "bigolens-syntax".to_string(),
+        });
+    }
+}
+
+fn process_allocations(
+    allocations: Vec<(SourceLocation, ExprPtr, String, String, String)>,
+    constraints: &ConstraintSet,
+    raw_findings: &mut Vec<Finding>,
+) {
+    for (location, space_expr, pattern, description, function_name) in allocations {
+        let wl_res = evaluate_workload(&space_expr, constraints);
+        let space_qty = Quantity {
+            expression: space_expr.to_string(),
+            asymptotic: Some(space_expr.asymptotic_bound()),
+            variables: space_expr.free_variables().into_iter().collect(),
+            workload: wl_res.into(),
+        };
+
+        raw_findings.push(Finding {
+            id: String::new(),
+            category: FindingCategory::DynamicAllocation,
+            pattern,
+            description,
+            function_name,
+            location,
+            time: None,
+            space: Some(space_qty),
+            bound_status: BoundStatus::Proven,
+            confidence: Confidence::High,
+            assumptions: Vec::new(),
+            limitations: Vec::new(),
+            provenance: "bigolens-syntax".to_string(),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -260,6 +407,85 @@ int main() {
 
         let wl = max_wl.unwrap();
         assert_eq!(wl.upper_bound, Some(10000.0));
+    }
+
+    #[test]
+    fn test_analyze_source_java() {
+        let code = r#"
+class Solution {
+    public void run(int n) {
+        int[] arr = new int[n];
+        for (int i = 0; i < n; i++) {
+            System.out.println(i);
+        }
+    }
+}
+"#;
+        let mut constraints = ConstraintSet::default();
+        constraints.variables.insert(
+            "n".to_string(),
+            VariableBound {
+                min: Some(1.0),
+                max: Some(500.0),
+            },
+        );
+
+        let (findings, max_wl) = analyze_source(code, "java", "Solution.java", &constraints);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].category, FindingCategory::DynamicAllocation);
+        assert_eq!(findings[1].category, FindingCategory::LoopNest);
+        let wl = max_wl.unwrap();
+        assert_eq!(wl.upper_bound, Some(500.0));
+    }
+
+    #[test]
+    fn test_analyze_source_rust() {
+        let code = r#"
+fn solve(n: usize) {
+    let buf = vec![0; n];
+    for i in 0..n {
+        println!("{}", i);
+    }
+}
+"#;
+        let mut constraints = ConstraintSet::default();
+        constraints.variables.insert(
+            "n".to_string(),
+            VariableBound {
+                min: Some(1.0),
+                max: Some(250.0),
+            },
+        );
+
+        let (findings, max_wl) = analyze_source(code, "rust", "main.rs", &constraints);
+        assert_eq!(findings.len(), 2);
+        let wl = max_wl.unwrap();
+        assert_eq!(wl.upper_bound, Some(250.0));
+    }
+
+    #[test]
+    fn test_analyze_source_javascript() {
+        let code = r#"
+function run(n) {
+    const arr = new Array(n);
+    for (let i = 0; i < n; i++) {
+        console.log(i);
+    }
+}
+"#;
+        let mut constraints = ConstraintSet::default();
+        constraints.variables.insert(
+            "n".to_string(),
+            VariableBound {
+                min: Some(1.0),
+                max: Some(400.0),
+            },
+        );
+
+        let (findings, max_wl) = analyze_source(code, "javascript", "script.js", &constraints);
+        assert_eq!(findings.len(), 2);
+        let wl = max_wl.unwrap();
+        assert_eq!(wl.upper_bound, Some(400.0));
     }
 
     #[test]

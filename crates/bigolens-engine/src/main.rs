@@ -447,6 +447,77 @@ mod tests {
     }
 
     #[test]
+    fn test_analyze_java_request() {
+        let req = serde_json::json!({
+            "schema_version": "1.0",
+            "request_id": "test-java-1",
+            "action": "analyze",
+            "source": {
+                "path": "Solution.java",
+                "language": "java",
+                "content": "class Solution { public void solve(int n) { for (int i = 0; i < n; i++) {} } }"
+            },
+            "constraints": {
+                "variables": { "n": { "min": 1.0, "max": 1000.0 } }
+            }
+        });
+
+        let resp_str = handle_request(&req.to_string());
+        let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+        assert_eq!(resp["status"], "ok");
+        let findings = resp["results"]["findings"].as_array().unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["time"]["asymptotic"], "O(n)");
+    }
+
+    #[test]
+    fn test_analyze_rust_request() {
+        let req = serde_json::json!({
+            "schema_version": "1.0",
+            "request_id": "test-rust-1",
+            "action": "analyze",
+            "source": {
+                "path": "main.rs",
+                "language": "rust",
+                "content": "fn solve(n: usize) { for i in 0..n { for j in 0..i {} } }"
+            },
+            "constraints": {
+                "variables": { "n": { "min": 1.0, "max": 100.0 } }
+            }
+        });
+
+        let resp_str = handle_request(&req.to_string());
+        let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+        assert_eq!(resp["status"], "ok");
+        let findings = resp["results"]["findings"].as_array().unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["time"]["asymptotic"], "O(n^2)");
+    }
+
+    #[test]
+    fn test_analyze_javascript_request() {
+        let req = serde_json::json!({
+            "schema_version": "1.0",
+            "request_id": "test-js-1",
+            "action": "analyze",
+            "source": {
+                "path": "app.js",
+                "language": "javascript",
+                "content": "function compute(n) { const arr = new Array(n); for (let i = 0; i < n; i++) {} }"
+            },
+            "constraints": {
+                "variables": { "n": { "min": 1.0, "max": 500.0 } }
+            }
+        });
+
+        let resp_str = handle_request(&req.to_string());
+        let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+        assert_eq!(resp["status"], "ok");
+        let findings = resp["results"]["findings"].as_array().unwrap();
+        assert_eq!(findings.len(), 2);
+    }
+
+    #[test]
     fn test_error_handling() {
         // 1. Malformed JSON
         let resp_str = handle_request("not json");
