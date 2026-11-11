@@ -33,15 +33,20 @@ pub fn estimate_memory(items: &[MemoryItem], _constraints: &ConstraintSet) -> Me
     }
 
     let estimated_min = if dynamic_bytes > 0 || static_bytes > 0 {
-        Some(static_bytes.saturating_add(dynamic_bytes))
+        Some((static_bytes.saturating_add(dynamic_bytes)) as f64)
     } else {
         None
     };
 
     MemoryResult {
         static_storage_bytes: static_bytes,
+        static_storage_saturated: false,
+        largest_local_array_bytes: 0,
         estimated_minimum_bytes: estimated_min,
         estimated_minimum_status: dynamic_status,
+        assumptions: vec![
+            "process baseline, stack frames, standard-library internals and unmodelled heap allocations are not included; figures are lower bounds, not peak usage".to_string(),
+        ],
         items: items.to_vec(),
     }
 }
