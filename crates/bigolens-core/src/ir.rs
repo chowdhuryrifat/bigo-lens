@@ -101,9 +101,9 @@ impl LoopNestIR {
                         ) if *c == 0.0 => upper.clone(),
                         _ => upper.clone(),
                     };
-                    (Some(trips), "counted-loop")
+                    (Some(trips), "linear-loop")
                 } else if let Some(ref upper) = self.upper_bound {
-                    (Some(upper.clone()), "counted-loop")
+                    (Some(upper.clone()), "linear-loop")
                 } else {
                     (None, "unbounded-loop")
                 }
@@ -137,6 +137,7 @@ impl LoopNestIR {
         }
 
         // 3. Compose with inner loops
+        let mut is_triangular = false;
         let total_cost = if self.inner_loops.is_empty() {
             level_trips.clone()
         } else {
@@ -148,7 +149,22 @@ impl LoopNestIR {
                 assumptions.extend(inner_outcome.assumptions);
                 limitations.extend(inner_outcome.limitations);
 
-                if let (Some(outer_t), Some(inner_t)) =
+                let depends_on_outer = if let Some(ref ind_var) = self.induction_var {
+                    if let Some(ref inner_t) = inner_outcome.total_cost {
+                        inner_t.free_variables().contains(ind_var)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if depends_on_outer {
+                    is_triangular = true;
+                    if let Some(outer_t) = current_trips.take() {
+                        current_trips = power(outer_t, 2.0).ok();
+                    }
+                } else if let (Some(outer_t), Some(inner_t)) =
                     (current_trips.take(), inner_outcome.total_cost)
                 {
                     current_trips = Some(multiply(vec![outer_t, inner_t]));
@@ -157,7 +173,9 @@ impl LoopNestIR {
             current_trips
         };
 
-        let final_pattern = if !self.inner_loops.is_empty() {
+        let final_pattern = if is_triangular {
+            "triangular-loop".to_string()
+        } else if !self.inner_loops.is_empty() {
             "nested-loop".to_string()
         } else {
             pattern.to_string()
@@ -188,11 +206,24 @@ pub struct RecursiveFunctionIR {
 }
 
 impl RecursiveFunctionIR {
+    /// Analyze recursion using Master Theorem or Linear Decrement.
+    pub fn analyze(&self) -> (ExprPtr, BoundStatus, Confidence, String) {
+        self.solve()
+    }
+
     /// Solve recurrence using Master Theorem or Linear Decrement.
     pub fn solve(&self) -> (ExprPtr, BoundStatus, Confidence, String) {
         let n = variable(&self.parameter_name).unwrap();
 
         if let Some(c) = self.reduction_subtrahend {
+            if self.branch_factor > 1 {
+                return (
+                    n,
+                    BoundStatus::Unsupported,
+                    Confidence::None,
+                    "multiple recursion with subtractive arguments is not supported; exponential bounds are not derived".to_string(),
+                );
+            }
             // T(n) = T(n - c) + O(n^k)
             // If k == 0 => O(n)
             // If k == 1 => O(n^2)
@@ -326,5 +357,59 @@ mod tests {
         assert_eq!(confidence, Confidence::High);
         assert_eq!(cost.to_string(), "n * log_2(n)");
         assert!(note.contains("Master Theorem Case 2"));
+    }
+
+    #[test]
+    fn test_triangular_loop_ir() {
+        // Outer: for i in 0..n
+        // Inner: for j in 0..i
+        let n = variable("n").unwrap();
+        let i = variable("i").unwrap();
+
+        let inner = LoopNestIR {
+            induction_var: Some("j".to_string()),
+            lower_bound: Some(constant(0.0).unwrap()),
+            upper_bound: Some(i),
+            step: StepKind::Linear(constant(1.0).unwrap()),
+            direction: LoopDirection::Increasing,
+            is_inclusive: false,
+            location: SourceLocation {
+                file: "solution.cpp".to_string(),
+                line: 2,
+                column: 4,
+                end_line: None,
+                end_column: None,
+            },
+            inner_loops: Vec::new(),
+            has_early_exit: false,
+            bound_modified_in_body: false,
+            index_modified_in_body: false,
+        };
+
+        let outer = LoopNestIR {
+            induction_var: Some("i".to_string()),
+            lower_bound: Some(constant(0.0).unwrap()),
+            upper_bound: Some(n),
+            step: StepKind::Linear(constant(1.0).unwrap()),
+            direction: LoopDirection::Increasing,
+            is_inclusive: false,
+            location: SourceLocation {
+                file: "solution.cpp".to_string(),
+                line: 1,
+                column: 0,
+                end_line: None,
+                end_column: None,
+            },
+            inner_loops: vec![inner],
+            has_early_exit: false,
+            bound_modified_in_body: false,
+            index_modified_in_body: false,
+        };
+
+        let outcome = outer.analyze();
+        assert_eq!(outcome.bound_status, BoundStatus::Proven);
+        assert_eq!(outcome.confidence, Confidence::High);
+        assert_eq!(outcome.pattern, "triangular-loop");
+        assert_eq!(outcome.total_cost.unwrap().asymptotic_bound(), "O(n^2)");
     }
 }

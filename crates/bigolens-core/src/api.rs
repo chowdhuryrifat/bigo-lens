@@ -156,19 +156,23 @@ impl RequestHandler {
         let constraints = req.constraints.unwrap_or_default();
         let memory = MemoryResult {
             static_storage_bytes: 0,
-            estimated_minimum_bytes: None,
+            static_storage_saturated: false,
+            largest_local_array_bytes: 0,
+            estimated_minimum_bytes: Some(0.0),
             estimated_minimum_status: crate::models::BoundStatus::Proven,
+            assumptions: vec![
+                "process baseline, stack frames, standard-library internals and unmodelled heap allocations are not included; figures are lower bounds, not peak usage".to_string(),
+            ],
             items: Vec::new(),
         };
 
         let feasibility = crate::feasibility::assess_feasibility(None, &memory, &constraints);
 
         let summary = Summary {
+            finding_count: 0,
             max_time_workload: None,
-            max_time_status: crate::models::BoundStatus::Proven,
-            total_static_bytes: memory.static_storage_bytes,
-            estimated_minimum_memory_bytes: memory.estimated_minimum_bytes,
-            memory_status: memory.estimated_minimum_status,
+            dominant_finding_id: None,
+            coverage: "partial".to_string(),
         };
 
         let results = AnalyzeResults {

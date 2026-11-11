@@ -70,7 +70,7 @@ pub fn assess_memory(memory: &MemoryResult, constraints: &ConstraintSet) -> Asse
     let limit_bytes = (limit_mb * 1024.0 * 1024.0) as u64;
 
     let min_bytes = match memory.estimated_minimum_bytes {
-        Some(b) => b,
+        Some(b) => b as u64,
         None => {
             return Assessment {
                 status: FeasibilityStatus::LikelySafe,

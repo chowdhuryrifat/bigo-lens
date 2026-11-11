@@ -1,0 +1,13 @@
+[package]
+name = "bigolens-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bigolens-core = { path = "../bigolens-core" }
+tree-sitter.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-cpp.workspace = true
+thiserror.workspace = true

@@ -1,5 +1,6 @@
 //! Protocol data models conforming to shared/schemas/response.schema.json.
 
+use crate::constraints::WorkloadResult;
 use serde::{Deserialize, Serialize};
 
 /// How strongly a reported bound is supported.
@@ -95,6 +96,30 @@ pub struct Workload {
     pub missing_bounds: Vec<String>,
 }
 
+impl From<WorkloadResult> for Workload {
+    fn from(res: WorkloadResult) -> Self {
+        Self {
+            status: res.status,
+            upper_bound: res.upper_bound,
+            method: res.method,
+            assumptions: res.assumptions,
+            missing_bounds: res.missing_bounds,
+        }
+    }
+}
+
+impl From<&WorkloadResult> for Workload {
+    fn from(res: &WorkloadResult) -> Self {
+        Self {
+            status: res.status,
+            upper_bound: res.upper_bound,
+            method: res.method.clone(),
+            assumptions: res.assumptions.clone(),
+            missing_bounds: res.missing_bounds.clone(),
+        }
+    }
+}
+
 /// Evaluated quantity (time or space).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Quantity {
@@ -162,10 +187,9 @@ pub enum StorageKind {
 pub struct MemoryItem {
     pub name: String,
     pub kind: StorageKind,
+    #[serde(rename = "type")]
     pub type_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub exact_bytes: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbolic_bytes: Option<String>,
     pub location: SourceLocation,
 }
@@ -174,19 +198,21 @@ pub struct MemoryItem {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryResult {
     pub static_storage_bytes: u64,
-    pub estimated_minimum_bytes: Option<u64>,
+    pub static_storage_saturated: bool,
+    pub largest_local_array_bytes: u64,
+    pub estimated_minimum_bytes: Option<f64>,
     pub estimated_minimum_status: BoundStatus,
+    pub assumptions: Vec<String>,
     pub items: Vec<MemoryItem>,
 }
 
 /// Top-level summary of analysis results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Summary {
+    pub finding_count: usize,
     pub max_time_workload: Option<f64>,
-    pub max_time_status: BoundStatus,
-    pub total_static_bytes: u64,
-    pub estimated_minimum_memory_bytes: Option<u64>,
-    pub memory_status: BoundStatus,
+    pub dominant_finding_id: Option<String>,
+    pub coverage: String,
 }
 
 /// Results block of an analyze request.
