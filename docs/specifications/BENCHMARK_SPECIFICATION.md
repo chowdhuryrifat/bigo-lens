@@ -173,8 +173,92 @@ parameters, seed, sizes, warm-up and repetition counts, per-run raw samples, sum
 model string where available, and the isolation level applied. Re-running with the same record on the same machine
 must reproduce inputs exactly; timings are expected to vary within the reported spread.
 
-## 13. Protocol (planned)
+## 13. Protocol Specification (Protocol 1.1)
 
-The `benchmark` action exists in protocol 1.0 and currently returns `not_implemented`. Benchmark options and result
-fields will be added as a **minor** protocol version bump (additive) per
-[JSON_PROTOCOL.md §8](JSON_PROTOCOL.md#8-compatibility-and-versioning).
+The `benchmark` action executes dynamic benchmarks under isolated conditions (ADR 0014).
+
+### 13.1 Request
+
+```json
+{
+  "schema_version": "1.1",
+  "request_id": "bench-001",
+  "action": "benchmark",
+  "source": {
+    "path": "solution.cpp",
+    "language": "cpp",
+    "content": "int main() { ... }"
+  },
+  "constraints": {
+    "variables": {
+      "n": { "min": 1, "max": 200000 }
+    },
+    "time_limit_ms": 1000,
+    "memory_limit_mb": 256
+  },
+  "options": {
+    "cpp_standard": "c++17"
+  },
+  "benchmark_config": {
+    "sizes": [1000, 2000, 4000, 8000],
+    "repetitions": 7,
+    "warmup": 1,
+    "seed": 42,
+    "per_run_timeout_ms": 1000,
+    "allow_unsandboxed": false
+  }
+}
+```
+
+### 13.2 Response
+
+```json
+{
+  "schema_version": "1.1",
+  "request_id": "bench-001",
+  "status": "ok",
+  "engine": {
+    "name": "bigolens-engine",
+    "version": "0.1.0"
+  },
+  "results": {
+    "findings": [],
+    "summary": {
+      "dominant_time_complexity": "O(n)",
+      "dominant_finding": null,
+      "estimated_minimum_memory_bytes": 0,
+      "feasibility": "likely_safe",
+      "limitations": []
+    },
+    "benchmark": {
+      "isolated": true,
+      "isolation_level": "linux-namespaces-seccomp",
+      "samples": [
+        {
+          "size": { "n": 1000 },
+          "wall_time_median_ms": 0.45,
+          "wall_time_mad_ms": 0.02,
+          "peak_rss_bytes": 1048576,
+          "raw_samples_ms": [0.44, 0.45, 0.46, 0.45, 0.47, 0.45, 0.44]
+        }
+      ],
+      "empirical_fit": {
+        "model": "linear",
+        "r_squared": 0.998,
+        "rss": 0.001,
+        "slope": 0.00045,
+        "intercept": 0.001,
+        "ambiguous": false
+      },
+      "extrapolated_runtime": {
+        "target_size": { "n": 200000 },
+        "min_ms": 85.0,
+        "central_ms": 90.0,
+        "max_ms": 98.0,
+        "extrapolated": true
+      },
+      "warnings": []
+    }
+  }
+}
+```

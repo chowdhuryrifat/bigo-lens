@@ -105,21 +105,21 @@ Benchmarking would compile and **execute** user code. That code may be hostile, 
 
 | Threat | STRIDE | Required mitigation | Status |
 | --- | --- | --- | --- |
-| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Planned (M4) |
-| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Planned (M4) |
-| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Planned (M4) |
-| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Planned (M4) |
-| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Planned (M4) |
-| Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Planned (M4) requirement |
-| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Planned (M4) requirement |
+| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Designed (ADR 0014, BL-401) |
+| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Designed (ADR 0014, BL-401) |
+| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Designed (ADR 0014, BL-401) |
+| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Designed (ADR 0014, BL-401) |
+| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Designed (ADR 0014, BL-401) |
+| Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Designed (ADR 0014, BL-401) |
+| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Designed (ADR 0014, BL-401) |
 
 ### 4.3 Compiler argument injection (TB3, TB6)
 
 | Threat | STRIDE | Mitigation | Status |
 | --- | --- | --- | --- |
 | A request field smuggles compiler flags (`-Xclang -load`, `-fplugin=`, `-include /etc/passwd`, `-o /path`) | E, I | The Clang front end uses a **fixed argument list**. The only request-derived value is `options.cpp_standard`, validated against the enum `c++11 … c++23` before use. Unknown request fields are rejected | Implemented |
-| A future benchmark compiler invocation takes flags from the user | E | The compiler is invoked with a fixed argv. Optimization level and standard come from validated enums, and free-form flags are never accepted | Planned (M4) requirement |
-| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, not as a path argument. A future compiler adapter must place `--` before file operands | Implemented (front end); Planned (M4) |
+| A future benchmark compiler invocation takes flags from the user | E | The compiler is invoked with a fixed argv. Optimization level and standard come from validated enums, and free-form flags are never accepted | Designed (ADR 0014, BL-401) |
+| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, not as a path argument. A future compiler adapter must place `--` before file operands | Implemented (front end); Designed (ADR 0014, BL-401) |
 
 ### 4.4 Shell injection and process spawning (TB2, TB3)
 
