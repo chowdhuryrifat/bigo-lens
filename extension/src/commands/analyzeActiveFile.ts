@@ -16,8 +16,8 @@ export interface AnalyzeDependencies extends ExtensionServices {
 
 export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== 'cpp') {
-    void vscode.window.showWarningMessage('BigO Lens: open a C++ file to analyze.');
+  if (!editor || (editor.document.languageId !== 'cpp' && editor.document.languageId !== 'python')) {
+    void vscode.window.showWarningMessage('BigO Lens: open a supported file (Python or C++) to analyze.');
     return;
   }
   const document = editor.document;
@@ -45,13 +45,15 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
     constraints = loaded.kind === 'ok' ? loaded.constraints : undefined;
   }
 
+  const language = document.languageId === 'python' ? 'python' : 'cpp';
   const displayPath =
     vscode.workspace.asRelativePath(document.uri, false) || path.basename(document.fileName);
   const request = analyzeRequest({
     displayPath,
     content: document.getText(),
     constraints,
-    cppStandard: readSettings().cppStandard,
+    language,
+    cppStandard: language === 'cpp' ? readSettings().cppStandard : undefined,
   });
 
   await vscode.window.withProgress(

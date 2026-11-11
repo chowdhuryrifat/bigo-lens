@@ -31,6 +31,25 @@ describe('requestBuilder', () => {
     assert.deepEqual(request.constraints, constraints);
   });
 
+  it('builds an analyze request with language python', () => {
+    const request = analyzeRequest(
+      {
+        displayPath: 'solution.py',
+        content: 'for i in range(n): pass',
+        constraints: undefined,
+        language: 'python',
+      },
+      'an-py',
+    );
+    assert.equal(request.action, 'analyze');
+    assert.deepEqual(request.source, {
+      path: 'solution.py',
+      language: 'python',
+      content: 'for i in range(n): pass',
+    });
+    assert.equal('options' in request, false);
+  });
+
   it('generates request ids accepted by the protocol', () => {
     const id = newRequestId();
     assert.match(id, /^[A-Za-z0-9_.:-]{1,128}$/);
