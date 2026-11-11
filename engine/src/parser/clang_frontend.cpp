@@ -2247,6 +2247,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
       out_.storage.push_back(std::move(item));
     }
     analyzeVectorConstruction(*var);
+    analyzeStringConstruction(*var);
     return true;
   }
 
@@ -2274,8 +2275,45 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
 
   std::string nextId() { return "F" + std::to_string(++findingCounter_); }
 
+  /// Minimal size-expression converter for allocation sizes (constants, variables, + - *).
+  class LoopAnalyzerSizeConverter {
+   public:
+    explicit LoopAnalyzerSizeConverter(const clang::ASTContext& ctx) : ctx_(ctx) {}
+    cx::ExprPtr convert(const clang::Expr* expr) const {
+      if (auto value = constantValue(expr, ctx_)) {
+        return *value >= 0 ? cx::constant(static_cast<double>(*value)) : nullptr;
+      }
+      const clang::Expr* e = expr->IgnoreParenCasts();
+      if (const clang::VarDecl* var = referencedVar(e)) {
+        return cx::variable(var->getNameAsString());
+      }
+      if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(e)) {
+        auto lhs = convert(binary->getLHS());
+        auto rhs = convert(binary->getRHS());
+        if (!lhs || !rhs) {
+          return nullptr;
+        }
+        if (binary->getOpcode() == clang::BO_Add) {
+          return cx::add({lhs, rhs});
+        }
+        if (binary->getOpcode() == clang::BO_Sub) {
+          return cx::subtract(lhs, rhs);
+        }
+        if (binary->getOpcode() == clang::BO_Mul) {
+          return cx::multiply({lhs, rhs});
+        }
+      }
+      return nullptr;
+    }
+
+   private:
+    const clang::ASTContext& ctx_;
+  };
+
   void addStorageFinding(const estimation::StorageItem& item, models::FindingCategory category, std::string pattern,
-                         cx::ExprPtr bytes, BoundStatus status = BoundStatus::Proven) {
+                         cx::ExprPtr bytes, BoundStatus status = BoundStatus::Proven,
+                         std::string customDescription = {}, std::vector<std::string> customAssumptions = {},
+                         std::vector<std::string> customLimitations = {}) {
     models::Finding finding;
     finding.id = nextId();
     finding.category = category;
@@ -2286,12 +2324,24 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     finding.boundStatus = status;
     finding.confidence = status == BoundStatus::Proven ? Confidence::High : Confidence::Medium;
     finding.provenance = kStorageProvenance;
-    if (category == models::FindingCategory::StaticStorage) {
+    if (!customDescription.empty()) {
+      finding.description = std::move(customDescription);
+    } else if (category == models::FindingCategory::StaticStorage) {
       finding.description = "static-storage array '" + item.name + "' of type " + item.typeName +
                             " (size from the compiler's type layout)";
     } else {
       finding.description = "std::vector '" + item.name + "' constructed with a symbolic element count";
+    }
+
+    if (!customAssumptions.empty()) {
+      finding.assumptions = std::move(customAssumptions);
+    } else if (category != models::FindingCategory::StaticStorage) {
       finding.assumptions.push_back("element buffer only; std::vector bookkeeping and allocator overhead excluded");
+    }
+
+    if (!customLimitations.empty()) {
+      finding.limitations = std::move(customLimitations);
+    } else if (category != models::FindingCategory::StaticStorage) {
       finding.limitations.push_back("elements that own further heap memory (e.g. nested containers) are not followed");
     }
     out_.findings.push_back(std::move(finding));
@@ -2323,6 +2373,53 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     if (!count) {
       return;
     }
+
+    // Check if element is also std::vector (2D vector)
+    if (normaliseStdName(qualifiedRecordName(element)) == "std::vector" && construct->getNumArgs() >= 2) {
+      const auto* innerArg = construct->getArg(1);
+      const auto* innerConstruct = llvm::dyn_cast_or_null<clang::CXXConstructExpr>(stripExpr(innerArg));
+      if (innerConstruct == nullptr) {
+        if (const auto* ref = referencedVar(innerArg)) {
+          if (ref->getInit()) {
+            innerConstruct = llvm::dyn_cast_or_null<clang::CXXConstructExpr>(stripExpr(ref->getInit()));
+          }
+        }
+      }
+      if (innerConstruct != nullptr && innerConstruct->getNumArgs() >= 1 &&
+          !innerConstruct->getArg(0)->getType()->isIntegerType()) {
+        const auto* sub = llvm::dyn_cast_or_null<clang::CXXConstructExpr>(stripExpr(innerConstruct->getArg(0)));
+        if (sub != nullptr && sub->getNumArgs() >= 1 && sub->getArg(0)->getType()->isIntegerType()) {
+          innerConstruct = sub;
+        }
+      }
+      if (innerConstruct != nullptr && innerConstruct->getNumArgs() >= 1 &&
+          innerConstruct->getArg(0)->getType()->isIntegerType()) {
+        cx::ExprPtr innerCount = converter.convert(innerConstruct->getArg(0));
+        const auto* innerSpec = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(
+            element.getCanonicalType()->getAsCXXRecordDecl());
+        if (innerCount && innerSpec != nullptr && innerSpec->getTemplateArgs().size() > 0) {
+          const clang::QualType innerElement = innerSpec->getTemplateArgs()[0].getAsType();
+          if (!innerElement.isNull() && !innerElement->isDependentType() && !innerElement->isIncompleteType()) {
+            const auto innerElementBytes = static_cast<double>(ctx_.getTypeSizeInChars(innerElement).getQuantity());
+            estimation::StorageItem item;
+            item.name = var.getNameAsString();
+            item.kind = estimation::StorageKind::VectorBuffer;
+            item.typeName = type.getAsString(ctx_.getPrintingPolicy());
+            item.symbolicBytes = cx::add({cx::multiply({count, innerCount, cx::constant(innerElementBytes)}),
+                                          cx::multiply({count, cx::constant(elementBytes)})});
+            item.location = location(var.getBeginLoc(), var.getEndLoc());
+            const std::string description = "std::vector '" + item.name + "' constructed with symbolic element counts";
+            const std::vector<std::string> assumptions = {
+                "element buffers only; std::vector bookkeeping and allocator overhead excluded"};
+            addStorageFinding(item, models::FindingCategory::DynamicAllocation, "sized-vector", item.symbolicBytes,
+                              BoundStatus::Estimated, description, assumptions);
+            out_.storage.push_back(std::move(item));
+            return;
+          }
+        }
+      }
+    }
+
     estimation::StorageItem item;
     item.name = var.getNameAsString();
     item.kind = estimation::StorageKind::VectorBuffer;
@@ -2334,37 +2431,35 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     out_.storage.push_back(std::move(item));
   }
 
-  /// Minimal size-expression converter for allocation sizes (constants, variables, + - *).
-  class LoopAnalyzerSizeConverter {
-   public:
-    explicit LoopAnalyzerSizeConverter(const clang::ASTContext& ctx) : ctx_(ctx) {}
-    cx::ExprPtr convert(const clang::Expr* expr) const {
-      if (auto value = constantValue(expr, ctx_)) {
-        return *value >= 0 ? cx::constant(static_cast<double>(*value)) : nullptr;
-      }
-      const clang::Expr* e = expr->IgnoreParenCasts();
-      if (const clang::VarDecl* var = referencedVar(e)) {
-        return cx::variable(var->getNameAsString());
-      }
-      if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(e)) {
-        auto lhs = convert(binary->getLHS());
-        auto rhs = convert(binary->getRHS());
-        if (!lhs || !rhs) {
-          return nullptr;
-        }
-        if (binary->getOpcode() == clang::BO_Add) {
-          return cx::add({lhs, rhs});
-        }
-        if (binary->getOpcode() == clang::BO_Mul) {
-          return cx::multiply({lhs, rhs});
-        }
-      }
-      return nullptr;
+  void analyzeStringConstruction(const clang::VarDecl& var) {
+    const clang::QualType type = var.getType();
+    const std::string recordName = normaliseStdName(qualifiedRecordName(type));
+    if (recordName != "std::basic_string" && recordName != "std::string") {
+      return;
     }
-
-   private:
-    const clang::ASTContext& ctx_;
-  };
+    const auto* construct =
+        llvm::dyn_cast_or_null<clang::CXXConstructExpr>(var.getInit() ? var.getInit()->IgnoreImplicit() : nullptr);
+    if (construct == nullptr || construct->getNumArgs() < 2 || !construct->getArg(0)->getType()->isIntegerType()) {
+      return;
+    }
+    LoopAnalyzerSizeConverter converter(ctx_);
+    cx::ExprPtr count = converter.convert(construct->getArg(0));
+    if (!count) {
+      return;
+    }
+    estimation::StorageItem item;
+    item.name = var.getNameAsString();
+    item.kind = estimation::StorageKind::VectorBuffer;
+    item.typeName = type.getAsString(ctx_.getPrintingPolicy());
+    item.symbolicBytes = cx::multiply({count, cx::constant(1.0)});
+    item.location = location(var.getBeginLoc(), var.getEndLoc());
+    const std::string description = "std::string '" + item.name + "' constructed with a symbolic character count";
+    const std::vector<std::string> assumptions = {
+        "character buffer only; std::string bookkeeping (SSO) and allocator overhead excluded"};
+    addStorageFinding(item, models::FindingCategory::DynamicAllocation, "sized-string", item.symbolicBytes,
+                      BoundStatus::Estimated, description, assumptions);
+    out_.storage.push_back(std::move(item));
+  }
 
   void analyzeFunction(const clang::FunctionDecl& function) {
     currentFunction_ = function.getNameAsString();

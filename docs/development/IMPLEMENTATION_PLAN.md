@@ -45,7 +45,7 @@ flowchart TD
   BL301["BL-301 Product constraints"]:::done
   BL302["BL-302 Linear constraints"]:::done
   BL303["BL-303 Multiple sum constraints"]:::done
-  BL304["BL-304 Nested vectors + strings memory"]:::crit
+  BL304["BL-304 Nested vectors + strings memory"]:::done
   BL305["BL-305 Map/set memory estimate"]:::todo
   BL306["BL-306 End-to-end T/N/sum-N test"]:::todo
   BL307["BL-307 Sidecar error positions"]:::todo
@@ -545,7 +545,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-304: Memory estimates for nested vectors and strings
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
@@ -557,8 +557,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: constructor-sized forms. Out of scope: sizes established by `resize` or `push_back` in loops.
 
 **Acceptance criteria.**
-- [ ] The 2D vector fixture reports a symbolic `n * m * 4 + n * 24`-style expression, using the actual `sizeof` values from Clang, and the evaluated bytes.
-- [ ] HighRisk memory feasibility triggers when the estimate exceeds the limit.
+- [x] The 2D vector fixture reports a symbolic `n * m * 4 + n * 24`-style expression, using the actual `sizeof` values from Clang, and the evaluated bytes.
+- [x] HighRisk memory feasibility triggers when the estimate exceeds the limit.
 
 **Test cases.** Fixtures for a 2D vector, a string, and a near miss (a vector filled by `push_back`, which does not produce a sized estimate).
 

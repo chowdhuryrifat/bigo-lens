@@ -338,6 +338,36 @@ TEST_F(FrontendPipeline, LinearSpaceVectorAndStaticArray) {
   EXPECT_EQ(r["results"]["memory"]["static_storage_bytes"], 4000);
 }
 
+TEST_F(FrontendPipeline, 2DVectorGridMemoryEstimate) {
+  const json r = analyze("14_2d_vector_grid.cpp", bounds({{"n", 1000}, {"m", 2000}}));
+  const json vec = single(r, "dynamic_allocation");
+  EXPECT_EQ(vec["pattern"], "sized-vector");
+  EXPECT_EQ(vec["space"]["workload"]["upper_bound"], 8024000.0);
+  const std::string expr = vec["space"]["expression"].get<std::string>();
+  EXPECT_NE(expr.find("n"), std::string::npos);
+  EXPECT_NE(expr.find("m"), std::string::npos);
+}
+
+TEST_F(FrontendPipeline, HighRiskMemoryFeasibility) {
+  json constraints = bounds({{"n", 1000}, {"m", 2000}});
+  constraints["memory_limit_mb"] = 4;
+  const json r = analyze("14_2d_vector_grid.cpp", constraints);
+  EXPECT_EQ(r["results"]["feasibility"]["memory"]["status"], "high_risk");
+}
+
+TEST_F(FrontendPipeline, SizedStringMemoryEstimate) {
+  const json r = analyze("15_sized_string.cpp", bounds({{"n", 1000}}));
+  const json str = single(r, "dynamic_allocation");
+  EXPECT_EQ(str["pattern"], "sized-string");
+  EXPECT_EQ(str["space"]["expression"], "n");
+  EXPECT_EQ(str["space"]["workload"]["upper_bound"], 1000.0);
+}
+
+TEST_F(FrontendPipeline, PushBackVectorDoesNotProduceSizedEstimate) {
+  const json r = analyze("16_push_back_vector.cpp", bounds({{"n", 1000}}));
+  EXPECT_TRUE(findings(r, "dynamic_allocation").empty());
+}
+
 TEST_F(FrontendPipeline, SumConstrainedTestCasesUseConstraintRelationship) {
   json constraints = bounds({{"t", 10}, {"n", 200000}});
   constraints["sum_constraints"] = json::array({{{"variable", "n"}, {"count_variable", "t"}, {"max_total", 200000}}});
