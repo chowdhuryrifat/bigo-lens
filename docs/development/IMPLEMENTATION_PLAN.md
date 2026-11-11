@@ -52,7 +52,7 @@ flowchart TD
 
   BL401["BL-401 Isolation ADR + spec"]:::done
   BL402["BL-402 Compiler adapter"]:::done
-  BL403["BL-403 Input generators"]:::todo
+  BL403["BL-403 Input generators"]:::done
   BL404["BL-404 Runner + limits (Linux)"]:::todo
   BL405["BL-405 Linux isolation"]:::todo
   BL406["BL-406 Windows Job Objects"]:::todo
@@ -678,7 +678,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-403: Constraint-driven input generators
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-401
@@ -690,9 +690,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: integers, arrays, multiple test cases, a seed. Out of scope: adversarial or worst-case input construction (a non-goal), and graphs or strings beyond simple random ones.
 
 **Acceptance criteria.**
-- [ ] The same seed produces byte-identical output.
-- [ ] Generated values respect every bound.
-- [ ] Sizes above the constraint maxima are rejected.
+- [x] The same seed produces byte-identical output.
+- [x] Generated values respect every bound.
+- [x] Sizes above the constraint maxima are rejected.
 
 **Test cases.** Determinism, bound checks, and a sum-constraint distribution across test cases.
 

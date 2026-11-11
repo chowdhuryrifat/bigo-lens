@@ -2491,8 +2491,9 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     bool shouldVisitTemplateInstantiations() const { return false; }
 
     bool TraverseIfStmt(clang::IfStmt* s) {
-      if (!s)
+      if (!s) {
         return true;
+      }
       if (s->getInit()) {
         TraverseStmt(s->getInit());
       }
@@ -2511,8 +2512,9 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     }
 
     bool TraverseConditionalOperator(clang::ConditionalOperator* s) {
-      if (!s)
+      if (!s) {
         return true;
+      }
       if (s->getCond()) {
         TraverseStmt(s->getCond());
       }
@@ -2528,8 +2530,9 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     }
 
     bool TraverseSwitchStmt(clang::SwitchStmt* s) {
-      if (!s)
+      if (!s) {
         return true;
+      }
       if (s->getInit()) {
         TraverseStmt(s->getInit());
       }

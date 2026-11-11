@@ -8,6 +8,9 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Constraint-driven input generators (BL-403). Adds `crates/bigolens-core/src/generator.rs` with declarative input-format schemas (`SingleInteger`, `Array`, `TestCases`, `SumConstrainedCases`), a seeded 64-bit deterministic SplitMix64 pseudo-random generator, strict bound and byte-limit checking, and sum-constrained test case distribution.
+- Fix clang-tidy readability braces in `clang_frontend.cpp` to ensure Code Quality CI passing on GitHub Actions.
+
 - Compiler adapter with fixed argv (BL-402). Adds `crates/bigolens-engine/src/compiler.rs` discovering system C++ compilers (`clang++`, `g++`, `cl.exe`), compiling benchmark source with fixed argument vectors (validated C++ standards and optimization levels), flag escape protection (`--` and path prefixing), and structured diagnostic parsing from stderr without shell execution.
 
 - Benchmark isolation architecture and specification (BL-401). Defines ADR 0014 selecting platform-specific isolation (Linux unprivileged user/mount/network/PID namespaces, seccomp-bpf, rlimits, and process-group kill-tree; Windows Job Objects with restricted tokens; macOS process limits with explicit "not sandboxed" labelling; fail-closed policy requiring explicit `allow_unsandboxed: true`). Finalizes the Protocol 1.1 `benchmark` action request and response schema in `BENCHMARK_SPECIFICATION.md` and updates `THREAT_MODEL.md`.

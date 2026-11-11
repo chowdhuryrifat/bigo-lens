@@ -12,6 +12,7 @@ pub mod complexity;
 pub mod constraints;
 pub mod estimation;
 pub mod feasibility;
+pub mod generator;
 pub mod ir;
 pub mod models;
 pub mod recurrence;
