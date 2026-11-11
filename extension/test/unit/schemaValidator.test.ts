@@ -22,6 +22,19 @@ describe('SchemaValidator', () => {
       'id-2',
     );
     assert.deepEqual(validator.validateRequest(analyze).errors, []);
+
+    for (const lang of ['python', 'java', 'rust', 'javascript']) {
+      const multiLangReq = analyzeRequest(
+        {
+          displayPath: `solution.${lang}`,
+          content: 'code',
+          constraints: undefined,
+          language: lang,
+        },
+        `id-${lang}`,
+      );
+      assert.deepEqual(validator.validateRequest(multiLangReq).errors, []);
+    }
   });
 
   it('rejects requests the engine would reject', () => {

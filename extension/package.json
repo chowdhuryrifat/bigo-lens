@@ -1,7 +1,7 @@
 {
   "name": "bigo-lens",
   "displayName": "BigO Lens",
-  "description": "Constraint-aware code complexity analysis for Python, C++, and competitive programming: AST static analysis, symbolic workload estimation and memory feasibility.",
+  "description": "Constraint-aware code complexity analysis across programming languages (C++, Python, Java, Rust, JavaScript): AST static analysis, symbolic workload estimation and memory feasibility.",
   "version": "0.1.0",
   "publisher": "bigo-lens",
   "license": "MIT",
@@ -21,6 +21,10 @@
   ],
   "keywords": [
     "c++",
+    "python",
+    "java",
+    "rust",
+    "javascript",
     "complexity",
     "big-o",
     "competitive programming",
@@ -29,7 +33,11 @@
   "main": "./out/src/extension.js",
   "activationEvents": [
     "onLanguage:cpp",
-    "onLanguage:python"
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:rust",
+    "onLanguage:javascript",
+    "onLanguage:typescript"
   ],
   "contributes": {
     "commands": [

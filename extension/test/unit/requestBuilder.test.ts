@@ -50,6 +50,22 @@ describe('requestBuilder', () => {
     assert.equal('options' in request, false);
   });
 
+  it('builds an analyze request for java, rust, and javascript', () => {
+    for (const lang of ['java', 'rust', 'javascript', 'typescript']) {
+      const request = analyzeRequest(
+        {
+          displayPath: `solution.${lang}`,
+          content: 'code',
+          constraints: undefined,
+          language: lang,
+        },
+        `an-${lang}`,
+      );
+      assert.equal(request.action, 'analyze');
+      assert.equal(request.source?.language, lang);
+    }
+  });
+
   it('generates request ids accepted by the protocol', () => {
     const id = newRequestId();
     assert.match(id, /^[A-Za-z0-9_.:-]{1,128}$/);

@@ -8,6 +8,14 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Multi-language complexity analysis expansion in Rust (`bigolens-syntax`). Expands language support to compute algorithmic complexity and memory allocations regardless of source language across C++, Python, Java, Rust, and JavaScript/TypeScript:
+  - `java.rs`: parses Java standard `for` loops, enhanced `for` loops (`arr.length`), logarithmic `while` loops, recursive divide-and-conquer (`mergeSort`) and linear decrement methods, and array/heap allocations (`new int[n]`).
+  - `rust_lang.rs`: parses Rust range `for` loops (`0..n`, `0..=n`), triangular nested loops, halving `while` loops, recursive functions (`merge_sort`), and vector allocations (`vec![0; n]`, `Vec::with_capacity(n)`).
+  - `javascript.rs`: parses JavaScript/TypeScript standard `for` loops, `for..in`/`for..of` loops, halving `while` loops, recursive functions, and heap allocations (`new Array(n)`).
+  - `cpp.rs`: adds C++ recursion analysis and dynamic heap allocation analysis (`new int[n]`).
+  - Updates `request.schema.json` to allow all supported language identifiers in `source.language`.
+  - Updates VS Code extension activation events and language normalization to support analyzing Java, Rust, JavaScript, and TypeScript files directly from the editor.
+
 - Map validation errors to positions in sidecar files (BL-307). When ajv or the engine reports validation errors or inverted ranges (`{min: 10, max: 1}`) with a JSON-pointer path under `/constraints`, the extension maps the pointer using an RFC 6901 JSON scanner to source lines/columns and publishes diagnostics directly on `<file>.bigolens.json`. Underlines keys, handles array indices, and decodes escaped pointer tokens.
 
 - End-to-end sum-constrained extension integration tests (BL-306). Adds end-to-end integration and smoke test coverage for `09_sum_constrained_test_cases.cpp` with a sidecar constraints file ($t \le 10, n \le 2\cdot 10^5, \sum n \le 2\cdot 10^5$), verifying $4\cdot 10^{10}$ workload derivation with the `sum-constraint-packing` method.
