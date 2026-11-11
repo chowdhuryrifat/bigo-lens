@@ -368,6 +368,33 @@ TEST_F(FrontendPipeline, PushBackVectorDoesNotProduceSizedEstimate) {
   EXPECT_TRUE(findings(r, "dynamic_allocation").empty());
 }
 
+TEST_F(FrontendPipeline, SetInsertionLoopMemoryEstimate) {
+  const json r = analyze("17_set_insertion_loop.cpp", bounds({{"n", 1000}}));
+  const json finding = single(r, "dynamic_allocation");
+  EXPECT_EQ(finding["pattern"], "node-container");
+  EXPECT_EQ(finding["bound_status"], "estimated");
+  EXPECT_EQ(finding["space"]["workload"]["upper_bound"], 36000.0);
+  EXPECT_EQ(r["results"]["memory"]["estimated_minimum_status"], "estimated");
+  EXPECT_EQ(r["results"]["memory"]["estimated_minimum_bytes"], 36000.0);
+}
+
+TEST_F(FrontendPipeline, ConditionalSetInsertionMemoryEstimate) {
+  const json r = analyze("18_conditional_set_insertion.cpp", bounds({{"n", 1000}}));
+  const json finding = single(r, "dynamic_allocation");
+  EXPECT_EQ(finding["pattern"], "node-container");
+  EXPECT_EQ(finding["bound_status"], "estimated");
+  EXPECT_EQ(finding["space"]["workload"]["upper_bound"], 36000.0);
+  bool foundConditional = false;
+  for (const auto& a : finding["assumptions"]) {
+    const std::string text = a.get<std::string>();
+    if (text.find("conditional") != std::string::npos && text.find("upper bound") != std::string::npos) {
+      foundConditional = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(foundConditional);
+}
+
 TEST_F(FrontendPipeline, SumConstrainedTestCasesUseConstraintRelationship) {
   json constraints = bounds({{"t", 10}, {"n", 200000}});
   constraints["sum_constraints"] = json::array({{{"variable", "n"}, {"count_variable", "t"}, {"max_total", 200000}}});

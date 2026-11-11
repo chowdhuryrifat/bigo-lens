@@ -8,6 +8,7 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Memory estimates for node-based containers (BL-305). Loops inserting into `std::set` or `std::map` report estimated memory based on libstdc++/libc++ 32-byte node overhead plus value size, marked as `Estimated` with an explicit assumption string (noting upper bounds on conditional insertions and excluded allocator overhead).
 - Rust engine architecture (ADR 0012). Re-architects the standalone engine as a modular Cargo workspace in `crates/`:
   - `crates/bigolens-core`: Pure Rust analysis core (`#![forbid(unsafe_code)]`) with domain models, symbolic expression trees (`Arc<Expr>`), numerical evaluator, constraints optimizer, memory model, and feasibility assessment.
   - `crates/bigolens-engine`: CLI binary using `clap` providing JSON protocol IPC matching the versioned JSON protocol 1.0.

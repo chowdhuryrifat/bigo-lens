@@ -46,7 +46,7 @@ flowchart TD
   BL302["BL-302 Linear constraints"]:::done
   BL303["BL-303 Multiple sum constraints"]:::done
   BL304["BL-304 Nested vectors + strings memory"]:::done
-  BL305["BL-305 Map/set memory estimate"]:::todo
+  BL305["BL-305 Map/set memory estimate"]:::done
   BL306["BL-306 End-to-end T/N/sum-N test"]:::todo
   BL307["BL-307 Sidecar error positions"]:::todo
 
@@ -566,7 +566,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-305: Per-node memory estimate for maps and sets
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P3
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-304
@@ -578,8 +578,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: the libstdc++ and libc++ node-size assumptions, as documented constants. Out of scope: allocator behaviour.
 
 **Acceptance criteria.**
-- [ ] The estimate is reported as Estimated with an explicit assumption string.
-- [ ] It never contributes to a "proven" figure.
+- [x] The estimate is reported as Estimated with an explicit assumption string.
+- [x] It never contributes to a "proven" figure.
 
 **Test cases.** A fixture with an insertion loop, and a near miss with conditional insertion (the count becomes an upper bound and the assumption says so).
 

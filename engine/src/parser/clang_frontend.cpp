@@ -44,6 +44,8 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -339,7 +341,8 @@ struct LoopIndex {
 };
 
 struct NestResult {
-  cx::ExprPtr cost;  ///< Null when the count is unknown.
+  cx::ExprPtr cost;   ///< Null when the count is unknown.
+  cx::ExprPtr trips;  ///< Loop iteration count (without body operation costs multiplied in).
   BoundStatus status = BoundStatus::Proven;
   int depth = 0;
   bool dependentBound = false;
@@ -355,6 +358,7 @@ struct NestResult {
   void fail(BoundStatus newStatus, std::string reason) {
     status = models::weakest(status, newStatus);
     cost = nullptr;
+    trips = nullptr;
     if (unknownReason.empty()) {
       unknownReason = std::move(reason);
     }
@@ -653,9 +657,13 @@ class LoopAnalyzer {
       }
       if (childResult.cost) {
         terms.push_back(childResult.cost);
+        if (childResult.trips) {
+          result.trips = childResult.trips;
+        }
       } else {
         terms.clear();
         result.cost = nullptr;
+        result.trips = nullptr;
         break;
       }
     }
@@ -830,6 +838,11 @@ class LoopAnalyzer {
       result.cost = cx::summation(index->name, lower, upper, result.cost);
     } else {
       result.cost = cx::multiply({trips, result.cost});
+    }
+    if (result.trips) {
+      result.trips = cx::multiply({trips, result.trips});
+    } else {
+      result.trips = trips;
     }
     return result;
   }
@@ -2461,8 +2474,237 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     out_.storage.push_back(std::move(item));
   }
 
+  class ContainerInsertionVisitor final : public clang::RecursiveASTVisitor<ContainerInsertionVisitor> {
+   public:
+    struct Insertion {
+      const clang::VarDecl* var = nullptr;
+      std::string containerName;
+      clang::QualType containerType;
+      double nodeBytes = 0.0;
+      double elemBytes = 0.0;
+      bool isConditional = false;
+      clang::SourceRange range;
+    };
+
+    explicit ContainerInsertionVisitor(const clang::ASTContext& ctx) : ctx_(ctx) {}
+
+    bool shouldVisitTemplateInstantiations() const { return false; }
+
+    bool TraverseIfStmt(clang::IfStmt* s) {
+      if (!s)
+        return true;
+      if (s->getInit()) {
+        TraverseStmt(s->getInit());
+      }
+      if (s->getCond()) {
+        TraverseStmt(s->getCond());
+      }
+      conditionalDepth_++;
+      if (s->getThen()) {
+        TraverseStmt(s->getThen());
+      }
+      if (s->getElse()) {
+        TraverseStmt(s->getElse());
+      }
+      conditionalDepth_--;
+      return true;
+    }
+
+    bool TraverseConditionalOperator(clang::ConditionalOperator* s) {
+      if (!s)
+        return true;
+      if (s->getCond()) {
+        TraverseStmt(s->getCond());
+      }
+      conditionalDepth_++;
+      if (s->getTrueExpr()) {
+        TraverseStmt(s->getTrueExpr());
+      }
+      if (s->getFalseExpr()) {
+        TraverseStmt(s->getFalseExpr());
+      }
+      conditionalDepth_--;
+      return true;
+    }
+
+    bool TraverseSwitchStmt(clang::SwitchStmt* s) {
+      if (!s)
+        return true;
+      if (s->getInit()) {
+        TraverseStmt(s->getInit());
+      }
+      if (s->getCond()) {
+        TraverseStmt(s->getCond());
+      }
+      conditionalDepth_++;
+      if (s->getBody()) {
+        TraverseStmt(s->getBody());
+      }
+      conditionalDepth_--;
+      return true;
+    }
+
+    bool VisitCallExpr(clang::CallExpr* call) {
+      const clang::Expr* objectExpr = nullptr;
+      std::string opName;
+      if (const auto* member = llvm::dyn_cast<clang::CXXMemberCallExpr>(call)) {
+        if (const auto* method = member->getMethodDecl()) {
+          opName = method->getNameAsString();
+          objectExpr = member->getImplicitObjectArgument();
+        }
+      } else if (const auto* opCall = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call)) {
+        if (const auto* callee = opCall->getDirectCallee()) {
+          opName = callee->getNameAsString();
+          if (opName == "operator[]" && opCall->getNumArgs() >= 2) {
+            objectExpr = opCall->getArg(0);
+          }
+        }
+      }
+
+      if (objectExpr == nullptr) {
+        return true;
+      }
+
+      if (opName != "insert" && opName != "emplace" && opName != "operator[]") {
+        return true;
+      }
+
+      const clang::VarDecl* var = referencedVar(stripExpr(objectExpr));
+      if (var == nullptr) {
+        return true;
+      }
+
+      clang::QualType type = var->getType().getNonReferenceType().getCanonicalType();
+      const std::string recordName = normaliseStdName(qualifiedRecordName(type));
+      if (recordName != "std::set" && recordName != "std::multiset" && recordName != "std::map" &&
+          recordName != "std::multimap") {
+        return true;
+      }
+
+      constexpr double kRbTreeNodeOverhead = 32.0;
+      double elemBytes = 0.0;
+
+      const auto* spec = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(type->getAsCXXRecordDecl());
+      if (spec != nullptr) {
+        if ((recordName == "std::set" || recordName == "std::multiset") && spec->getTemplateArgs().size() >= 1) {
+          if (spec->getTemplateArgs()[0].getKind() == clang::TemplateArgument::Type) {
+            clang::QualType elemType = spec->getTemplateArgs()[0].getAsType();
+            if (!elemType.isNull() && !elemType->isDependentType() && !elemType->isIncompleteType()) {
+              elemBytes = static_cast<double>(ctx_.getTypeSizeInChars(elemType).getQuantity());
+            }
+          }
+        } else if ((recordName == "std::map" || recordName == "std::multimap") && spec->getTemplateArgs().size() >= 2) {
+          if (spec->getTemplateArgs()[0].getKind() == clang::TemplateArgument::Type &&
+              spec->getTemplateArgs()[1].getKind() == clang::TemplateArgument::Type) {
+            clang::QualType keyType = spec->getTemplateArgs()[0].getAsType();
+            clang::QualType valType = spec->getTemplateArgs()[1].getAsType();
+            if (!keyType.isNull() && !valType.isNull() && !keyType->isDependentType() && !keyType->isIncompleteType() &&
+                !valType->isDependentType() && !valType->isIncompleteType()) {
+              elemBytes = static_cast<double>(ctx_.getTypeSizeInChars(keyType).getQuantity() +
+                                              ctx_.getTypeSizeInChars(valType).getQuantity());
+            }
+          }
+        }
+      }
+
+      if (elemBytes <= 0.0) {
+        elemBytes = 4.0;
+      }
+
+      Insertion ins;
+      ins.var = var;
+      ins.containerName = recordName;
+      ins.containerType = type;
+      ins.nodeBytes = kRbTreeNodeOverhead + elemBytes;
+      ins.elemBytes = elemBytes;
+      ins.isConditional = (conditionalDepth_ > 0);
+      ins.range = call->getSourceRange();
+      insertions.push_back(ins);
+
+      return true;
+    }
+
+    std::vector<Insertion> insertions;
+
+   private:
+    const clang::ASTContext& ctx_;
+    int conditionalDepth_ = 0;
+  };
+
+  void analyzeContainerInsertions(const clang::Stmt* loop, const NestResult& nest) {
+    cx::ExprPtr trips = nest.trips ? nest.trips : nest.cost;
+    if (!trips) {
+      return;
+    }
+
+    ContainerInsertionVisitor visitor(ctx_);
+    visitor.TraverseStmt(const_cast<clang::Stmt*>(loop));
+
+    if (visitor.insertions.empty()) {
+      return;
+    }
+
+    std::unordered_map<const clang::VarDecl*, std::vector<ContainerInsertionVisitor::Insertion>> byVar;
+    for (const auto& ins : visitor.insertions) {
+      byVar[ins.var].push_back(ins);
+    }
+
+    for (const auto& [var, insList] : byVar) {
+      if (handledContainerInsertions_.count(var) != 0) {
+        continue;
+      }
+      handledContainerInsertions_.insert(var);
+
+      bool allConditional = true;
+      double nodeBytes = 0.0;
+      double elemBytes = 0.0;
+      std::string containerName;
+      for (const auto& ins : insList) {
+        if (!ins.isConditional) {
+          allConditional = false;
+        }
+        nodeBytes = std::max(nodeBytes, ins.nodeBytes);
+        elemBytes = std::max(elemBytes, ins.elemBytes);
+        containerName = ins.containerName;
+      }
+
+      cx::ExprPtr symbolicBytes = cx::multiply({trips, cx::constant(nodeBytes)});
+
+      estimation::StorageItem item;
+      item.name = var->getNameAsString();
+      item.kind = estimation::StorageKind::VectorBuffer;
+      item.typeName = var->getType().getAsString(ctx_.getPrintingPolicy());
+      item.symbolicBytes = symbolicBytes;
+      item.location = location(var->getBeginLoc(), var->getEndLoc());
+
+      std::string description = containerName + " '" + item.name + "' insertions bounded by loop (" +
+                                std::to_string(static_cast<int>(nodeBytes)) + " bytes per node: 32 bytes overhead + " +
+                                std::to_string(static_cast<int>(elemBytes)) + " bytes value)";
+
+      std::vector<std::string> assumptions;
+      if (allConditional) {
+        assumptions.push_back(
+            "conditional insertions into node-based container; iteration count is an upper bound on element count; "
+            "estimated at 32-byte overhead per node in libstdc++/libc++ plus value size (" +
+            std::to_string(static_cast<int>(nodeBytes)) +
+            " bytes/node); duplicate insertions and allocator overhead excluded");
+      } else {
+        assumptions.push_back(
+            "node-based container memory is estimated as 32-byte overhead per node in libstdc++/libc++ plus value size "
+            "(" +
+            std::to_string(static_cast<int>(nodeBytes)) +
+            " bytes/node); duplicate insertions and allocator overhead excluded");
+      }
+
+      addStorageFinding(item, models::FindingCategory::DynamicAllocation, "node-container", item.symbolicBytes,
+                        BoundStatus::Estimated, std::move(description), std::move(assumptions));
+      out_.storage.push_back(std::move(item));
+    }
+  }
+
   void analyzeFunction(const clang::FunctionDecl& function) {
     currentFunction_ = function.getNameAsString();
+    handledContainerInsertions_.clear();
     detectRecursion(function);
 
     std::vector<const clang::Stmt*> loops;
@@ -2521,6 +2763,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
           break;
       }
       out_.findings.push_back(std::move(finding));
+      analyzeContainerInsertions(loop, nest);
     }
 
     std::vector<const clang::CallExpr*> topLevelCalls;
@@ -2595,6 +2838,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
   InterproceduralContext interprocedural_;
   std::string currentFunction_;
   int findingCounter_ = 0;
+  std::unordered_set<const clang::VarDecl*> handledContainerInsertions_;
 };
 
 class AnalysisConsumer final : public clang::ASTConsumer {
