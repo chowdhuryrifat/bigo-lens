@@ -17,3 +17,4 @@ pub mod ir;
 pub mod models;
 pub mod recurrence;
 pub mod solvers;
+pub mod statistics;
