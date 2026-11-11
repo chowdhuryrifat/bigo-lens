@@ -7,7 +7,7 @@ BigO Lens uses **trunk-based development** on `main`. This document is the detai
 - `main` is always releasable. It builds and passes CI on every commit.
 - Branches are short-lived, ideally merged within a few days. Large features land behind capability flags or as incremental, independently useful pull requests. For example, the benchmark subsystem landed its statistics and growth-fit library before any runner exists, and `capabilities.features.benchmark` still reports `not_implemented`.
 - History on `main` is linear. Every pull request is squash-merged into one Conventional Commit.
-- **No force-pushes to `main`** and no direct pushes. Branch protection should enforce this once the GitHub repository exists (see [IMPLEMENTATION_PLAN.md](../development/IMPLEMENTATION_PLAN.md), BL-107).
+- **No force-pushes to `main`** and no direct pushes. Branch protection enforces this (see [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md)). All PRs require branch naming conformance, CI verification, and maintainer approval.
 
 ## 2. Branches
 

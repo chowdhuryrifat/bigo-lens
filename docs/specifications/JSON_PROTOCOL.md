@@ -168,7 +168,7 @@ the last token. `file` is `source.path`.
 | --- | --- | --- |
 | `actions` | string[] | `["capabilities", "analyze", "benchmark"]` |
 | `features` | object: name → `partial` \| `unsupported` \| `data_only` \| `requires_runtime_estimate` \| `not_implemented` \| `supported` | Support level per feature |
-| `stl_cost_model` | array of `{ container, operation, average, worst, amortized: boolean, note }` | Cost table (data only) |
+| `stl_cost_model` | array of `{ container, operation, average, worst, amortized: boolean, note }` | Cost table |
 
 Features reported by engine 0.1.0:
 
@@ -177,10 +177,10 @@ Features reported by engine 0.1.0:
 | `loop_analysis` | `partial` |
 | `while_countdown_loops` | `partial` |
 | `range_for_loops` | `partial` |
-| `recursion_analysis` | `unsupported` |
-| `recurrence_extraction` | `partial` (direct recursion; reported in `limitations`, not solved) |
-| `stl_cost_model` | `data_only` |
-| `interprocedural_analysis` | `unsupported` |
+| `recursion_analysis` | `partial` (Master Theorem and linear decrements) |
+| `recurrence_extraction` | `partial` (direct recursion) |
+| `stl_cost_model` | `partial` (applied to recognized container operations and top-level algorithms) |
+| `interprocedural_analysis` | `partial` (direct non-recursive calls in the same translation unit) |
 | `constraint_workload` | `partial` |
 | `static_memory_estimate` | `partial` |
 | `time_feasibility` | `requires_runtime_estimate` |
@@ -231,7 +231,7 @@ results
 | --- | --- | --- |
 | `status` | boundStatus | `proven`, `estimated` or `unknown` |
 | `upper_bound` | number \| null | Upper bound of the quantity under constraints |
-| `method` | string \| null | `pointwise-maxima`, `sum-constraint-packing`, `sum-constraint-cases`, `pointwise-maxima-capped` |
+| `method` | string \| null | `pointwise-maxima`, `sum-constraint-packing`, `sum-constraint-cases`, `pointwise-maxima-capped`, `product-constraint-bound`, `linear-constraint-bound` |
 | `assumptions` | string[] | |
 | `missing_bounds` | string[] | Variables without `max` |
 

@@ -30,11 +30,11 @@ No. Analysis is local and deterministic. No network access is needed, and there 
 
 ### Why is my loop reported as `unknown`?
 
-The analyzer only claims a bound for loop shapes it can justify (see [COMPLEXITY_MODEL.md](../specifications/COMPLEXITY_MODEL.md)). Loops whose termination depends on runtime data are reported as `unknown`, with "data-dependent termination". Examples are binary search's `while (lo < hi)`, the Collatz iteration, and two-pointer loops (which are not supported yet). This is deliberate: a guessed `O(log n)` that is sometimes wrong would be worse than an honest `unknown`.
+The analyzer only claims a bound for loop shapes it can justify (see [COMPLEXITY_MODEL.md](../specifications/COMPLEXITY_MODEL.md)). Loops whose termination depends on runtime data are reported as `unknown`, with "data-dependent termination". Examples are binary search's `while (lo < hi)` and the Collatz iteration. This is deliberate: a guessed `O(log n)` that is sometimes wrong would be worse than an honest `unknown`. (Two-pointer loops `while (l < r)` with monotonic `++l`/`--r` updates on all paths are recognized as $O(n)$.)
 
 ### Why is a finding `unsupported`?
 
-The construct is recognized but not analysed. Examples are a loop whose index is modified inside the body, `do-while` loops, and recursion. Recursion is detected, but recurrence solving is not implemented yet.
+The construct is recognized but not analysed. Examples are a loop whose index is modified inside the body, `do-while` loops, and multiple subtractive recursion (such as Fibonacci). Standard divide-and-conquer and linear decrement recurrences are solved.
 
 ### What is the difference between bound status and confidence?
 

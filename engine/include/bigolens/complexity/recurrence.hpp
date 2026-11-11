@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -49,6 +50,10 @@ struct Recurrence {
 /// Human-readable form, e.g. "T(n) = T(n - 1) + T(n - 2) + O(1)".
 [[nodiscard]] std::string describe(const Recurrence& recurrence);
 
+/// Symbol for the size measure: "n", unless the source size expression uses an
+/// identifier of that name (e.g. "limit - n"), which would be ambiguous.
+[[nodiscard]] std::string sizeSymbol(const Recurrence& recurrence);
+
 struct RecurrenceSolution {
   models::BoundStatus status = models::BoundStatus::Unknown;
   ExprPtr time;        ///< Structural count of the whole recursion.
@@ -73,8 +78,25 @@ class RecurrenceSolver {
   [[nodiscard]] virtual std::optional<RecurrenceSolution> solve(const Recurrence& recurrence) const = 0;
 };
 
+/// Solves recurrences of the master theorem form T(n) = a * T(n/b) + Theta(n^k (log n)^p).
+class MasterTheoremSolver final : public RecurrenceSolver {
+ public:
+  [[nodiscard]] std::string name() const override { return "master-theorem"; }
+  [[nodiscard]] std::optional<RecurrenceSolution> solve(const Recurrence& recurrence) const override;
+};
+
+/// Solves recurrences of the form T(n) = T(n - c) + f(n) by summation.
+class LinearDecrementSolver final : public RecurrenceSolver {
+ public:
+  [[nodiscard]] std::string name() const override { return "linear-decrement"; }
+  [[nodiscard]] std::optional<RecurrenceSolution> solve(const Recurrence& recurrence) const override;
+};
+
 /// Tries the solvers in order and returns the first solution, or nothing.
 [[nodiscard]] std::optional<RecurrenceSolution> solveRecurrence(const Recurrence& recurrence,
                                                                 std::span<const RecurrenceSolver* const> solvers);
+
+/// Returns the standard solvers in precedence order (MasterTheorem, then LinearDecrement).
+[[nodiscard]] std::vector<std::unique_ptr<RecurrenceSolver>> standardRecurrenceSolvers();
 
 }  // namespace bigolens::complexity

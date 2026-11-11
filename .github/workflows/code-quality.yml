@@ -19,6 +19,33 @@ env:
   LLVM_VERSION: '18'
 
 jobs:
+  pr-conventions:
+    name: PR Branch & Conventions Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify branch name
+        run: |
+          branch="${{ github.head_ref }}"
+          echo "Verifying branch: $branch"
+          if [[ ! "$branch" =~ ^(feat|fix|docs|chore|refactor|test|ci|perf)/.+ ]] && [[ ! "$branch" =~ ^dependabot/ ]]; then
+            echo "::error::Branch name '$branch' does not match required convention: <type>/<topic> (feat, fix, docs, chore, refactor, test, ci, perf)"
+            exit 1
+          fi
+
+  rust-quality:
+    name: Rust · Format & Clippy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Ensure stable Rust toolchain
+        run: rustup update stable && rustup default stable
+      - name: Format check
+        run: cargo fmt --check
+      - name: Clippy check
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
   clang-format:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

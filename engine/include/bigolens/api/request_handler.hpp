@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,10 +18,16 @@ namespace bigolens::api {
 class RequestHandler {
  public:
   /// `analyzer` may be null when the engine was built without a frontend.
-  explicit RequestHandler(analyzers::SourceAnalyzer* analyzer) noexcept : analyzer_(analyzer) {}
+  /// Uses standardRecurrenceSolvers() by default.
+  explicit RequestHandler(analyzers::SourceAnalyzer* analyzer);
   /// `solvers` (non-owning, may be empty) resolve extracted recurrences, in order.
-  RequestHandler(analyzers::SourceAnalyzer* analyzer, std::vector<const complexity::RecurrenceSolver*> solvers)
-      : analyzer_(analyzer), solvers_(std::move(solvers)) {}
+  RequestHandler(analyzers::SourceAnalyzer* analyzer, std::vector<const complexity::RecurrenceSolver*> solvers);
+
+  RequestHandler(const RequestHandler&) = delete;
+  RequestHandler& operator=(const RequestHandler&) = delete;
+  RequestHandler(RequestHandler&& other) noexcept;
+  RequestHandler& operator=(RequestHandler&& other) noexcept;
+  ~RequestHandler() = default;
 
   [[nodiscard]] nlohmann::json handle(const nlohmann::json& request) const;
   /// Parses raw text first; malformed JSON yields a "malformed_json" error response.
@@ -31,6 +38,7 @@ class RequestHandler {
   [[nodiscard]] nlohmann::json handleParsed(const nlohmann::json& request) const;
 
   analyzers::SourceAnalyzer* analyzer_;
+  std::vector<std::unique_ptr<complexity::RecurrenceSolver>> ownedSolvers_;
   std::vector<const complexity::RecurrenceSolver*> solvers_;
 };
 

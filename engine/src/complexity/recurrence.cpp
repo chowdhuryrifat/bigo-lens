@@ -4,10 +4,12 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <utility>
 
 #include "bigolens/complexity/asymptotic.hpp"
+#include "bigolens/complexity/expression.hpp"
 
 namespace bigolens::complexity {
 namespace {
@@ -54,8 +56,37 @@ bool containsIdentifier(const std::string& text, const std::string& identifier) 
   return false;
 }
 
-/// Symbol for the size measure: "n", unless the source size expression uses an
-/// identifier of that name (e.g. "limit - n"), which would be ambiguous.
+struct AsymptoticTerm {
+  double power = 0.0;
+  double logPower = 0.0;
+};
+
+std::optional<AsymptoticTerm> extractTerm(const Expr& work, const std::string& symbol) {
+  auto bound = asymptoticUpperBound(work);
+  if (!bound) {
+    return std::nullopt;
+  }
+  const auto& terms = bound->terms;
+  if (terms.empty()) {
+    return AsymptoticTerm{0.0, 0.0};
+  }
+  if (terms.size() == 1) {
+    const auto& m = terms[0];
+    if (m.empty()) {
+      return AsymptoticTerm{0.0, 0.0};
+    }
+    if (m.size() == 1 && m.count(symbol) == 1) {
+      const auto& factor = m.at(symbol);
+      if (factor.power >= 0.0 && factor.logPower >= 0.0) {
+        return AsymptoticTerm{factor.power, factor.logPower};
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
 std::string sizeSymbol(const Recurrence& recurrence) {
   if (recurrence.size.empty() || recurrence.size == "n") {
     return "n";
@@ -67,8 +98,6 @@ std::string sizeSymbol(const Recurrence& recurrence) {
   }
   return "size";
 }
-
-}  // namespace
 
 std::string describe(const Recurrence& recurrence) {
   const std::string symbol = sizeSymbol(recurrence);
@@ -126,6 +155,167 @@ std::optional<RecurrenceSolution> solveRecurrence(const Recurrence& recurrence,
     }
   }
   return std::nullopt;
+}
+
+std::optional<RecurrenceSolution> MasterTheoremSolver::solve(const Recurrence& recurrence) const {
+  if (recurrence.calls.empty() || !recurrence.work || !recurrence.maxCallsPerInvocation.has_value()) {
+    return std::nullopt;
+  }
+  for (const auto& call : recurrence.calls) {
+    if (call.insideLoop || call.change != SizeChange::Divide) {
+      return std::nullopt;
+    }
+  }
+  const double b = recurrence.calls.front().amount;
+  if (b < 2.0 - 1e-9) {
+    return std::nullopt;
+  }
+  for (const auto& call : recurrence.calls) {
+    if (std::fabs(call.amount - b) > 1e-6) {
+      return std::nullopt;
+    }
+  }
+  const int a = *recurrence.maxCallsPerInvocation;
+  if (a < 1) {
+    return std::nullopt;
+  }
+
+  const std::string symbol = sizeSymbol(recurrence);
+  const ExprPtr work = symbol == "n" ? recurrence.work : substitute(recurrence.work, "n", variable(symbol));
+  auto term = extractTerm(*work, symbol);
+  if (!term) {
+    return std::nullopt;
+  }
+  const double k = term->power;
+  const double p = term->logPower;
+
+  const double cCrit = std::log(static_cast<double>(a)) / std::log(b);
+
+  bool isCase2 = false;
+  if (std::fabs(k - std::round(k)) < 1e-6) {
+    const int kInt = static_cast<int>(std::round(k));
+    if (kInt >= 0 && kInt <= 30) {
+      const double bk = std::pow(b, kInt);
+      if (std::fabs(static_cast<double>(a) - bk) < 1e-6) {
+        isCase2 = true;
+      }
+    }
+  }
+
+  ExprPtr timeExpr;
+  if (isCase2) {
+    // Case 2: a = b^k => T(n) = Theta(n^k (log n)^(p + 1))
+    const ExprPtr logTerm = add({logarithm(variable(symbol), b), constant(1.0)});
+    if (std::fabs(k) < 1e-6 && std::fabs(p) < 1e-6) {
+      timeExpr = logTerm;
+    } else if (std::fabs(k - 1.0) < 1e-6 && std::fabs(p) < 1e-6) {
+      timeExpr = multiply({variable(symbol), logTerm});
+    } else if (std::fabs(k) >= 1e-6 && std::fabs(p) < 1e-6) {
+      timeExpr = multiply({power(variable(symbol), k), logTerm});
+    } else if (std::fabs(k) < 1e-6 && std::fabs(p) >= 1e-6) {
+      timeExpr = power(logTerm, p + 1.0);
+    } else {
+      timeExpr = multiply({power(variable(symbol), k), power(logTerm, p + 1.0)});
+    }
+  } else if (static_cast<double>(a) > std::pow(b, k) + 1e-6) {
+    // Case 1: a > b^k => T(n) = Theta(n^(log_b a))
+    if (std::fabs(cCrit - 1.0) < 1e-6) {
+      timeExpr = variable(symbol);
+    } else if (std::fabs(cCrit) < 1e-6) {
+      timeExpr = constant(1.0);
+    } else {
+      const double expVal = std::fabs(cCrit - std::round(cCrit)) < 1e-6 ? std::round(cCrit) : cCrit;
+      timeExpr = power(variable(symbol), expVal);
+    }
+  } else {
+    // Case 3: a < b^k => T(n) = Theta(n^k (log n)^p)
+    if (std::fabs(p) < 1e-6) {
+      if (std::fabs(k - 1.0) < 1e-6) {
+        timeExpr = variable(symbol);
+      } else if (std::fabs(k) < 1e-6) {
+        timeExpr = constant(1.0);
+      } else {
+        timeExpr = power(variable(symbol), k);
+      }
+    } else {
+      const ExprPtr logTerm = add({logarithm(variable(symbol), b), constant(1.0)});
+      if (std::fabs(k - 1.0) < 1e-6) {
+        timeExpr = multiply({variable(symbol), power(logTerm, p)});
+      } else if (std::fabs(k) < 1e-6) {
+        timeExpr = power(logTerm, p);
+      } else {
+        timeExpr = multiply({power(variable(symbol), k), power(logTerm, p)});
+      }
+    }
+  }
+
+  RecurrenceSolution solution;
+  solution.status = models::BoundStatus::Proven;
+  solution.time = timeExpr;
+  solution.method = "master-theorem";
+  solution.assumptions.push_back("base case assumed to require O(1) time");
+  return solution;
+}
+
+std::optional<RecurrenceSolution> LinearDecrementSolver::solve(const Recurrence& recurrence) const {
+  if (recurrence.calls.empty() || !recurrence.work || !recurrence.maxCallsPerInvocation.has_value()) {
+    return std::nullopt;
+  }
+  if (*recurrence.maxCallsPerInvocation != 1) {
+    return std::nullopt;
+  }
+  for (const auto& call : recurrence.calls) {
+    if (call.insideLoop || call.change != SizeChange::Decrement) {
+      return std::nullopt;
+    }
+  }
+  const double c = recurrence.calls.front().amount;
+  if (c < 1.0 - 1e-9) {
+    return std::nullopt;
+  }
+  for (const auto& call : recurrence.calls) {
+    if (std::fabs(call.amount - c) > 1e-6) {
+      return std::nullopt;
+    }
+  }
+
+  const std::string symbol = sizeSymbol(recurrence);
+  const ExprPtr work = symbol == "n" ? recurrence.work : substitute(recurrence.work, "n", variable(symbol));
+  auto term = extractTerm(*work, symbol);
+  if (!term) {
+    return std::nullopt;
+  }
+  const double k = term->power;
+  const double p = term->logPower;
+
+  ExprPtr timeExpr;
+  if (std::fabs(k) < 1e-6 && std::fabs(p) < 1e-6) {
+    timeExpr = std::fabs(c - 1.0) < 1e-6 ? variable(symbol) : multiply({constant(1.0 / c), variable(symbol)});
+  } else if (std::fabs(k - 1.0) < 1e-6 && std::fabs(p) < 1e-6) {
+    if (std::fabs(c - 1.0) < 1e-6) {
+      timeExpr = summation("i", constant(1.0), variable(symbol), variable("i"));
+    } else {
+      timeExpr = multiply({constant(1.0 / (2.0 * c)), power(variable(symbol), 2.0)});
+    }
+  } else if (std::fabs(p) < 1e-6) {
+    timeExpr = power(variable(symbol), k + 1.0);
+  } else {
+    timeExpr = multiply({power(variable(symbol), k + 1.0), power(logarithm(variable(symbol)), p)});
+  }
+
+  RecurrenceSolution solution;
+  solution.status = models::BoundStatus::Proven;
+  solution.time = timeExpr;
+  solution.method = "linear-decrement";
+  solution.assumptions.push_back("base case assumed to require O(1) time");
+  return solution;
+}
+
+std::vector<std::unique_ptr<RecurrenceSolver>> standardRecurrenceSolvers() {
+  std::vector<std::unique_ptr<RecurrenceSolver>> solvers;
+  solvers.push_back(std::make_unique<MasterTheoremSolver>());
+  solvers.push_back(std::make_unique<LinearDecrementSolver>());
+  return solvers;
 }
 
 }  // namespace bigolens::complexity

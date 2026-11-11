@@ -4,7 +4,7 @@ This document describes the implementation-level design of BigO Lens 0.1.0 (prot
 
 Status labels follow [ARCHITECTURE.md](../../ARCHITECTURE.md#bigo-lens-architecture): Implemented, Partial or Planned (Mx).
 
-All engine code is in namespace `bigolens::<module>`. Public headers are under `engine/include/bigolens/<module>/`, and implementations are under `engine/src/<module>/`.
+As approved in [ADR 0012](DECISIONS/0012-rust-engine-architecture.md), the engine is architected in Rust across three crates in `crates/`: `bigolens-core` (pure Rust, `#![forbid(unsafe_code)]`), `bigolens-clang` (FFI boundary to Clang LibTooling), and `bigolens-engine` (CLI application). During the phased migration, the C++ implementation under `engine/` serves as the baseline reference.
 
 ---
 

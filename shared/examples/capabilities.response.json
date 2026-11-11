@@ -17,13 +17,13 @@
     "features": {
       "benchmark": "not_implemented",
       "constraint_workload": "partial",
-      "interprocedural_analysis": "unsupported",
+      "interprocedural_analysis": "partial",
       "loop_analysis": "partial",
       "range_for_loops": "partial",
       "recurrence_extraction": "partial",
-      "recursion_analysis": "unsupported",
+      "recursion_analysis": "partial",
       "static_memory_estimate": "partial",
-      "stl_cost_model": "data_only",
+      "stl_cost_model": "partial",
       "time_feasibility": "requires_runtime_estimate",
       "while_countdown_loops": "partial"
     },

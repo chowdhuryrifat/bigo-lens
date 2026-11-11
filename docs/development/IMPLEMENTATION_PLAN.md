@@ -12,11 +12,10 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-203: Solve common recurrences](#bl-203-solve-common-recurrences).**
+> **[BL-301: Use product constraints to tighten workloads](#bl-301-use-product-constraints-to-tighten-workloads).**
 >
-> BL-202 is done: recursive functions carry an extracted, front-end-independent recurrence (size measure, call
-> shapes, calls per invocation, non-recursive work), and a `RecurrenceSolver` interface is wired into the request
-> handler. BL-203 adds the first solvers.
+> M2 (Analysis: loop forms, recursion and storage) is complete! BL-207 synchronized M2 capabilities, specifications, and example responses.
+> BL-301 uses `product_constraints` (e.g. `n·m ≤ 10^6`) to tighten workloads for monotone expressions.
 
 ## Dependency graph
 
@@ -37,16 +36,16 @@ flowchart TD
 
   BL201["BL-201 Fixture coverage audit"]:::done
   BL202["BL-202 Recurrence interface"]:::done
-  BL203["BL-203 Recurrence solving"]:::crit
-  BL204["BL-204 Interprocedural cost"]:::todo
-  BL205["BL-205 Apply STL cost model"]:::todo
-  BL206["BL-206 Two-pointer while loops"]:::todo
-  BL207["BL-207 M2 capabilities + spec sync"]:::crit
+  BL203["BL-203 Recurrence solving"]:::done
+  BL204["BL-204 Interprocedural cost"]:::done
+  BL205["BL-205 Apply STL cost model"]:::done
+  BL206["BL-206 Two-pointer while loops"]:::done
+  BL207["BL-207 M2 capabilities + spec sync"]:::done
 
-  BL301["BL-301 Product constraints"]:::todo
-  BL302["BL-302 Linear constraints"]:::todo
-  BL303["BL-303 Multiple sum constraints"]:::todo
-  BL304["BL-304 Nested vectors + strings memory"]:::todo
+  BL301["BL-301 Product constraints"]:::done
+  BL302["BL-302 Linear constraints"]:::done
+  BL303["BL-303 Multiple sum constraints"]:::done
+  BL304["BL-304 Nested vectors + strings memory"]:::crit
   BL305["BL-305 Map/set memory estimate"]:::todo
   BL306["BL-306 End-to-end T/N/sum-N test"]:::todo
   BL307["BL-307 Sidecar error positions"]:::todo
@@ -367,7 +366,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-203: Solve common recurrences
 
-- **Status:** Not started
+- **Status:** Done. `MasterTheoremSolver` and `LinearDecrementSolver` implemented in `complexity/recurrence.hpp` and `recurrence.cpp`. Standard solvers are wired into `RequestHandler` and `resolveRecurrences`. Merge sort resolves to O(n log n) (Proven), binary search to O(log n) (Proven), linear sum to O(n) (Proven). Multiple subtractive recursion (Fibonacci) stays Unsupported with an explicit limitation. `capabilities.features.recursion_analysis` updated to `partial`.
 - **Priority:** P0
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-202
@@ -379,11 +378,11 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: the two families above. Out of scope: memoization detection, and Akra–Bazzi.
 
 **Acceptance criteria.**
-- [ ] Merge sort is O(n log n), Proven.
-- [ ] Recursive binary search is O(log n), Proven.
-- [ ] Recursive linear sum is O(n), Proven.
-- [ ] Fibonacci stays Unsupported.
-- [ ] The `capabilities.features.recursion_analysis` value changes from `unsupported` to `partial`.
+- [x] Merge sort is O(n log n), Proven.
+- [x] Recursive binary search is O(log n), Proven.
+- [x] Recursive linear sum is O(n), Proven.
+- [x] Fibonacci stays Unsupported.
+- [x] The `capabilities.features.recursion_analysis` value changes from `unsupported` to `partial`.
 
 **Test cases.** Unit tests per master theorem case, including the boundary case `a = b^k`. Integration fixtures for merge sort, binary search, linear recursion, and a near miss (`T(n/2)` called with a non-constant divisor).
 
@@ -391,7 +390,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-204: Interprocedural cost for non-recursive callees
 
-- **Status:** Not started
+- **Status:** Done. `InterproceduralContext` and call substitution implemented in `engine/src/parser/clang_frontend.cpp`. Loop nests calling non-recursive user-defined helpers substitute callee cost with mapped formal parameters; helper chains, unknown loops, recursive calls and cycles are handled with appropriate propagation and fallbacks. Added fixture `forms/I01_interprocedural.cpp`. `interprocedural_analysis` capability updated to `partial`.
 - **Priority:** P1
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-201
@@ -403,8 +402,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: direct calls to functions defined in the main file, with a depth limit, and cycle detection that falls back to the current behaviour. Out of scope: virtual calls, function pointers, lambdas stored in variables, and calls across translation units.
 
 **Acceptance criteria.**
-- [ ] A loop over `n` that calls an O(m) helper yields O(m n), with the status derived from both.
-- [ ] Recursion and cycles fall back to the current Estimated behaviour, with a limitation.
+- [x] A loop over `n` that calls an O(m) helper yields O(m n), with the status derived from both.
+- [x] Recursion and cycles fall back to the current Estimated behaviour, with a limitation.
 
 **Test cases.** Fixtures: a helper with a loop; a helper calling another helper; a helper with an unknown loop (the caller becomes Unknown); a recursive helper (fallback).
 
@@ -412,7 +411,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-205: Apply the STL cost model to calls in loop nests
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-204
@@ -424,10 +423,10 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: the operations in the existing table. Out of scope: allocator costs and iterator invalidation analysis.
 
 **Acceptance criteria.**
-- [ ] `05_sorting.cpp` reports an O(n log n) contribution for `std::sort`.
-- [ ] A fixture with a set insert in a loop reports O(n log n).
-- [ ] Hash-container findings state the average-versus-worst assumption.
-- [ ] The `stl_cost_model` capability changes from `data_only` to `partial`.
+- [x] `05_sorting.cpp` reports an O(n log n) contribution for `std::sort`.
+- [x] A fixture with a set insert in a loop reports O(n log n).
+- [x] Hash-container findings state the average-versus-worst assumption.
+- [x] The `stl_cost_model` capability changes from `data_only` to `partial`.
 
 **Test cases.** Fixtures per container family. A unit test for size-variable binding.
 
@@ -435,7 +434,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-206: Two-pointer and multi-variable while loops
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-201
@@ -447,9 +446,9 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: the strict form above. Out of scope: binary-search termination proofs.
 
 **Acceptance criteria.**
-- [ ] The two-pointer fixture is O(n), Proven.
-- [ ] `06_binary_search.cpp` still reports Unknown for its while loop.
-- [ ] A near miss in which one path updates neither variable reports Unknown.
+- [x] The two-pointer fixture is O(n), Proven.
+- [x] `06_binary_search.cpp` still reports Unknown for its while loop.
+- [x] A near miss in which one path updates neither variable reports Unknown.
 
 **Test cases.** The three fixtures above.
 
@@ -457,7 +456,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-207: Synchronize M2 capabilities, specifications and examples
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-203, BL-205, BL-206
@@ -469,8 +468,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: documentation and examples. Out of scope: new analysis.
 
 **Acceptance criteria.**
-- [ ] Every capability value matches its tested behaviour.
-- [ ] `scripts/development/regenerate-examples.sh` produces no diff after merge.
+- [x] Every capability value matches its tested behaviour.
+- [x] `scripts/development/regenerate-examples.sh` produces no diff after merge.
 
 **Test cases.** `npm run validate:schemas`, and the `engine_cli.capabilities` test.
 
@@ -482,7 +481,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-301: Use product constraints to tighten workloads
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
@@ -494,9 +493,9 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: monotone expressions in the product variables; a sound fallback otherwise. Out of scope: non-monotone optimization.
 
 **Acceptance criteria.**
-- [ ] `n·m` with `n, m ≤ 10^6` and `n·m ≤ 10^6` gives 10^6, Proven.
-- [ ] `n²·m` under the same constraints gives a sound bound, with the method stated.
-- [ ] Non-monotone expressions fall back with an assumption.
+- [x] `n·m` with `n, m ≤ 10^6` and `n·m ≤ 10^6` gives 10^6, Proven.
+- [x] `n²·m` under the same constraints gives a sound bound, with the method stated.
+- [x] Non-monotone expressions fall back with an assumption.
 
 **Test cases.** Unit tests in `workload_test.cpp` for exact, bounded and fallback cases, and one integration fixture.
 
@@ -504,7 +503,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-302: Use linear constraints to tighten workloads
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-301
@@ -516,8 +515,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: non-negative coefficients and monotone expressions. Out of scope: negative coefficients, which give Estimated with an assumption.
 
 **Acceptance criteria.**
-- [ ] `n·m` with `n + m ≤ 2·10^5` gives 10^10.
-- [ ] Every result is sound relative to brute-force enumeration on small bounds.
+- [x] `n·m` with `n + m ≤ 2·10^5` gives 10^10.
+- [x] Every result is sound relative to brute-force enumeration on small bounds.
 
 **Test cases.** Unit tests, including a property test against brute force for small integer ranges.
 
@@ -525,7 +524,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-303: Multiple sum constraints and different count variables
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-106
@@ -537,8 +536,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: a shared count variable, and separable or monotone per-case costs. Out of scope: nested test-case structures.
 
 **Acceptance criteria.**
-- [ ] `t·(n + m)` with Σn ≤ S₁ and Σm ≤ S₂ gives S₁ + S₂, Proven.
-- [ ] Non-separable shapes give a sound fallback, or Unknown, with the method stated.
+- [x] `t·(n + m)` with Σn ≤ S₁ and Σm ≤ S₂ gives S₁ + S₂, Proven.
+- [x] Non-separable shapes give a sound fallback, or Unknown, with the method stated.
 
 **Test cases.** Unit tests for each case.
 

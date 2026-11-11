@@ -51,6 +51,7 @@
 #include "bigolens/complexity/evaluator.hpp"
 #include "bigolens/complexity/expression.hpp"
 #include "bigolens/complexity/recurrence.hpp"
+#include "bigolens/estimation/stl_cost_model.hpp"
 
 #ifndef BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR
 #define BIGOLENS_DEFAULT_CLANG_RESOURCE_DIR ""
@@ -134,6 +135,27 @@ const clang::VarDecl* referencedVar(const clang::Expr* expr) {
   return nullptr;
 }
 
+const clang::Expr* stripExpr(const clang::Expr* expr) {
+  if (expr == nullptr) {
+    return nullptr;
+  }
+  const clang::Expr* e = expr->IgnoreParenCasts();
+  while (e != nullptr) {
+    if (const auto* clean = llvm::dyn_cast<clang::ExprWithCleanups>(e)) {
+      e = clean->getSubExpr()->IgnoreParenCasts();
+    } else if (const auto* bind = llvm::dyn_cast<clang::CXXBindTemporaryExpr>(e)) {
+      e = bind->getSubExpr()->IgnoreParenCasts();
+    } else if (const auto* mat = llvm::dyn_cast<clang::MaterializeTemporaryExpr>(e)) {
+      e = mat->getSubExpr()->IgnoreParenCasts();
+    } else if (const auto* cast = llvm::dyn_cast<clang::CastExpr>(e)) {
+      e = cast->getSubExpr()->IgnoreParenCasts();
+    } else {
+      break;
+    }
+  }
+  return e;
+}
+
 std::optional<std::int64_t> constantValue(const clang::Expr* expr, const clang::ASTContext& ctx) {
   if (expr == nullptr || expr->isValueDependent() || expr->isTypeDependent()) {
     return std::nullopt;
@@ -168,6 +190,52 @@ void collectChildLoops(const clang::Stmt* stmt, std::vector<const clang::Stmt*>&
       collectChildLoops(child, out);
     }
   }
+}
+
+/// Calls reachable from `stmt` without passing through a loop.
+void collectChildCalls(const clang::Stmt* stmt, std::vector<const clang::CallExpr*>& out) {
+  if (stmt == nullptr) {
+    return;
+  }
+  if (const auto* call = llvm::dyn_cast<clang::CallExpr>(stmt)) {
+    out.push_back(call);
+  }
+  for (const clang::Stmt* child : stmt->children()) {
+    if (child == nullptr || isLoop(child)) {
+      continue;
+    }
+    collectChildCalls(child, out);
+  }
+}
+
+/// True if `function` contains direct self-calls anywhere in its body.
+bool isDirectlyRecursive(const clang::FunctionDecl& function) {
+  const clang::FunctionDecl* canonical = function.getCanonicalDecl();
+  const clang::Stmt* body = function.getBody();
+  if (body == nullptr) {
+    return false;
+  }
+  std::vector<const clang::Stmt*> stack{body};
+  while (!stack.empty()) {
+    const clang::Stmt* current = stack.back();
+    stack.pop_back();
+    if (current == nullptr) {
+      continue;
+    }
+    if (const auto* call = llvm::dyn_cast<clang::CallExpr>(current)) {
+      if (const clang::FunctionDecl* callee = call->getDirectCallee()) {
+        if (callee->getCanonicalDecl() == canonical) {
+          return true;
+        }
+      }
+    }
+    for (const clang::Stmt* child : current->children()) {
+      if (child != nullptr) {
+        stack.push_back(child);
+      }
+    }
+  }
+  return false;
 }
 
 /// True if `stmt` (excluding nested loops/switches for `break`) can leave the loop early.
@@ -301,9 +369,36 @@ void appendUnique(std::vector<std::string>& into, const std::vector<std::string>
   }
 }
 
+struct FunctionSummary {
+  cx::ExprPtr cost = nullptr;
+  BoundStatus status = BoundStatus::Proven;
+  int depth = 0;
+  bool isRecursive = false;
+  bool hasCycle = false;
+  std::vector<std::string> paramNames;
+  std::vector<std::string> assumptions;
+  std::vector<std::string> limitations;
+  std::string unknownReason;
+};
+
+class InterproceduralContext {
+ public:
+  explicit InterproceduralContext(clang::ASTContext& ctx) : ctx_(ctx) {}
+
+  FunctionSummary summarize(const clang::FunctionDecl* function);
+
+ private:
+  clang::ASTContext& ctx_;
+  std::map<const clang::FunctionDecl*, FunctionSummary> cache_;
+  std::vector<const clang::FunctionDecl*> activeCallStack_;
+  static constexpr std::size_t kMaxDepth = 8;
+};
+
 class LoopAnalyzer {
  public:
-  explicit LoopAnalyzer(clang::ASTContext& ctx) : ctx_(ctx) {}
+  explicit LoopAnalyzer(clang::ASTContext& ctx, InterproceduralContext* interprocedural = nullptr,
+                        const clang::Stmt* functionBody = nullptr)
+      : ctx_(ctx), interprocedural_(interprocedural), functionBody_(functionBody) {}
 
   NestResult analyzeNest(const clang::Stmt* loop) {
     NestResult result = analyzeLoop(loop);
@@ -383,7 +478,156 @@ class LoopAnalyzer {
                        [&](const LoopIndex& index) { return free.count(index.name) != 0; });
   }
 
-  /// Cost of a loop body: the sum of its child loops, or 1 for a straight-line body.
+ public:
+  cx::ExprPtr determineSize(const clang::Expr* objectExpr, const clang::Expr* rangeStart, const clang::Expr* rangeEnd) {
+    if (rangeStart != nullptr && rangeEnd != nullptr) {
+      const clang::Expr* strippedStart = stripExpr(rangeStart);
+      const clang::Expr* strippedEnd = stripExpr(rangeEnd);
+      if (const auto* memCall = llvm::dyn_cast_or_null<clang::CXXMemberCallExpr>(strippedStart)) {
+        const auto* method = memCall->getMethodDecl();
+        const std::string memName = method ? method->getNameAsString() : std::string();
+        if (memName == "begin" || memName == "cbegin" || memName == "rbegin") {
+          return determineSize(stripExpr(memCall->getImplicitObjectArgument()), nullptr, nullptr);
+        }
+      } else if (const auto* beginCall = llvm::dyn_cast_or_null<clang::CallExpr>(strippedStart)) {
+        if (beginCall->getNumArgs() >= 1) {
+          const auto* bCallee = beginCall->getDirectCallee();
+          if (bCallee && bCallee->getNameAsString() == "begin") {
+            return determineSize(stripExpr(beginCall->getArg(0)), nullptr, nullptr);
+          }
+        }
+      }
+      if (const auto* binary = llvm::dyn_cast_or_null<clang::BinaryOperator>(strippedEnd)) {
+        if (binary->getOpcode() == clang::BO_Add) {
+          const auto* lhs = stripExpr(binary->getLHS());
+          if (referencedVar(lhs) != nullptr && referencedVar(lhs) == referencedVar(strippedStart)) {
+            if (auto sz = toSymbolic(binary->getRHS())) {
+              return sz;
+            }
+          }
+        }
+      }
+    }
+
+    if (objectExpr != nullptr) {
+      const clang::Expr* strippedObj = stripExpr(objectExpr);
+      if (const clang::VarDecl* var = referencedVar(strippedObj)) {
+        if (const auto* init = var->getInit()) {
+          const auto* construct = llvm::dyn_cast<clang::CXXConstructExpr>(init->IgnoreImplicit());
+          if (construct != nullptr && construct->getNumArgs() > 0 && construct->getArg(0)->getType()->isIntegerType()) {
+            if (auto sz = toSymbolic(construct->getArg(0))) {
+              return sz;
+            }
+          }
+        }
+        if (llvm::isa<clang::ParmVarDecl>(var)) {
+          return cx::variable(var->getNameAsString() + ".size()");
+        }
+        if (activeLoopTrips_ != nullptr) {
+          return activeLoopTrips_;
+        }
+        const std::string name = var->getNameAsString();
+        if (!name.empty()) {
+          return cx::variable(name + ".size()");
+        }
+      }
+      if (activeLoopTrips_ != nullptr) {
+        return activeLoopTrips_;
+      }
+    }
+
+    if (activeLoopTrips_ != nullptr) {
+      return activeLoopTrips_;
+    }
+    return cx::variable("n");
+  }
+
+  bool analyzeStlCall(const clang::CallExpr* call, NestResult& result, std::vector<cx::ExprPtr>& terms) {
+    const clang::FunctionDecl* callee = call->getDirectCallee();
+    if (callee == nullptr) {
+      return false;
+    }
+    std::string container;
+    std::string operation;
+    const clang::Expr* objectExpr = nullptr;
+    const clang::Expr* rangeStart = nullptr;
+    const clang::Expr* rangeEnd = nullptr;
+
+    if (const auto* member = llvm::dyn_cast<clang::CXXMemberCallExpr>(call)) {
+      container = normaliseStdName(qualifiedRecordName(member->getObjectType()));
+      operation = callee->getNameAsString();
+      objectExpr = member->getImplicitObjectArgument();
+    } else if (const auto* opCall = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call)) {
+      if (callee->getNameAsString() == "operator[]" && opCall->getNumArgs() >= 2) {
+        container = normaliseStdName(qualifiedRecordName(opCall->getArg(0)->getType()));
+        operation = "operator[]";
+        objectExpr = opCall->getArg(0);
+      }
+    } else {
+      const std::string name = normaliseStdName(callee->getQualifiedNameAsString());
+      if (name == "std::sort" || name == "sort") {
+        container = "algorithm";
+        operation = "sort";
+        if (call->getNumArgs() >= 2) {
+          rangeStart = call->getArg(0);
+          rangeEnd = call->getArg(1);
+        }
+      } else if (name == "std::lower_bound" || name == "lower_bound") {
+        container = "algorithm";
+        operation = "lower_bound";
+        if (call->getNumArgs() >= 2) {
+          rangeStart = call->getArg(0);
+          rangeEnd = call->getArg(1);
+        }
+      }
+    }
+
+    if (container.empty() || operation.empty()) {
+      return false;
+    }
+
+    const auto stlCost = estimation::lookupStlCost(container, operation);
+    if (!stlCost.has_value()) {
+      return false;
+    }
+
+    handledCalls_.insert(call);
+    if (rangeStart != nullptr) {
+      if (const auto* startCall = llvm::dyn_cast<clang::CallExpr>(stripExpr(rangeStart))) {
+        handledCalls_.insert(startCall);
+      }
+    }
+    if (rangeEnd != nullptr) {
+      if (const auto* endCall = llvm::dyn_cast<clang::CallExpr>(stripExpr(rangeEnd))) {
+        handledCalls_.insert(endCall);
+      }
+    }
+
+    cx::ExprPtr sizeExpr = determineSize(objectExpr, rangeStart, rangeEnd);
+    if (!sizeExpr) {
+      sizeExpr = cx::variable("n");
+    }
+
+    if (container == "std::unordered_map") {
+      result.status = models::weakest(result.status, BoundStatus::Estimated);
+      appendUnique(result.assumptions, {stlCost->note,
+                                        "std::unordered_map operations assume average-case O(1) performance (worst "
+                                        "case is linear due to hash collisions)"});
+      result.limitations.push_back("worst-case time for std::unordered_map is O(" + complexity::toString(*sizeExpr) +
+                                   ") under hash collisions");
+    } else if (stlCost->amortized) {
+      appendUnique(result.assumptions, {stlCost->note});
+    } else {
+      appendUnique(result.assumptions, {stlCost->note});
+      cx::ExprPtr opCost = cx::substitute(stlCost->worst, "n", sizeExpr);
+      if (opCost && !(opCost->kind() == cx::ExprKind::Constant && opCost->number() == 1.0)) {
+        terms.push_back(opCost);
+      }
+    }
+    return true;
+  }
+
+  /// Cost of a loop body: the sum of its child loops and called functions, or 1 for a straight-line body.
   NestResult analyzeBody(const clang::Stmt* body) {
     NestResult result;
     std::vector<const clang::Stmt*> children;
@@ -391,10 +635,6 @@ class LoopAnalyzer {
       children.push_back(body);  // Unbraced body that is itself a loop.
     } else {
       collectChildLoops(body, children);
-    }
-    if (children.empty()) {
-      result.cost = cx::constant(1.0);
-      return result;
     }
     std::vector<cx::ExprPtr> terms;
     for (const clang::Stmt* child : children) {
@@ -419,11 +659,122 @@ class LoopAnalyzer {
         break;
       }
     }
-    if (!terms.empty()) {
-      result.cost = cx::add(std::move(terms));
-    }
-    if (children.size() > 1 && result.cost) {
+    if (children.size() > 1 && !terms.empty()) {
       result.assumptions.push_back("sequential inner loops are summed");
+    }
+
+    if (children.empty() || !terms.empty()) {
+      std::vector<const clang::CallExpr*> childCalls;
+      if (body != nullptr && !isLoop(body)) {
+        collectChildCalls(body, childCalls);
+      }
+      for (const clang::CallExpr* call : childCalls) {
+        const clang::FunctionDecl* callee = call->getDirectCallee();
+        if (callee == nullptr) {
+          continue;
+        }
+        const clang::FunctionDecl* def = callee->getDefinition();
+        const bool userDefined =
+            def != nullptr && ctx_.getSourceManager().isInMainFile(def->getLocation()) && !callee->isImplicit();
+        if (!userDefined) {
+          analyzeStlCall(call, result, terms);
+          continue;
+        }
+        if (interprocedural_ == nullptr) {
+          continue;
+        }
+
+        handledCalls_.insert(call);
+        FunctionSummary summary = interprocedural_->summarize(def);
+        if (summary.isRecursive) {
+          result.status = models::weakest(result.status, BoundStatus::Estimated);
+          const std::string reason = summary.hasCycle ? "call cycle detected" : "recursive functions are not inlined";
+          result.limitations.push_back("calls user function '" + callee->getNameAsString() +
+                                       "'; its cost is not included (" + reason + ")");
+          continue;
+        }
+
+        if (summary.status == BoundStatus::Unknown || !summary.cost) {
+          result.fail(BoundStatus::Unknown, summary.unknownReason.empty()
+                                                ? ("call to '" + callee->getNameAsString() + "' has unknown cost")
+                                                : summary.unknownReason);
+          appendUnique(result.limitations, summary.limitations);
+          appendUnique(result.assumptions, summary.assumptions);
+          terms.clear();
+          return result;
+        }
+
+        if (summary.status == BoundStatus::Unsupported) {
+          result.fail(BoundStatus::Unsupported, summary.unknownReason.empty()
+                                                    ? ("call to '" + callee->getNameAsString() + "' is unsupported")
+                                                    : summary.unknownReason);
+          appendUnique(result.limitations, summary.limitations);
+          appendUnique(result.assumptions, summary.assumptions);
+          terms.clear();
+          return result;
+        }
+
+        // Callee has a valid symbolic cost.
+        cx::ExprPtr substitutedCost = summary.cost;
+        bool mappingOk = true;
+        std::string unmappedParam;
+
+        const auto free = cx::freeVariables(*summary.cost);
+        std::vector<std::pair<std::string, cx::ExprPtr>> replacements;
+        for (std::size_t i = 0; i < summary.paramNames.size(); ++i) {
+          const std::string& paramName = summary.paramNames[i];
+          if (paramName.empty() || free.count(paramName) == 0) {
+            continue;
+          }
+          if (i >= call->getNumArgs()) {
+            mappingOk = false;
+            unmappedParam = paramName;
+            break;
+          }
+          const clang::Expr* arg = call->getArg(static_cast<unsigned int>(i));
+          cx::ExprPtr argExpr = toSymbolic(arg);
+          if (!argExpr) {
+            mappingOk = false;
+            unmappedParam = paramName;
+            break;
+          }
+          replacements.push_back({paramName, argExpr});
+        }
+
+        if (!mappingOk) {
+          result.fail(BoundStatus::Unknown, "argument for parameter '" + unmappedParam + "' of '" +
+                                                callee->getNameAsString() + "' cannot be determined symbolically");
+          terms.clear();
+          return result;
+        }
+
+        // Simultaneous substitution using temporary symbols.
+        for (std::size_t i = 0; i < replacements.size(); ++i) {
+          substitutedCost = cx::substitute(substitutedCost, replacements[i].first,
+                                           cx::variable("__bigo_temp_arg_" + std::to_string(i) + "__"));
+        }
+        for (std::size_t i = 0; i < replacements.size(); ++i) {
+          substitutedCost =
+              cx::substitute(substitutedCost, "__bigo_temp_arg_" + std::to_string(i) + "__", replacements[i].second);
+        }
+
+        result.status = models::weakest(result.status, summary.status);
+        result.depth = std::max(result.depth, summary.depth);
+        appendUnique(result.assumptions, summary.assumptions);
+        appendUnique(result.limitations, summary.limitations);
+        if (substitutedCost &&
+            !(substitutedCost->kind() == cx::ExprKind::Constant && substitutedCost->number() == 1.0)) {
+          terms.push_back(substitutedCost);
+        }
+      }
+    }
+
+    if (terms.empty()) {
+      if (result.status != BoundStatus::Unknown && result.status != BoundStatus::Unsupported) {
+        result.cost = cx::constant(1.0);
+      }
+    } else {
+      result.cost = terms.size() == 1 ? terms.front() : cx::add(std::move(terms));
     }
     return result;
   }
@@ -452,7 +803,10 @@ class LoopAnalyzer {
     if (index) {
       indices_.push_back(*index);
     }
+    const auto prevTrips = activeLoopTrips_;
+    activeLoopTrips_ = trips;
     NestResult result = analyzeBody(body);
+    activeLoopTrips_ = prevTrips;
     if (index) {
       indices_.pop_back();
     }
@@ -693,6 +1047,382 @@ class LoopAnalyzer {
     return result;
   }
 
+  struct TwoPointerPathState {
+    int updates = 0;
+    bool invalid = false;
+    bool exited = false;
+  };
+
+  enum class TwoPointerUpdateKind { None, IncL, DecR, Invalid };
+
+  TwoPointerUpdateKind classifyTwoPointerUpdate(const clang::Expr* expr, const clang::VarDecl* lVar,
+                                                const clang::VarDecl* rVar) const {
+    if (expr == nullptr) {
+      return TwoPointerUpdateKind::None;
+    }
+    const clang::Expr* stripped = stripExpr(expr);
+
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stripped)) {
+      if (unary->isIncrementOp()) {
+        if (referencedVar(unary->getSubExpr()) == lVar) {
+          return TwoPointerUpdateKind::IncL;
+        }
+        if (referencedVar(unary->getSubExpr()) == rVar) {
+          return TwoPointerUpdateKind::Invalid;
+        }
+      } else if (unary->isDecrementOp()) {
+        if (referencedVar(unary->getSubExpr()) == rVar) {
+          return TwoPointerUpdateKind::DecR;
+        }
+        if (referencedVar(unary->getSubExpr()) == lVar) {
+          return TwoPointerUpdateKind::Invalid;
+        }
+      }
+    }
+
+    if (const auto* compound = llvm::dyn_cast<clang::CompoundAssignOperator>(stripped)) {
+      const auto rhsVal = constantValue(compound->getRHS(), ctx_);
+      if (compound->getOpcode() == clang::BO_AddAssign && referencedVar(compound->getLHS()) == lVar) {
+        if (rhsVal && *rhsVal == 1) {
+          return TwoPointerUpdateKind::IncL;
+        }
+        return TwoPointerUpdateKind::Invalid;
+      }
+      if (compound->getOpcode() == clang::BO_SubAssign && referencedVar(compound->getLHS()) == rVar) {
+        if (rhsVal && *rhsVal == 1) {
+          return TwoPointerUpdateKind::DecR;
+        }
+        return TwoPointerUpdateKind::Invalid;
+      }
+      if (referencedVar(compound->getLHS()) == lVar || referencedVar(compound->getLHS()) == rVar) {
+        return TwoPointerUpdateKind::Invalid;
+      }
+    }
+
+    if (const auto* assign = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
+      if (assign->getOpcode() == clang::BO_Assign) {
+        if (referencedVar(assign->getLHS()) == lVar) {
+          if (const auto* add = llvm::dyn_cast<clang::BinaryOperator>(assign->getRHS()->IgnoreParenImpCasts())) {
+            if (add->getOpcode() == clang::BO_Add) {
+              const auto lhsVal = constantValue(add->getLHS(), ctx_);
+              const auto rhsVal = constantValue(add->getRHS(), ctx_);
+              if (referencedVar(add->getLHS()) == lVar && rhsVal && *rhsVal == 1) {
+                return TwoPointerUpdateKind::IncL;
+              }
+              if (referencedVar(add->getRHS()) == lVar && lhsVal && *lhsVal == 1) {
+                return TwoPointerUpdateKind::IncL;
+              }
+            }
+          }
+          return TwoPointerUpdateKind::Invalid;
+        }
+        if (referencedVar(assign->getLHS()) == rVar) {
+          if (const auto* sub = llvm::dyn_cast<clang::BinaryOperator>(assign->getRHS()->IgnoreParenImpCasts())) {
+            if (sub->getOpcode() == clang::BO_Sub) {
+              const auto rhsVal = constantValue(sub->getRHS(), ctx_);
+              if (referencedVar(sub->getLHS()) == rVar && rhsVal && *rhsVal == 1) {
+                return TwoPointerUpdateKind::DecR;
+              }
+            }
+          }
+          return TwoPointerUpdateKind::Invalid;
+        }
+      }
+    }
+
+    if (mayModify(expr, lVar) || mayModify(expr, rVar)) {
+      return TwoPointerUpdateKind::Invalid;
+    }
+
+    return TwoPointerUpdateKind::None;
+  }
+
+  void analyzeTwoPointerPaths(const clang::Stmt* stmt, std::vector<TwoPointerPathState>& inPaths,
+                              const clang::VarDecl* lVar, const clang::VarDecl* rVar) const {
+    if (stmt == nullptr || inPaths.empty()) {
+      return;
+    }
+
+    if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
+      for (const clang::Stmt* child : compound->body()) {
+        analyzeTwoPointerPaths(child, inPaths, lVar, rVar);
+      }
+      return;
+    }
+
+    if (const auto* ifStmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
+      if (mayModify(ifStmt->getCond(), lVar) || mayModify(ifStmt->getCond(), rVar)) {
+        for (auto& p : inPaths) {
+          if (!p.exited) {
+            p.invalid = true;
+          }
+        }
+        return;
+      }
+      std::vector<TwoPointerPathState> activePaths;
+      std::vector<TwoPointerPathState> exitedPaths;
+      for (const auto& p : inPaths) {
+        if (p.exited || p.invalid) {
+          exitedPaths.push_back(p);
+        } else {
+          activePaths.push_back(p);
+        }
+      }
+      if (activePaths.empty()) {
+        return;
+      }
+      std::vector<TwoPointerPathState> thenPaths = activePaths;
+      analyzeTwoPointerPaths(ifStmt->getThen(), thenPaths, lVar, rVar);
+
+      std::vector<TwoPointerPathState> elsePaths = activePaths;
+      if (ifStmt->getElse() != nullptr) {
+        analyzeTwoPointerPaths(ifStmt->getElse(), elsePaths, lVar, rVar);
+      }
+      inPaths = std::move(thenPaths);
+      inPaths.insert(inPaths.end(), elsePaths.begin(), elsePaths.end());
+      inPaths.insert(inPaths.end(), exitedPaths.begin(), exitedPaths.end());
+      return;
+    }
+
+    if (const auto* condOp = llvm::dyn_cast<clang::ConditionalOperator>(stmt)) {
+      if (mayModify(condOp->getCond(), lVar) || mayModify(condOp->getCond(), rVar)) {
+        for (auto& p : inPaths) {
+          if (!p.exited) {
+            p.invalid = true;
+          }
+        }
+        return;
+      }
+      std::vector<TwoPointerPathState> activePaths;
+      std::vector<TwoPointerPathState> exitedPaths;
+      for (const auto& p : inPaths) {
+        if (p.exited || p.invalid) {
+          exitedPaths.push_back(p);
+        } else {
+          activePaths.push_back(p);
+        }
+      }
+      if (activePaths.empty()) {
+        return;
+      }
+      std::vector<TwoPointerPathState> truePaths = activePaths;
+      analyzeTwoPointerPaths(condOp->getTrueExpr(), truePaths, lVar, rVar);
+
+      std::vector<TwoPointerPathState> falsePaths = activePaths;
+      analyzeTwoPointerPaths(condOp->getFalseExpr(), falsePaths, lVar, rVar);
+
+      inPaths = std::move(truePaths);
+      inPaths.insert(inPaths.end(), falsePaths.begin(), falsePaths.end());
+      inPaths.insert(inPaths.end(), exitedPaths.begin(), exitedPaths.end());
+      return;
+    }
+
+    if (llvm::isa<clang::ReturnStmt, clang::BreakStmt, clang::CXXThrowExpr>(stmt)) {
+      for (auto& p : inPaths) {
+        if (!p.exited) {
+          p.exited = true;
+        }
+      }
+      return;
+    }
+
+    if (llvm::isa<clang::ContinueStmt, clang::NullStmt>(stmt)) {
+      return;
+    }
+
+    if (isLoop(stmt)) {
+      if (mayModify(stmt, lVar) || mayModify(stmt, rVar)) {
+        for (auto& p : inPaths) {
+          if (!p.exited) {
+            p.invalid = true;
+          }
+        }
+      }
+      return;
+    }
+
+    if (const auto* declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
+      if (mayModify(declStmt, lVar) || mayModify(declStmt, rVar)) {
+        for (auto& p : inPaths) {
+          if (!p.exited) {
+            p.invalid = true;
+          }
+        }
+      }
+      return;
+    }
+
+    if (const auto* expr = llvm::dyn_cast<clang::Expr>(stmt)) {
+      TwoPointerUpdateKind kind = classifyTwoPointerUpdate(expr, lVar, rVar);
+      for (auto& p : inPaths) {
+        if (p.exited || p.invalid) {
+          continue;
+        }
+        if (kind == TwoPointerUpdateKind::IncL || kind == TwoPointerUpdateKind::DecR) {
+          p.updates += 1;
+        } else if (kind == TwoPointerUpdateKind::Invalid) {
+          p.invalid = true;
+        }
+      }
+      return;
+    }
+
+    if (mayModify(stmt, lVar) || mayModify(stmt, rVar)) {
+      for (auto& p : inPaths) {
+        if (!p.exited) {
+          p.invalid = true;
+        }
+      }
+    }
+  }
+
+  bool mayModifyOutsideLoop(const clang::Stmt* stmt, const clang::Stmt* loop, const clang::VarDecl* var) const {
+    if (stmt == nullptr || stmt == loop) {
+      return false;
+    }
+    if (const auto* unary = llvm::dyn_cast<clang::UnaryOperator>(stmt)) {
+      if ((unary->isIncrementDecrementOp() || unary->getOpcode() == clang::UO_AddrOf) &&
+          referencedVar(unary->getSubExpr()) == var) {
+        return true;
+      }
+    } else if (const auto* binary = llvm::dyn_cast<clang::BinaryOperator>(stmt)) {
+      if (binary->isAssignmentOp() && referencedVar(binary->getLHS()) == var) {
+        return true;
+      }
+    } else if (llvm::isa<clang::CallExpr>(stmt)) {
+      if (mayModify(stmt, var)) {
+        return true;
+      }
+    }
+    for (const clang::Stmt* child : stmt->children()) {
+      if (mayModifyOutsideLoop(child, loop, var)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const clang::CompoundStmt* findEnclosingCompound(const clang::Stmt* root, const clang::Stmt* target) const {
+    if (root == nullptr) {
+      return nullptr;
+    }
+    if (const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(root)) {
+      for (const clang::Stmt* child : compound->body()) {
+        if (child == target) {
+          return compound;
+        }
+        if (const auto* found = findEnclosingCompound(child, target)) {
+          return found;
+        }
+      }
+    }
+    for (const clang::Stmt* child : root->children()) {
+      if (const auto* found = findEnclosingCompound(child, target)) {
+        return found;
+      }
+    }
+    return nullptr;
+  }
+
+  cx::ExprPtr resolveInitialValue(const clang::VarDecl* var, const clang::Stmt* loop) {
+    if (var == nullptr) {
+      return nullptr;
+    }
+
+    if (functionBody_ != nullptr) {
+      const auto* compound = findEnclosingCompound(functionBody_, loop);
+      if (compound != nullptr) {
+        auto it = compound->body_begin();
+        auto end = compound->body_end();
+        while (it != end && *it != loop) {
+          ++it;
+        }
+        if (it != end) {
+          auto rev = it;
+          while (rev != compound->body_begin()) {
+            --rev;
+            const clang::Stmt* stmt = *rev;
+            if (const auto* declStmt = llvm::dyn_cast<clang::DeclStmt>(stmt)) {
+              for (const clang::Decl* decl : declStmt->decls()) {
+                if (decl == var) {
+                  if (var->getInit() != nullptr) {
+                    return toSymbolic(var->getInit());
+                  }
+                  return nullptr;
+                }
+              }
+            }
+            if (const auto* expr = llvm::dyn_cast<clang::Expr>(stmt)) {
+              const clang::Expr* stripped = stripExpr(expr);
+              if (const auto* assign = llvm::dyn_cast<clang::BinaryOperator>(stripped)) {
+                if (assign->getOpcode() == clang::BO_Assign && referencedVar(assign->getLHS()) == var) {
+                  return toSymbolic(assign->getRHS());
+                }
+              }
+            }
+            if (mayModify(stmt, var)) {
+              return nullptr;
+            }
+          }
+        }
+      }
+    }
+
+    if (llvm::isa<clang::ParmVarDecl>(var)) {
+      if (functionBody_ != nullptr && mayModifyOutsideLoop(functionBody_, loop, var)) {
+        return nullptr;
+      }
+      return cx::variable(var->getNameAsString());
+    }
+
+    if (var->hasLocalStorage() && var->getInit() != nullptr) {
+      if (functionBody_ != nullptr && mayModifyOutsideLoop(functionBody_, loop, var)) {
+        return nullptr;
+      }
+      return toSymbolic(var->getInit());
+    }
+
+    return nullptr;
+  }
+
+  std::optional<NestResult> analyzeTwoPointerWhile(const clang::WhileStmt& loop, const clang::VarDecl* lVar,
+                                                   const clang::VarDecl* rVar, bool inclusive) {
+    std::vector<TwoPointerPathState> paths = {TwoPointerPathState{}};
+    analyzeTwoPointerPaths(loop.getBody(), paths, lVar, rVar);
+    if (paths.empty()) {
+      return std::nullopt;
+    }
+    int fallthroughCount = 0;
+    for (const auto& p : paths) {
+      if (p.invalid) {
+        return std::nullopt;
+      }
+      if (!p.exited) {
+        ++fallthroughCount;
+        if (p.updates != 1) {
+          return std::nullopt;
+        }
+      }
+    }
+    if (fallthroughCount == 0) {
+      return std::nullopt;
+    }
+
+    cx::ExprPtr l0 = resolveInitialValue(lVar, &loop);
+    cx::ExprPtr r0 = resolveInitialValue(rVar, &loop);
+    if (!l0 || !r0) {
+      return std::nullopt;
+    }
+
+    cx::ExprPtr diff = cx::subtract(r0, l0);
+    cx::ExprPtr trips = inclusive ? cx::add({diff, cx::constant(1.0)}) : diff;
+
+    NestResult result = combine(loop.getBody(), std::nullopt, nullptr, nullptr, trips, false);
+    appendUnique(result.assumptions,
+                 {"two-pointer convergence: at most " + complexity::toString(*trips) + " iterations"});
+    return result;
+  }
+
   NestResult analyzeWhile(const clang::WhileStmt& loop) {
     NestResult unknown;
     unknown.depth = 1;
@@ -794,6 +1524,45 @@ class LoopAnalyzer {
       }
     }
 
+    // 3. Two-pointer while loops: while (l < r), while (r > l), while (l <= r), while (r >= l).
+    if (const auto* cmp = llvm::dyn_cast_or_null<clang::BinaryOperator>(cond)) {
+      const clang::Expr* lExpr = nullptr;
+      const clang::Expr* rExpr = nullptr;
+      bool inclusive = false;
+      switch (cmp->getOpcode()) {
+        case clang::BO_LT:
+          lExpr = cmp->getLHS();
+          rExpr = cmp->getRHS();
+          break;
+        case clang::BO_GT:
+          lExpr = cmp->getRHS();
+          rExpr = cmp->getLHS();
+          break;
+        case clang::BO_LE:
+          lExpr = cmp->getLHS();
+          rExpr = cmp->getRHS();
+          inclusive = true;
+          break;
+        case clang::BO_GE:
+          lExpr = cmp->getRHS();
+          rExpr = cmp->getLHS();
+          inclusive = true;
+          break;
+        default:
+          break;
+      }
+      if (lExpr != nullptr && rExpr != nullptr) {
+        const clang::VarDecl* lVar = referencedVar(lExpr);
+        const clang::VarDecl* rVar = referencedVar(rExpr);
+        if (lVar != nullptr && rVar != nullptr && lVar != rVar && lVar->getType()->isIntegerType() &&
+            rVar->getType()->isIntegerType() && !mayModify(cond, lVar) && !mayModify(cond, rVar)) {
+          if (auto twoPointerResult = analyzeTwoPointerWhile(loop, lVar, rVar, inclusive)) {
+            return *twoPointerResult;
+          }
+        }
+      }
+    }
+
     unknown.fail(BoundStatus::Unknown,
                  "data-dependent termination: the iteration count depends on values computed in the loop");
     return unknown;
@@ -850,9 +1619,13 @@ class LoopAnalyzer {
                                    ctx_.getSourceManager().isInMainFile(definition->getLocation()) &&
                                    !callee->isImplicit();
           if (userDefined) {
-            userCalls.insert(callee->getNameAsString());
+            if (interprocedural_ == nullptr || handledCalls_.count(call) == 0) {
+              userCalls.insert(callee->getNameAsString());
+            }
           } else if (!llvm::isa<clang::CXXOperatorCallExpr>(call) && !llvm::isa<clang::CXXConstructorDecl>(callee)) {
-            libraryCalls.insert(describeLibraryCall(*call, *callee));
+            if (handledCalls_.count(call) == 0) {
+              libraryCalls.insert(describeLibraryCall(*call, *callee));
+            }
           }
         }
       }
@@ -891,9 +1664,75 @@ class LoopAnalyzer {
   }
 
   clang::ASTContext& ctx_;
+  InterproceduralContext* interprocedural_ = nullptr;
+  const clang::Stmt* functionBody_ = nullptr;
   std::vector<LoopIndex> indices_;
   std::set<const clang::VarDecl*> dataVars_;
+  std::set<const clang::CallExpr*> handledCalls_;
+  cx::ExprPtr activeLoopTrips_ = nullptr;
 };
+
+FunctionSummary InterproceduralContext::summarize(const clang::FunctionDecl* function) {
+  if (function == nullptr) {
+    return {};
+  }
+  const clang::FunctionDecl* canonical = function->getCanonicalDecl();
+  const clang::FunctionDecl* def = function->getDefinition();
+  if (def == nullptr || !ctx_.getSourceManager().isInMainFile(def->getLocation()) || def->isImplicit()) {
+    return {};
+  }
+
+  auto it = cache_.find(canonical);
+  if (it != cache_.end()) {
+    return it->second;
+  }
+
+  if (std::find(activeCallStack_.begin(), activeCallStack_.end(), canonical) != activeCallStack_.end()) {
+    FunctionSummary cycleSummary;
+    cycleSummary.isRecursive = true;
+    cycleSummary.hasCycle = true;
+    cycleSummary.status = BoundStatus::Estimated;
+    return cycleSummary;
+  }
+
+  if (activeCallStack_.size() >= kMaxDepth) {
+    FunctionSummary depthSummary;
+    depthSummary.status = BoundStatus::Estimated;
+    depthSummary.limitations.push_back("calls user function '" + def->getNameAsString() +
+                                       "'; its cost is not included (call depth limit exceeded)");
+    return depthSummary;
+  }
+
+  if (isDirectlyRecursive(*def)) {
+    FunctionSummary recSummary;
+    recSummary.isRecursive = true;
+    recSummary.status = BoundStatus::Estimated;
+    cache_[canonical] = recSummary;
+    return recSummary;
+  }
+
+  activeCallStack_.push_back(canonical);
+
+  FunctionSummary summary;
+  for (const clang::ParmVarDecl* param : def->parameters()) {
+    summary.paramNames.push_back(param ? param->getNameAsString() : "");
+  }
+
+  LoopAnalyzer analyzer(ctx_, this, def->getBody());
+  NestResult bodyResult = analyzer.analyzeBody(def->getBody());
+
+  summary.cost = bodyResult.cost;
+  summary.status = bodyResult.status;
+  summary.depth = bodyResult.depth;
+  summary.assumptions = std::move(bodyResult.assumptions);
+  summary.limitations = std::move(bodyResult.limitations);
+  summary.unknownReason = std::move(bodyResult.unknownReason);
+
+  activeCallStack_.pop_back();
+
+  cache_[canonical] = summary;
+  return summary;
+}
 
 // ---------------------------------------------------------------------------
 // Recurrence extraction (direct recursion)
@@ -1281,7 +2120,7 @@ class RecurrenceExtractor {
         recurrence.work = nullptr;
         return;
       }
-      LoopAnalyzer analyzer(ctx_);
+      LoopAnalyzer analyzer(ctx_, nullptr, function_.getBody());
       NestResult nest = analyzer.analyzeNest(loop);
       if (!nest.cost) {
         recurrence.workLimitations.push_back("a loop in the body has an unknown iteration count; f(n) is unknown");
@@ -1364,7 +2203,7 @@ class RecurrenceExtractor {
 class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor> {
  public:
   AnalysisVisitor(clang::ASTContext& ctx, std::string displayPath, analyzers::SourceAnalysis& out)
-      : ctx_(ctx), displayPath_(std::move(displayPath)), out_(out) {}
+      : ctx_(ctx), displayPath_(std::move(displayPath)), out_(out), interprocedural_(ctx) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl* function) {
     if (function == nullptr || !function->doesThisDeclarationHaveABody() || function->isInvalidDecl() ||
@@ -1534,7 +2373,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
     std::vector<const clang::Stmt*> loops;
     collectChildLoops(function.getBody(), loops);
     for (const clang::Stmt* loop : loops) {
-      LoopAnalyzer analyzer(ctx_);
+      LoopAnalyzer analyzer(ctx_, &interprocedural_, function.getBody());
       NestResult nest = analyzer.analyzeNest(loop);
 
       models::Finding finding;
@@ -1588,6 +2427,49 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
       }
       out_.findings.push_back(std::move(finding));
     }
+
+    std::vector<const clang::CallExpr*> topLevelCalls;
+    collectChildCalls(function.getBody(), topLevelCalls);
+    for (const clang::CallExpr* call : topLevelCalls) {
+      const clang::FunctionDecl* callee = call->getDirectCallee();
+      if (callee == nullptr) {
+        continue;
+      }
+      const std::string name = normaliseStdName(callee->getQualifiedNameAsString());
+      if (name != "std::sort" && name != "sort" && name != "std::lower_bound" && name != "lower_bound") {
+        continue;
+      }
+      const std::string op = (name == "std::sort" || name == "sort") ? "sort" : "lower_bound";
+      const auto stlCost = estimation::lookupStlCost("algorithm", op);
+      if (!stlCost.has_value()) {
+        continue;
+      }
+
+      const clang::Expr* rangeStart = call->getNumArgs() >= 1 ? call->getArg(0) : nullptr;
+      const clang::Expr* rangeEnd = call->getNumArgs() >= 2 ? call->getArg(1) : nullptr;
+      LoopAnalyzer analyzer(ctx_, &interprocedural_, function.getBody());
+      cx::ExprPtr sizeExpr = analyzer.determineSize(nullptr, rangeStart, rangeEnd);
+      if (!sizeExpr) {
+        sizeExpr = cx::variable("n");
+      }
+
+      cx::ExprPtr cost = cx::substitute(stlCost->worst, "n", sizeExpr);
+
+      models::Finding finding;
+      finding.id = nextId();
+      finding.category = models::FindingCategory::LoopNest;
+      finding.pattern = "stl-algorithm";
+      finding.functionName = currentFunction_;
+      finding.location = location(call->getBeginLoc(), call->getEndLoc());
+      finding.provenance = kLoopProvenance;
+      finding.description = "call to '" + name + "' over range of size " + complexity::toString(*sizeExpr);
+      finding.timeExpression = cost;
+      finding.boundStatus = BoundStatus::Proven;
+      finding.confidence = Confidence::Medium;
+      finding.assumptions.push_back(stlCost->note);
+
+      out_.findings.push_back(std::move(finding));
+    }
   }
 
   void detectRecursion(const clang::FunctionDecl& function) {
@@ -1615,6 +2497,7 @@ class AnalysisVisitor final : public clang::RecursiveASTVisitor<AnalysisVisitor>
   clang::ASTContext& ctx_;
   std::string displayPath_;
   analyzers::SourceAnalysis& out_;
+  InterproceduralContext interprocedural_;
   std::string currentFunction_;
   int findingCounter_ = 0;
 };

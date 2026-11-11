@@ -48,9 +48,9 @@ Status reflects version 0.1.0 / protocol 1.0. See [ROADMAP.md](../development/RO
 | FR-29 | Bound status and confidence are reported as separate fields | Must | M2 | Implemented |
 | FR-30 | Asymptotic `O()` upper bound derived from each expression (or `null` for unsupported shapes) | Must | M2 | Implemented |
 | FR-31 | Direct recursion is detected and reported as `unsupported` with no time expression | Must | M2 | Implemented |
-| FR-32 | Recurrence analysis for direct recursion produces a time expression | Should | M2 | Planned |
-| FR-33 | Interprocedural analysis includes callee cost in loop nests | Should | M2 | Planned |
-| FR-34 | The STL cost model is applied to per-iteration cost of library calls | Should | M2 | Planned (table exists, `data_only`) |
+| FR-32 | Recurrence analysis for direct recursion produces a time expression | Should | M2 | Implemented (Master Theorem and linear decrements) |
+| FR-33 | Interprocedural analysis includes callee cost in loop nests | Should | M2 | Implemented (direct non-recursive calls in the same translation unit) |
+| FR-34 | The STL cost model is applied to per-iteration cost of library calls | Should | M2 | Implemented (partial: common containers & algorithms) |
 | FR-35 | Mutual (indirect) recursion is detected | Could | M2 | Planned |
 
 ### 1.3 Constraints, workload and memory

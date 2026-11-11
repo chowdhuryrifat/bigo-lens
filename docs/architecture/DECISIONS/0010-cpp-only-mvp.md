@@ -1,7 +1,7 @@
 # ADR 0010: Support only C++ in the MVP
 
-- **Status:** Accepted
-- **Date:** 2026-11-10
+- **Status:** Superseded by [ADR 0013](0013-multi-language-complexity-analysis.md)
+- **Date:** 2026-11-10 (Superseded 2026-11-12)
 
 ## Context
 

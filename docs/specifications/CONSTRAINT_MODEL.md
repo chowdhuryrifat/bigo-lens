@@ -92,18 +92,39 @@ Sum constraints are **used** to tighten workloads ([§7](#9-aggregate-workload-c
 `{ "variables": ["n", "m"], "max_product": P }` states `n · m ≤ P` (at least two variables, all declared, `P` ∈
 [0, 10¹⁸]).
 
-**Validated only.** When at least two of its variables occur in an expression, the workload carries the assumption
-"product constraint (bound P) not used to tighten the bound; result may be loose". The bound is then computed from
-the individual maxima, which remains sound but may be far above the true worst case (e.g. `n·m` with `n, m ≤ 10⁶`,
-`n·m ≤ 10⁶` evaluates to 10¹² instead of 10⁶).
+When the expression is a monotone product of the constrained variables, the workload is bounded by substituting the
+product constraint:
+
+- For exact product expressions (`n · m`), the bound is `min(P, Π Mᵢ)`, reported with method
+  `product-constraint-bound` and status `proven`.
+- For expressions with higher powers of constrained variables (e.g. `n² · m`), the product `n · m` is bounded by `P`,
+  with remaining factors evaluated at their individual maxima (e.g. `P · n_max`), method `product-constraint-bound`,
+  with assumption "workload bounded by product constraint with remaining factors evaluated at individual maxima".
+- For non-monotone expressions or expressions where the product variables are not multiplied together (e.g. `n + m`),
+  the evaluation falls back to pointwise maxima with the assumption "product constraint (bound P) not used to tighten
+  the bound; result may be loose".
 
 ## 6. Linear constraints
 
 `{ "coefficients": { "n": 1, "m": 2 }, "bound": B }` states `Σ cᵢ · xᵢ ≤ B` (at least one term, all variables
 declared, values within 10¹⁸).
 
-**Validated only.** When any linear constraint is present, every workload carries the assumption "linear
-constraints are not yet used to tighten workload bounds".
+Linear constraints with non-negative coefficients are used to tighten workloads for monotone expressions:
+- **Variable bound tightening.** Before expression evaluation, individual variable upper bounds are tightened
+  iteratively using the minima of other terms: `M_v' = min(M_v, floor((B - Σ_{u != v} c_u · m_u) / c_v))`.
+- **Linear sums.** Linear combinations `Σ αᵢ · xᵢ` within addition expressions are bounded by `max_i(αᵢ / cᵢ) · B_eff + nonLinSum`.
+- **Constrained optimization on products.** For monotone products `x^{a_x} · y^{a_y}` subject to `c_x · x + c_y · y ≤ B`,
+  the objective function along the constraint boundary is log-concave. The unconstrained peak at
+  `x* = (a_x / (a_x + a_y)) · (B_eff / c_x)` is clamped to the feasible interval `[x_lo, x_hi]`, where
+  `x_lo = max(m_x, (B_eff - c_y · M_y) / c_x)` and `x_hi = min(M_x, (B_eff - c_y · m_y) / c_x)`.
+  For higher-variable products, symmetric equal-fraction allocation provides a sound upper bound.
+- When a linear constraint tightens the bound, the evaluation method is reported as `linear-constraint-bound` with
+  status `proven`.
+- Negative coefficients are out of scope for upper bound tightening; linear constraints with any negative coefficient
+  are ignored for tightening and emit the assumption "linear constraint with negative coefficient (bound B) not used
+  to tighten the bound; result may be loose".
+- For non-monotone expressions, linear constraints emit the assumption "linear constraint (bound B) not used to tighten
+  the bound on non-monotone expression; result may be loose".
 
 ## 7. Multiple test cases
 
@@ -129,8 +150,13 @@ They are used only by feasibility ([FEASIBILITY_MODEL.md](FEASIBILITY_MODEL.md))
 2. **Monotonicity.** If the expression is syntactically monotone non-decreasing (assuming variables ≥ 0) and no free
    variable has a negative `min`, the status is `proven`; otherwise `estimated` with the assumption "expression is
    not provably non-decreasing; evaluated at variable maxima, which may not be the worst case".
-3. **Unused relationships.** Add product/linear assumptions (§5, §6).
-4. **No sum constraint on any free variable** → evaluate at the maxima: method `pointwise-maxima`.
+3. **Product and linear constraints.** For monotone expressions, variable bounds are first tightened using linear
+   constraints, and both product and linear constraints are evaluated during expression evaluation. If applied and
+   tightening, the method is `product-constraint-bound` or `linear-constraint-bound`. When a product or linear constraint
+   cannot be applied or the expression is non-monotone, an assumption ("product constraint ... not used" or
+   "linear constraint ... not used") is emitted (§5, §6).
+4. **No sum constraint on any free variable** → evaluate with product and linear constraints if applicable, otherwise at the
+   maxima: method `product-constraint-bound`, `linear-constraint-bound`, or `pointwise-maxima`.
 5. **Sum constraints present:**
    - All applicable sum constraints must share one `count_variable`; otherwise `unknown` ("sum constraints over
      different test-case counts are not supported").
@@ -155,9 +181,14 @@ constraint, those maxima cannot all occur simultaneously.
 
 ### 9.2 Sum-constraint packing (`sum-constraint-packing`)
 
-Applies when there is exactly one applicable sum constraint, the expression is monotone, and `perCase` is
-**superadditive** in the constrained variable `n` — i.e. f(a) + f(b) ≤ f(a + b), so concentrating the total into as
-few, as large cases as possible is the worst case.
+Applies when the expression is monotone and either:
+1. **Single sum constraint.** Exactly one applicable sum constraint, and `perCase` is **superadditive** in the
+   constrained variable `n` — i.e. f(a) + f(b) ≤ f(a + b), so concentrating the total into as few, as large cases
+   as possible is the worst case.
+2. **Multiple separable sum constraints.** Multiple sum constraints sharing the same count variable `t`, where
+   `perCase` can be decomposed into a sum of additive terms `T_1 + T_2 + ... + T_k`, such that each term `T_j`
+   depends on at most one sum-constrained variable. Each term is then evaluated and packed independently under its
+   own sum constraint.
 
 Recognised superadditive shapes: `n`; sums of superadditive terms (plus non-positive constants); products of monotone
 non-negative factors where at least one factor is superadditive in `n` (`n²`, `n·m`, `n·log n`); `x^k` with `k ≥ 1`
@@ -172,13 +203,14 @@ remainder = S − full · n_cap
 workload  = full · perCase(n_cap) + (full < t_max and remainder > 0 ? perCase(remainder) : 0)
 ```
 
-Other variables are evaluated at their maxima. The assumption "worst case packs <full> test case(s) of maximum size
-(superadditive per-case cost)" is attached.
+Other variables are evaluated at their maxima. For single sum constraints, the assumption "worst case packs <full>
+test case(s) of maximum size (superadditive per-case cost)" is attached; for separable multi-sum constraints, "worst
+case packs test case(s) of maximum size for sum-constrained variables (separable per-case cost)".
 
 ### 9.3 Fallback (`sum-constraint-cases`)
 
-When packing does not apply (per-case cost not recognised as superadditive, more than one sum constraint, or a
-non-monotone expression):
+When packing does not apply (non-separable per-case cost where multiple sum-constrained variables interact, e.g. `n·m`,
+per-case cost not recognised as superadditive, or a non-monotone expression):
 
 ```
 cases    = t_max, reduced to floor(S / n_min) for each sum-constrained variable with n_min ≥ 1
@@ -235,6 +267,47 @@ Per case `for (int i = 1; i * i <= n; ++i)`: cost `n^0.5 + 1` (power < 1, not su
 `sum-constraint-cases`. This is sound but loose (spreading the total evenly gives about 5.5·10⁴); tightening it for
 concave costs is future work.
 
+### Example D — linear constraint: n, m ≤ 10⁶, n + m ≤ 2·10⁵, nested loop O(n · m)
+
+Fixture `tests/fixtures/cpp/12_linear_constrained_loops.cpp`:
+
+```cpp
+for (int i = 0; i < n; ++i) {
+  for (int j = 0; j < m; ++j) {
+    acc += i ^ j;
+  }
+}
+```
+
+Expression: `n · m`. Variable upper bounds $10^6$. Linear constraint $n + m \le 200000$.
+
+| Method | Computation | Result |
+| --- | --- | --- |
+| Naive (pointwise maxima) | $10^6 \times 10^6$ | $10^{12}$ — loose by 100× |
+| Linear constraint bound | Optimization on $x + y = 2\cdot 10^5 \implies x^* = 10^5, y^* = 10^5$ | **$10^{10}$** |
+
+Reported: `method: "linear-constraint-bound"`, `upper_bound: 1e10`, `status: "proven"`.
+
+### Example E — multiple sum constraints: t ≤ 10⁴, n, m ≤ 2·10⁵, Σn ≤ 2·10⁵, Σm ≤ 3·10⁵, separable loop O(t · (n + m))
+
+Fixture `tests/fixtures/cpp/13_multi_sum_constrained.cpp`:
+
+```cpp
+while (t--) {
+  for (int i = 0; i < n; ++i) acc += i;
+  for (int j = 0; j < m; ++j) acc += j;
+}
+```
+
+Expression: `t · (n + m)`. Per-case: `n + m` (separable sum of two linear terms).
+
+| Method | Computation | Result |
+| --- | --- | --- |
+| Naive (pointwise maxima) | $10^4 \times (2\cdot 10^5 + 2\cdot 10^5)$ | $4\cdot 10^9$ — loose |
+| Multi-sum separable packing | Pack $n$ under $\Sigma n \le 2\cdot 10^5$ ($2\cdot 10^5$) + pack $m$ under $\Sigma m \le 3\cdot 10^5$ ($3\cdot 10^5$) | **$5\cdot 10^5$** |
+
+Reported: `method: "sum-constraint-packing"`, `upper_bound: 500000`, `status: "proven"`.
+
 ---
 
 ## 11. What is used today
@@ -243,9 +316,9 @@ concave costs is future work.
 | --- | --- | --- | --- |
 | Variable max | Yes | Yes | Required for every free variable |
 | Variable min | Yes | Partially | Sign check for monotonicity; case-count reduction in fallback |
-| Sum constraint | Yes | **Yes** | Packing or fallback; one count variable per expression |
-| Product constraint | Yes | No (M3 follow-up) | Assumption emitted |
-| Linear constraint | Yes | No (M3 follow-up) | Assumption emitted |
+| Sum constraint | Yes | **Yes** | Packing (single or multi-variable separable) or fallback; one count variable per expression |
+| Product constraint | Yes | **Yes** | Tightens monotone products; method `product-constraint-bound` |
+| Linear constraint | Yes | **Yes** | Tightens monotone products, sums, and variable bounds; method `linear-constraint-bound` |
 | Time limit | Yes | — | Feasibility only |
 | Memory limit | Yes | — | Feasibility only |
 

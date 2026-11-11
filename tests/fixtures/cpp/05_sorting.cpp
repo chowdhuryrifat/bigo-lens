@@ -1,6 +1,6 @@
-// Expected: the input loop is linear; the std::sort call is outside any loop
-// and is not yet costed (STL costs are reported as data only). A sized vector
-// allocation of n ints is reported.
+// Expected: the input loop is linear (O(n)); the std::sort call is costed via the
+// STL cost model as O(n log n) (stl-algorithm). A sized vector allocation of n ints
+// is reported.
 #include <algorithm>
 #include <iostream>
 #include <vector>

@@ -21,32 +21,25 @@ widens the recognised set.
 
 Loops whose trip count depends on values computed or read during execution are `unknown`:
 
-- binary search `while (lo < hi)`, two-pointer loops, BFS/DFS `while (!q.empty())`, Collatz-style loops;
+- binary search `while (lo < hi)`, BFS/DFS `while (!q.empty())`, Collatz-style loops (two-pointer `while (l < r)` loops with monotonic `++l`/`--r` updates on all paths are supported, BL-206);
 - loops bounded by array elements (`j < a[i]`), function results, or range-for element values;
 - `for` loops without all three clauses.
 
-Amortised arguments (e.g. two pointers moving monotonically, total O(n)) are not recognised. One unknown loop
-inside a nest makes the **whole nest** `unknown`, including an enclosing `while (t--)` test-case wrapper.
+One unknown loop inside a nest makes the **whole nest** `unknown`, including an enclosing `while (t--)` test-case wrapper.
 
-## 3. Interprocedural analysis
+## 3. Interprocedural analysis (partial, BL-204)
 
-Not implemented (M2 follow-up). A loop nest that calls a user-defined function is downgraded to `estimated`, and the
-callee's cost is **not included** in the count. A function call outside any loop produces no finding at all, so
-heavy work in a helper called once is invisible to the time summary.
+Direct calls to non-recursive user-defined functions defined in the main file are substituted with formal parameters mapped to actual arguments (`interprocedural_analysis: partial`). Recursive callees, mutual call cycles, and calls beyond depth 8 fall back to `estimated` with limitations. Virtual calls, function pointers, and calls across translation units are not supported.
 
-## 4. Recursion
+## 4. Recursion (partial, BL-202, BL-203)
 
-Direct self-recursion is **detected** and reported as `unsupported` with no time expression; recurrence solving is
-planned ([COMPLEXITY_MODEL.md §9](COMPLEXITY_MODEL.md#9-recursion)). Mutual recursion is not detected. Stack depth
-and stack memory of recursion are not estimated.
+Direct self-recursion is detected and solved for common recurrence forms (Master Theorem divide-and-conquer and linear decrements) yielding `proven` time expressions (`recursion_analysis: partial`). Multiple subtractive recursion (such as Fibonacci) and mutual recursion remain unsupported with no time expression. Stack depth and stack memory of recursion are not estimated.
 
-## 5. Standard-library costs not applied
+## 5. Standard-library costs partially applied (BL-205)
 
-Library calls in a loop (`std::sort`, `map::find`, `push_back`, `lower_bound`, …) are listed in `limitations`, but
-their cost is **not** multiplied into the structural count. A loop of `n` iterations calling `std::sort` on `n`
-elements is reported as `n` (with a limitation), not `n² log n`. The STL cost table exists and is exposed through
-`capabilities` (`data_only`) but is not applied. Overloaded operators (including `std::cin >>`) and constructors are
-not listed. `unordered_map` worst cases (O(n) per operation under adversarial hashing) are recorded in the table only.
+Common STL container operations (`std::vector`, `std::map`, `std::set`, `std::priority_queue`, `std::unordered_map`) and algorithms (`std::sort`, `std::lower_bound`) are recognized and their asymptotic costs are multiplied into loop trip counts or emitted as top-level algorithm findings (`stl_cost_model: partial`). A loop of `n` iterations calling `std::sort` on `n` elements is reported as `O(n^2 log n)`.
+
+Other library calls not present in the STL cost model continue to be listed in `limitations` without cost. Overloaded operators (such as `std::cin >>`) and constructors are not listed. `unordered_map` worst cases (O(n) per operation under adversarial hashing) yield status `estimated` and an explicit limitation stating the worst-case time is linear in size under hash collisions.
 
 ## 6. Templates and macros
 

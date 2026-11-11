@@ -1,0 +1,15 @@
+[package]
+name = "bigolens-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure Rust analysis core for BigO Lens: models, symbolic expressions, recurrences, and constraints."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]

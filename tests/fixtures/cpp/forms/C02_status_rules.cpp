@@ -1,10 +1,14 @@
 // Status and confidence rules (COMPLEXITY_MODEL.md §3).
+int helper_cycle(int x);
 int helper(int x) {
-  return x * 2;
+  return helper_cycle(x);
+}
+int helper_cycle(int x) {
+  return helper(x);
 }
 int external_function(int x);
 
-// Calls a user-defined function: Estimated, low confidence.
+// Calls a user-defined function with a cycle: Estimated, low confidence.
 long long calls_user_function(int n) {
   long long s = 0;
   for (int i = 0; i < n; ++i) {

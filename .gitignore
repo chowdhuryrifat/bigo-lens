@@ -1,6 +1,7 @@
 # Build trees
 /build/
 /out/
+/target/
 cmake-build-*/
 CMakeUserPresets.json
 compile_commands.json

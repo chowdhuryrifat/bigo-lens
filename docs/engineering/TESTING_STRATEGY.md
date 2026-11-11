@@ -100,7 +100,7 @@ Each fixture is a small, self-contained C++ program. Every new pattern or bug fi
 | `02_nested_loops.cpp` | Independent nested loops over `n` and `m` | `nested-loop`, O(m n), workload 30000 for n ≤ 100, m ≤ 300 |
 | `03_triangular_loop.cpp` | `for j < i` inside `for i < n` | `triangular-loop`, Proven, O(n^2), exact count n(n-1)/2 |
 | `04_logarithmic_loop.cpp` | Doubling index `i *= 2` | `logarithmic-loop`, O(log n), workload 11 for n ≤ 1024 |
-| `05_sorting.cpp` | Input loop, `std::vector`, `std::sort` | Linear input loop O(n); `dynamic_allocation` with space expression `4 * n`, Estimated |
+| `05_sorting.cpp` | Input loop, `std::vector`, `std::sort` | Linear input loop O(n); top-level `std::sort` O(n log n); `dynamic_allocation` with space expression `4 * n`, Estimated |
 | `06_binary_search.cpp` | `while (lo < hi)` | Second loop is `data-dependent-loop`, Unknown, confidence `none`, `time` null. It is **not** guessed as O(log n) |
 | `07_naive_fibonacci.cpp` | Two self-calls in `fib` | `multiple-direct-recursion`, Unsupported, `time` null |
 | `08_linear_space_vector.cpp` | Sized `std::vector` and a static array | Vector space O(n) (Estimated); static array 4000 bytes (Proven) |
@@ -136,8 +136,11 @@ so the suite is fast and does not depend on the installed C++ library.
 | L11 halving `while` | `L11_halving_while.cpp` | `log_2(x) + 1`; unbraced body `log_10(x) + 1` | `x /= 1`, `x = x / 2` (unknown) |
 | L12 range-for over a named container | `L12_range_for_container.cpp` | `v.size()` (user-defined container, Proven) | temporary range; element used as an inner bound (unknown) |
 | L13 range-for over a constant array | `L13_range_for_array.cpp` | `16`, `8` | — (no meaningful near miss: every array range has a constant size) |
+| L14 two-pointer `while (l < r)` (BL-206) | `L14_two_pointer.cpp` | `n`, `n - 1`, `r - l`, symmetric `r > l`, early exit | one path updates neither (unknown); both updated on path (unknown); arbitrary assignment (unknown) |
 | Composition (§2.1) | `C01_nesting_and_dependence.cpp` | lower/upper triangles as summations, sequential inner loops `n * (n + m)`, nested log `n * (log_2(n) + 1)` | strided dependent outer loop; one unknown inner loop (unknown nest) |
 | Status rules (§3) | `C02_status_rules.cpp` | user call (estimated, low); library call (proven, medium); early exit (proven, medium); direct recursion (unsupported) | `do-while` (unsupported); `for (;;)` (unknown) |
+| Interprocedural (BL-204) | `I01_interprocedural.cpp` | loop calling O(m) helper → O(m n); chained helpers → O(k n); index passing → O(n^2) summation | helper with unknown loop → unknown; recursive helper → estimated, low; mutual call cycle → estimated, low |
+| STL cost model (BL-205) | `S01_stl_cost.cpp` | set insert in loop O(n log n); map lookup O(n log m); priority queue push O(n log n); vector push_back amortized O(n); vector erase O(n^2); lower_bound O(n log n); sort in loop O(m n log n); top-level sort O(n log n) | unordered_map find with average O(n) vs worst linear (estimated, low) |
 
 ## 4. Determinism
 

@@ -8,6 +8,8 @@ Formatting is automated. Run `scripts/development/format.sh` (clang-format and P
 
 | Tool | Config file | Applies to | Enforced in CI |
 | --- | --- | --- | --- |
+| `cargo fmt` | standard rustfmt | `crates/**/*.rs` | `cargo fmt --check` |
+| `cargo clippy` | `Cargo.toml` | `crates/**/*.rs` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | clang-format | [`.clang-format`](../../.clang-format) | `*.cpp`, `*.hpp` | `code-quality.yml` (format check) |
 | clang-tidy | [`.clang-tidy`](../../.clang-tidy) | engine, benchmark, tests (Linux, via `compile_commands.json`) | `code-quality.yml` |
 | Compiler warnings | [`cmake/CompilerWarnings.cmake`](../../cmake/CompilerWarnings.cmake) | all C++ targets | `code-quality.yml` configures with `-Werror` |
@@ -16,7 +18,28 @@ Formatting is automated. Run `scripts/development/format.sh` (clang-format and P
 | Prettier | [`.prettierrc`](../../.prettierrc), [`.prettierignore`](../../.prettierignore) | TS, JS, JSON, YAML (Markdown is ignored) | `code-quality.yml` (`npm run format:check`) |
 | EditorConfig | [`.editorconfig`](../../.editorconfig) | all files | editor-level |
 
-## 2. C++ style
+## 2. Rust style (Cargo workspace)
+
+### 2.1 Formatting (`rustfmt`)
+
+- Formatting follows standard Rust style (`rustfmt`). Run `cargo fmt` before pushing.
+- Indentation is 4 spaces.
+- Match expressions should be clean and exhaustive. Avoid catch-all `_ =>` when matching on domain enums (`BoundStatus`, `Confidence`, etc.) so compiler warnings catch unhandled variants.
+
+### 2.2 Lints and safety (`clippy`)
+
+- Zero warnings permitted: `cargo clippy --workspace --all-targets -- -D warnings`.
+- `#![forbid(unsafe_code)]` is strictly enforced in `crates/bigolens-core`.
+- Derive common traits for data models: `Debug`, `Clone`, `PartialEq`, `Serialize`, `Deserialize`.
+- Use `thiserror` for library error types; use `anyhow` for top-level CLI application error dispatching.
+- Never use `.unwrap()` or `.expect()` in non-test library code on user-supplied data; propagate errors with `Result<T, E>`.
+
+### 2.3 Documentation (`rustdoc`)
+
+- Public items must include `///` rustdoc comments explaining purpose, contracts, and error conditions.
+- Modules should feature a high-level `//!` module overview.
+
+## 3. C++ style (legacy engine & Clang frontend)
 
 ### 2.1 Formatting (`.clang-format`)
 

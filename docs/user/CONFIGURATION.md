@@ -63,8 +63,8 @@ The file contains exactly the `constraints` object of the [JSON protocol](../spe
 | --- | --- | --- | --- |
 | `variables` | object: `name → { "min": int, "max": int }` | Bounds of each input variable | Yes. `max` is required for a workload. `min` is used in the monotonicity checks |
 | `sum_constraints` | array of `{ "variable", "count_variable", "max_total" }` | "The sum of `variable` over all `count_variable` test cases is at most `max_total`" (Σn ≤ S) | Yes (packing, or a sound fallback) |
-| `product_constraints` | array of `{ "variables": [names, at least 2], "max_product" }` | Product of the variables is at most `max_product` | **Validated, not yet used.** An assumption in the output says so |
-| `linear_constraints` | array of `{ "coefficients": { name: int }, "bound": int }` | Σ coefficientᵢ · variableᵢ ≤ bound | **Validated, not yet used.** An assumption in the output says so |
+| `product_constraints` | array of `{ "variables": [names, at least 2], "max_product" }` | Product of the variables is at most `max_product` | Yes. Tightens monotone products (method `product-constraint-bound`) |
+| `linear_constraints` | array of `{ "coefficients": { name: int }, "bound": int }` | Σ coefficientᵢ · variableᵢ ≤ bound | Yes. Tightens monotone products, sums, and variable bounds (method `linear-constraint-bound`) |
 | `time_limit_ms` | integer, 1–3,600,000 | Time limit per test | Feasibility. Time is `unknown` until benchmarking exists |
 | `memory_limit_mb` | integer, 1–1,048,576 | Memory limit | Memory feasibility |
 
@@ -120,9 +120,9 @@ This example describes a problem with *t* test cases, each with an array of leng
 How the current engine uses it:
 
 - A `while (t--)` loop containing an O(n²) nest is evaluated with **sum-constraint packing**: ⌊200000 / 200000⌋ = 1 full case of n = 2·10^5, giving 4·10^10.
-- An expression involving both `n` and `q` inside the same test-case loop has sum constraints with the same count variable `t`. Combining them is not supported yet, so the engine falls back to a sound bound or reports `unknown`, and states which method it used.
-- An `h × w` grid loop is evaluated at the pointwise maxima (10^6). That coincides with the product bound here. A `h² · w` expression would **not** be tightened by the product constraint yet.
-- The linear constraint is accepted and reported as unused in `assumptions`.
+- Multiple sum constraints sharing count variable `t` (e.g. `Σn ≤ 2·10^5` and `Σq ≤ 2·10^5`) are evaluated via separable packing for additive shapes like `t·(n + q)`, giving 4·10^5 (`sum-constraint-packing`, `proven`). Interacting shapes (such as `n·q`) fall back soundly to `sum-constraint-cases`. Different count variables report `unknown`.
+- An `h × w` grid loop is evaluated using the product constraint (`product-constraint-bound`, 10^6). A `h² · w` expression is tightened by substituting `h · w ≤ 10^6`, evaluating to `h_max · 10^6`.
+- A nested loop or product such as `n × q` under `n + q ≤ 3·10^5` is tightened via constrained optimization on the line segment, evaluating to 2.25·10^10 (`linear-constraint-bound`). Sums `n + q` are bounded by 3·10^5. Single variable bounds are capped by `B - Σ c_u · m_u`.
 
 ### 2.4 Minimal examples
 

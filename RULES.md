@@ -21,9 +21,43 @@ Every result carries `bound_status` (`proven | estimated | unknown | unsupported
 
 The same rule applies to documentation, commit messages and pull request descriptions. Describe what the code does today. Mark planned work as planned.
 
-## 1. C++ rules (engine and benchmark)
+## 1. Rust rules (engine workspace)
 
-### 1.1 Language and build
+As decided in [ADR 0012](docs/architecture/DECISIONS/0012-rust-engine-architecture.md), the native engine is architected as a modular Rust Cargo workspace in `crates/`:
+
+### 1.1 Toolchain, edition and linting
+
+- Use modern stable Rust (edition 2021/2024) via Cargo.
+- All code must compile cleanly with zero warnings: `cargo clippy --workspace --all-targets -- -D warnings`.
+- Code formatting must strictly adhere to `cargo fmt --check`.
+- Dependencies are managed in the root `Cargo.toml` and crate `Cargo.toml` files with exact or conservative semantic versioning. Do not introduce unvetted third-party crates.
+
+### 1.2 Crate boundaries and safety
+
+- **`crates/bigolens-core`**: The pure Rust analysis core:
+  - Protocol domain models (strongly typed, serialized via `serde` with `#[serde(rename_all = "snake_case")]` matching `shared/schemas/`).
+  - Symbolic expression trees (`Expr`) with immutable, shared algebraic nodes (`Arc<Expr>`).
+  - Asymptotic simplifier, Master Theorem / recurrence solvers, linear/sum/product constraint solvers, and time/memory feasibility assessment.
+  - **`#![forbid(unsafe_code)]` is mandatory** in `bigolens-core`. It has no C++ or Clang dependencies.
+- **`crates/bigolens-clang`**: The Clang AST frontend boundary:
+  - Interfaces with Clang LibTooling via safe FFI abstractions (`cxx` or `clang-sys`).
+  - Only this crate may touch C++ or Clang FFI. All `unsafe` blocks must be strictly minimal, local, and documented with explicit `// SAFETY:` invariant comments.
+- **`crates/bigolens-engine`**: The CLI executable binary:
+  - Uses `clap` for command-line parsing.
+  - Implements the versioned JSON protocol over stdin/stdout and `--request <file>`.
+
+### 1.3 Types, error handling and arithmetic
+
+- Use strongly typed Rust `enum`s for every protocol status or category (`BoundStatus`, `Confidence`, `FeasibilityStatus`, `Severity`, `FindingCategory`).
+- Error handling in library crates must use `thiserror` for domain-specific error types. Never use `.unwrap()` or `.expect()` in non-test code on untrusted input.
+- Arithmetic on sizes or byte counts from user input must use checked or saturating operations (`saturating_add`, `saturating_mul`, `checked_mul`).
+- Floating-point arithmetic (`f64`) is restricted to the symbolic evaluator and workload approximation; non-finite results must map to `Overflow`.
+
+## 2. C++ rules (legacy engine and Clang frontend)
+
+During the phased migration to the Rust engine (see [ADR 0012](docs/architecture/DECISIONS/0012-rust-engine-architecture.md)), existing C++ components and native Clang interfaces adhere to the following standards:
+
+### 2.1 Language and build
 
 - Use C++20 (`CMAKE_CXX_STANDARD 20`, extensions off). CMake 3.24 or newer.
 - All code must compile without warnings under the project warning policy in [`cmake/CompilerWarnings.cmake`](cmake/CompilerWarnings.cmake): `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual` on GCC/Clang (plus `-Wnull-dereference` on Clang; GCC reports false positives in libstdc++ and LLVM headers at `-O2`), and `/W4 /permissive-` on MSVC. CI configures with `BIGOLENS_WARNINGS_AS_ERRORS=ON`.
@@ -31,7 +65,7 @@ The same rule applies to documentation, commit messages and pull request descrip
 - `bigolens_core` must **not** depend on Clang or LLVM. Only `engine/src/parser/clang_frontend.cpp` may include Clang headers. Front-end types must never appear in a public header. The boundary is the abstract interface `analyzers::SourceAnalyzer`.
 - The engine must build and pass its tests with `BIGOLENS_ENABLE_CLANG=OFF` (the `no-clang` preset). This is how Windows and macOS CI run.
 
-### 1.2 Types and interfaces
+### 2.2 Types and interfaces
 
 - Use strong enums (`enum class`) for every status or category that crosses a module boundary (`BoundStatus`, `Confidence`, `FeasibilityStatus`, `Severity`, `FindingCategory`). Convert them to protocol strings in exactly one place (`models::toString`).
 - Mark functions `[[nodiscard]]` when they return results or status that a caller could ignore by mistake.
@@ -40,14 +74,14 @@ The same rule applies to documentation, commit messages and pull request descrip
 - Arithmetic on sizes or byte counts that come from user input must be checked or saturating. Memory totals already saturate; keep that behaviour.
 - Use floating point (IEEE double) only where the specifications allow it, for example the symbolic evaluator. Report non-finite results as `Overflow`. Never return them as numbers.
 
-### 1.3 Clang front end
+### 2.3 Clang front end
 
 - The Clang translation unit is compiled with `-fno-rtti` whenever LLVM was built without RTTI, which is the default for distribution packages. **Do not use `dynamic_cast` or `typeid` on Clang types.** Use `llvm::isa`, `llvm::dyn_cast`, `llvm::dyn_cast_or_null` and `llvm::cast`.
 - Parse with `-fsyntax-only`, an in-memory file and a fixed argument list. The validated `cpp_standard` is the only part of the request that may reach the compiler arguments.
 - Never run analysis on an AST that has errors. Report `source_parse_error` with the collected diagnostics (at most 50) instead.
 - Status rules for loop analysis are specified (see [docs/specifications/COMPLEXITY_MODEL.md](docs/specifications/COMPLEXITY_MODEL.md)). A new pattern must state its `bound_status` and `confidence` rule, and the pattern needs a fixture.
 
-## 2. TypeScript rules (VS Code extension)
+## 3. TypeScript rules (VS Code extension)
 
 - Use TypeScript in `strict` mode, with Node 22 tooling, targeting VS Code `^1.85`. Do not use `any`. Use `unknown` and narrow it.
 - Validate every value that crosses a process or file boundary (engine responses and sidecar constraint files) with ajv against the shared JSON Schemas before use. Never cast an unvalidated response to a typed interface.
@@ -57,7 +91,19 @@ The same rule applies to documentation, commit messages and pull request descrip
 - Keep VS Code API usage in `commands/` and `providers/`. Keep `services/` and `models/` testable without the VS Code runtime wherever practical.
 - Use `async`/`await`. Never leave a promise floating. ESLint's `no-floating-promises` rule enforces this.
 
-## 3. Naming conventions
+## 4. Naming conventions
+
+### Rust
+
+| Element | Convention | Example |
+| --- | --- | --- |
+| Crates | `kebab-case` | `bigolens-core`, `bigolens-engine` |
+| Modules & source files | `snake_case` | `asymptotic_simplifier.rs` |
+| Types (structs, enums, traits) | `PascalCase` | `ConstraintSet`, `BoundStatus`, `Expr` |
+| Enum variants | `PascalCase` | `BoundStatus::Proven`, `Expr::Add` |
+| Functions and methods | `snake_case` | `evaluate_workload`, `simplify` |
+| Variables and parameters | `snake_case` | `request_id`, `max_length` |
+| Constants | `SCREAMING_SNAKE_CASE` | `MAX_JSON_DEPTH`, `MAX_REQUEST_BYTES` |
 
 ### C++
 
@@ -94,7 +140,7 @@ The same rule applies to documentation, commit messages and pull request descrip
 - Enum string values: `snake_case` or `kebab-case` exactly as the schema defines them (`not_implemented`, `sum-constraint-packing`).
 - Fixtures: `NN_descriptive_name.cpp` for positive cases and `neg_descriptive_name.cpp` for negative cases.
 
-## 4. Header organization
+## 5. Header organization
 
 - Every header begins with `#pragma once`. Do not use include guards.
 - Public headers live in `engine/include/bigolens/<module>/<name>.hpp` (and `benchmark/include/bigolens/benchmark/`). The module directory matches the namespace: `bigolens/constraints/workload.hpp` declares into `bigolens::constraints`.
@@ -104,7 +150,7 @@ The same rule applies to documentation, commit messages and pull request descrip
 - Public headers contain no `using namespace` directives. Function-local or file-local `using` declarations in `.cpp` files are fine (`using nlohmann::json;`).
 - Generated headers (`version.hpp`) are produced by CMake into the build tree. Never commit generated files.
 
-## 5. Include ordering
+## 6. Include ordering
 
 Order includes in groups separated by a blank line, sorted alphabetically within each group:
 
@@ -115,36 +161,42 @@ Order includes in groups separated by a blank line, sorted alphabetically within
 
 Use angle brackets for the standard library and third-party headers, and quotes with the full `bigolens/` path for project headers. Never use relative includes (`"../foo.hpp"`). clang-format (`IncludeBlocks: Preserve`) sorts includes within each block but does not create the blocks, so you must separate the groups yourself (see [CODING_STANDARDS.md](docs/engineering/CODING_STANDARDS.md#22-include-order)).
 
-## 6. Memory ownership and smart pointers
+## 7. Memory ownership and smart pointers
 
 - Use RAII for everything: memory, file handles, child processes and temporary directories.
-- No owning raw pointers and no naked `new` or `delete`. Use `std::make_unique` and `std::make_shared`.
-- `std::unique_ptr` is the default for exclusive ownership. Example: `parser::makeClangSourceAnalyzer()` returns `std::unique_ptr<analyzers::SourceAnalyzer>`.
-- Use `std::shared_ptr<const T>` only for immutable shared structure. The symbolic expression tree (`complexity::ExprPtr`) is the model: nodes are immutable and shared, so sharing is safe and cycles cannot form.
-- Raw pointers and references are **non-owning** observers. A raw pointer means "may be null" (for example `RequestHandler(analyzers::SourceAnalyzer* analyzer)`, where null means no front end). A reference means "never null".
-- Types that own resources or represent polymorphic interfaces delete their copy and move operations explicitly unless they need them (see `SourceAnalyzer`).
-- Polymorphic base classes have a public virtual destructor or a protected non-virtual destructor.
-- Clang AST nodes are owned by the `ASTContext`. Never store pointers to them beyond the lifetime of the analysis of one translation unit.
+- In Rust:
+  - Exclusive ownership is standard.
+  - Immutable shared AST expression nodes use `Arc<Expr>`. Cyclic graph references are prohibited.
+  - FFI memory allocated by Clang must be strictly encapsulated in RAII drop guards.
+- In C++:
+  - No owning raw pointers and no naked `new` or `delete`. Use `std::make_unique` and `std::make_shared`.
+  - `std::unique_ptr` is the default for exclusive ownership. Example: `parser::makeClangSourceAnalyzer()` returns `std::unique_ptr<analyzers::SourceAnalyzer>`.
+  - Use `std::shared_ptr<const T>` only for immutable shared structure. The symbolic expression tree (`complexity::ExprPtr`) is the model: nodes are immutable and shared, so sharing is safe and cycles cannot form.
+  - Raw pointers and references are **non-owning** observers. A raw pointer means "may be null" (for example `RequestHandler(analyzers::SourceAnalyzer* analyzer)`, where null means no front end). A reference means "never null".
+  - Types that own resources or represent polymorphic interfaces delete their copy and move operations explicitly unless they need them (see `SourceAnalyzer`).
+  - Polymorphic base classes have a public virtual destructor or a protected non-virtual destructor.
+  - Clang AST nodes are owned by the `ASTContext`. Never store pointers to them beyond the lifetime of the analysis of one translation unit.
 
-## 7. Exception safety and error handling
+## 8. Exception safety and error handling
 
-- **`RequestHandler` never throws.** Every failure inside request handling becomes a structured error response (`internal_error` as a last resort). `main.cpp` has a final `catch (const std::exception&)` that logs to stderr and exits 1. That path is a bug indicator, not normal control flow.
-- **Exceptions never cross the protocol boundary.** The extension sees JSON only.
-- Inside the engine, throw exceptions for programming errors and invariant violations. For example, expression factories throw on a negative power exponent or a logarithm base of 1 or less. Use result types (`std::optional`, status structs such as `WorkloadResult`, `ProtocolError` lists) for expected failures such as invalid input, unbound variables or overflow.
+- **`RequestHandler` / `EngineRunner` never panics or throws.** Every failure inside request handling becomes a structured error response (`internal_error` as a last resort).
+- **Exceptions or panics never cross the protocol boundary.** The extension sees JSON only.
+- Inside the Rust engine, use `Result<T, E>` and `thiserror` for recoverable errors. Never use `unwrap()` or `expect()` on user-controlled input.
+- Inside the C++ engine, throw exceptions for programming errors and invariant violations. For example, expression factories throw on a negative power exponent or a logarithm base of 1 or less. Use result types (`std::optional`, status structs such as `WorkloadResult`, `ProtocolError` lists) for expected failures such as invalid input, unbound variables or overflow.
 - Validation collects **all** errors with JSON-pointer paths instead of stopping at the first one, so users can fix a request in one round trip.
 - Catch exceptions by `const&`. Never use `catch (...)` without rethrowing or converting to a reported error.
 - Destructors, move operations and `swap` are `noexcept`.
 - Do not throw through Clang callbacks (AST visitors, diagnostic consumers). Convert errors to findings or diagnostics at the call site.
 - In TypeScript, reject promises with `Error` subclasses carrying a stable `code`. Surface failures to the user through a notification or output channel message with an actionable hint.
 
-## 8. Logging
+## 9. Logging
 
 - **Engine: stdout is reserved for exactly one JSON response line.** Nothing else may ever be written to stdout: no debug prints, no progress, no banners (`--version` and `--help` are the only exceptions, and they never send a request).
 - Engine logging goes to **stderr** only, prefixed with `bigolens-engine:`. Log sparingly. The extension captures stderr for diagnostics.
 - Never log full source content, constraint files or environment variables. Paths and error messages are acceptable.
 - **Extension:** log to the `BigO Lens` output channel. Do not use `console.log` in shipped code. User-facing errors use `vscode.window.show*Message` and point to the output channel for details.
 
-## 9. JSON protocol rules
+## 10. JSON protocol rules
 
 The protocol is specified in [docs/specifications/JSON_PROTOCOL.md](docs/specifications/JSON_PROTOCOL.md). The schemas in [`shared/schemas/`](shared/schemas/) (JSON Schema draft 2020-12) are normative.
 
@@ -154,12 +206,12 @@ The protocol is specified in [docs/specifications/JSON_PROTOCOL.md](docs/specifi
 - Every response contains `schema_version`, `request_id`, `status`, `engine`, `results`, `diagnostics` and `errors`, even on error.
 - Error codes are a closed set (`malformed_json`, `request_too_large`, `invalid_request`, `unsupported_schema_version`, `not_implemented`, `frontend_unavailable`, `source_parse_error`, `internal_error`). Adding one is a minor protocol change. Changing the meaning of one is a breaking change.
 - Input limits are enforced **before** expensive work: 4 MiB request, 2 MiB source, nesting depth 64 (checked before parsing), integer magnitude 10^18.
-- Every change to the protocol updates, in the same pull request: the schemas, the C++ serializer and validator, the TypeScript types, [JSON_PROTOCOL.md](docs/specifications/JSON_PROTOCOL.md), and the examples in [`shared/examples/`](shared/examples/). Regenerate the response examples with `scripts/development/regenerate-examples.sh`. Never edit them by hand.
+- Every change to the protocol updates, in the same pull request: the schemas, the Rust and C++ serializers and validators, the TypeScript types, [JSON_PROTOCOL.md](docs/specifications/JSON_PROTOCOL.md), and the examples in [`shared/examples/`](shared/examples/). Regenerate the response examples with `scripts/development/regenerate-examples.sh`. Never edit them by hand.
 - Response values must validate against `response.schema.json`. The extension enforces this at runtime, and CI validates the examples (`npm run validate:schemas`).
 
-## 10. API compatibility
+## 11. API compatibility
 
-- The project is pre-1.0 (`0.x`). The C++ library APIs are internal and may change freely. The **JSON protocol is the public contract** between the engine and any client.
+- The project is pre-1.0 (`0.x`). The internal engine crate and library APIs may change freely. The **JSON protocol is the public contract** between the engine and any client.
 - Protocol versioning:
   - **Minor** (`1.0` to `1.1`): additive and backward compatible, such as new optional request fields, new response fields, new enum values clients must tolerate, or new error codes.
   - **Major** (`1.x` to `2.0`): removing or renaming fields, changing types or semantics, or making optional request fields required.
@@ -167,39 +219,40 @@ The protocol is specified in [docs/specifications/JSON_PROTOCOL.md](docs/specifi
 - The extension and engine version and ship together. The extension must check `engine.protocol_version` and report an incompatible engine clearly. It must not misparse the response.
 - Settings and command IDs in `extension/package.json` are user-facing API. Renaming one requires a migration note in the changelog.
 
-## 11. Testing
+## 12. Testing
 
 The full strategy is in [TESTING_STRATEGY.md](docs/engineering/TESTING_STRATEGY.md).
 
 - Every behaviour change comes with tests. Every bug fix comes with a regression test that fails before the fix.
+- In Rust: unit and integration tests run with `cargo test --workspace`.
+- In C++: native unit and integration tests run with `ctest --preset dev` / `ctest --preset no-clang`.
 - Every new loop pattern, finding kind or status rule gets a C++ fixture in `tests/fixtures/cpp/` and an integration test asserting its pattern, expression, `bound_status` and `confidence`.
 - Every new validation rule or error code gets a negative test.
-- Tests are deterministic: no wall-clock assertions, no network, no dependence on test order, and no machine-specific paths. Use the `BIGOLENS_FIXTURE_DIR` compile definition and the presets.
-- Ordinary CI must not contain performance thresholds.
-- CTest tests are labelled `unit` or `integration`.
+- Tests are deterministic: no wall-clock assertions, no network, no dependence on test order, and no machine-specific paths.
 - Run the relevant suites locally before you push, and report what you ran in the pull request. Do not claim a test passes unless you ran it.
 
-## 12. Documentation
+## 13. Documentation
 
 - Code, specifications and documentation change together in the same pull request.
-- Public headers carry `///` Doxygen-style comments that describe the contract: preconditions, units, ownership, and what is returned on failure. Do not narrate the implementation.
+- Rust crates carry `//!` module-level and `///` item-level rustdoc comments that describe the contract, errors, and invariants.
+- C++ headers carry `///` Doxygen-style comments that describe the contract.
 - Comments explain *why*. Do not leave commented-out code.
-- Documentation states implementation status precisely. Use **Implemented**, **Partial**, **Planned (Mx)** or **Not implemented**. Copying an aspirational sentence from a design document into a user guide as if it were fact is a documentation bug.
+- Documentation states implementation status precisely. Use **Implemented**, **Partial**, **Planned (Mx)** or **Not implemented**.
 - Major design decisions are recorded as ADRs in [`docs/architecture/DECISIONS/`](docs/architecture/DECISIONS/).
 - Use relative links between documents. Check that the links resolve.
 
-## 13. Security
+## 14. Security
 
 See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](docs/engineering/THREAT_MODEL.md).
 
 - Treat all user source code, constraint files, requests and benchmark inputs as **untrusted**.
-- The engine never executes user code today. Any feature that compiles or runs user code (M4 benchmarking) must be user-initiated and must follow the sandboxing requirements in the threat model before it is merged. A timeout alone is not a sandbox. Until real isolation exists, the user interface and documentation must state plainly that benchmarking is not sandboxed.
+- `#![forbid(unsafe_code)]` protects `bigolens-core` against memory vulnerabilities.
 - Compiler and process arguments are built as an argv array from validated values. No request field may inject a compiler flag.
 - Temporary files go in per-run directories created with secure APIs and cleaned up on every exit path.
-- Dependencies are pinned. CMake downloads use pinned URLs with SHA-256. npm uses `package-lock.json` and `npm ci`. GitHub Actions use official actions only.
+- Dependencies are pinned in `Cargo.lock`, `package-lock.json`, and CMake files with hash verification.
 - CI workflows run with least privilege (`permissions: contents: read` unless a job needs more).
 
-## 14. Git conventions
+## 15. Git conventions
 
 The details are in [GIT_WORKFLOW.md](docs/engineering/GIT_WORKFLOW.md).
 
@@ -208,35 +261,35 @@ The details are in [GIT_WORKFLOW.md](docs/engineering/GIT_WORKFLOW.md).
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`, imperative mood, at most 72 characters, no trailing period. Scopes: `engine`, `frontend`, `protocol`, `constraints`, `benchmark`, `extension`, `ci`, `docs`, `build`.
 - Breaking protocol changes use `!` and a `BREAKING CHANGE:` footer.
 - Never force-push to `main`. Never commit directly to `main` except through a merged pull request.
-- Release tags are `vX.Y.Z` and must match the versions in `CMakeLists.txt` and `extension/package.json`.
+- Release tags are `vX.Y.Z` and must match the versions in `Cargo.toml`, `CMakeLists.txt` and `extension/package.json`.
 
-## 15. Pull request standards
+## 16. Pull request standards
 
 A pull request:
 
 - Does one thing. Split unrelated changes.
 - References its issue (`Closes #123` or the `BL-xxx` ID).
 - Describes **what** changed, **why**, and **how it was verified**, listing the exact commands run.
-- Passes CI: build matrix, tests, clang-format, clang-tidy, ESLint, Prettier, schema validation and CodeQL.
+- Passes CI: Rust tests (`cargo test`), clippy (`cargo clippy -- -D warnings`), rustfmt (`cargo fmt --check`), CMake builds and CTests, ESLint, Prettier, schema validation and CodeQL.
 - Updates docs, schemas, examples and the changelog where applicable.
 - Meets the [Definition of Done](docs/development/DEFINITION_OF_DONE.md).
 - Has at least one approving review before merge. Authors do not approve their own pull requests.
 - Is squash-merged, with a squash commit message that follows Conventional Commits.
 
-## 16. Prohibited practices
+## 17. Prohibited practices
 
 These are rejected in review regardless of context:
 
 1. **Regex or ad-hoc text matching as the primary C++ parser.** C++ analysis runs on the Clang AST. Text heuristics may only pre-filter or post-process, and never decide a complexity result.
 2. **Unsupported complexity guesses.** Never emit an `O(...)`, a workload or a feasibility verdict that the analysis did not derive. Unrecognized shapes become `unknown` or `unsupported`, with a limitation explaining why. This also forbids rounding `estimated` up to `proven` and inventing default constraint values.
-3. **Silent exception swallowing.** No empty `catch` blocks and no `catch (...) {}`. No `.catch(() => {})` in TypeScript. Every caught error is converted into a reported error or diagnostic, or rethrown.
-4. **Unnecessary global mutable state.** No mutable globals or singletons. Configuration flows through parameters and objects. Immutable `constexpr` tables are fine.
-5. **Machine-specific hardcoded paths.** No `/home/...`, `C:\Users\...` or `/usr/lib/llvm-18` in code, CMake, tests or committed settings. Use CMake variables, presets, compile definitions, environment variables or VS Code settings.
+3. **Silent exception swallowing or unhandled panics.** No empty `catch` blocks in C++, no unhandled panics or bare `unwrap()` on untrusted input in Rust, and no `.catch(() => {})` in TypeScript.
+4. **Unnecessary global mutable state.** No mutable globals or singletons. Configuration flows through parameters and objects.
+5. **Machine-specific hardcoded paths.** No `/home/...`, `C:\Users\...` or `/usr/lib/llvm-18` in code, Cargo/CMake configurations, tests or committed settings.
 6. **Unvalidated external input.** Every request, sidecar file, engine response, environment variable and (in future) benchmark input is validated against its schema or limits before use.
 7. **Fake benchmark results.** Never fabricate, hand-edit, cherry-pick or "illustrate" timings, fits or feasibility results, in code, tests, documentation or marketing. Example responses in `shared/examples/` are generated by the real engine.
 8. **Unverified test claims.** Never state in a pull request, commit, issue or document that tests pass, that a platform is supported, or that coverage exists, unless you actually ran it and observed the result.
 9. **Shell-string process spawning.** No `system()`, `popen()`, `exec()`, `shell: true` or string-concatenated command lines. Use argv arrays.
-10. **Committing secrets.** No tokens, keys, credentials, `.env` files or personal data in the repository, test fixtures or CI logs. Secrets live in GitHub encrypted secrets and are scoped to the jobs that need them.
-11. **Including Clang headers outside `clang_frontend.cpp`, or using RTTI on Clang types.**
+10. **Committing secrets.** No tokens, keys, credentials, `.env` files or personal data in the repository, test fixtures or CI logs.
+11. **Using `unsafe` in `bigolens-core` or bypassing Clang encapsulation.**
 12. **Writing anything to engine stdout other than the single JSON response.**
 13. **Disabling a failing test, linter rule or warning to make CI green** without a linked issue and a justification comment.

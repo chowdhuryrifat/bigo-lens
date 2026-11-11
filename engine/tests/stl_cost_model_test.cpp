@@ -43,3 +43,21 @@ TEST(StlCostModel, RequiredOperationsArePresent) {
   }
   EXPECT_FALSE(estimation::lookupStlCost("std::list", "sort").has_value());
 }
+
+TEST(StlCostModel, SizeVariableBindingSubstitutesConstraintVariables) {
+  const auto cost = estimation::lookupStlCost("std::set", "insert");
+  ASSERT_TRUE(cost.has_value());
+  const auto expr1 = complexity::substitute(cost->worst, "n", complexity::variable("n"));
+  EXPECT_EQ(complexity::toString(*expr1), "log_2(n)");
+
+  const auto expr2 = complexity::substitute(cost->worst, "n", complexity::variable("s.size()"));
+  EXPECT_EQ(complexity::toString(*expr2), "log_2(s.size())");
+
+  const auto expr3 = complexity::substitute(cost->worst, "n", complexity::variable("m"));
+  EXPECT_EQ(complexity::toString(*expr3), "log_2(m)");
+
+  const auto sortCost = estimation::lookupStlCost("algorithm", "sort");
+  ASSERT_TRUE(sortCost.has_value());
+  const auto expr4 = complexity::substitute(sortCost->worst, "n", complexity::variable("n"));
+  EXPECT_EQ(complexity::toString(*expr4), "n * log_2(n)");
+}

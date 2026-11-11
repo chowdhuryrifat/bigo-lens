@@ -24,8 +24,10 @@ These instructions apply to any AI coding agent working in this repository (Clau
   If a construct is not supported, the result must be `unknown` or `unsupported`, with the reason in `limitations`.
 - Keep bound status (proven / estimated / unknown / unsupported) and confidence separate.
 - Never use regular expressions as the primary C++ parser. Use the Clang AST.
-- Keep module boundaries: only `engine/src/parser/clang_frontend.cpp` may include Clang headers; `bigolens_core` must
-  not depend on Clang; the extension talks to the engine only through the versioned JSON protocol.
+- Keep module boundaries:
+  - In Rust: `#![forbid(unsafe_code)]` in `crates/bigolens-core`; Clang FFI isolated in `crates/bigolens-clang`; CLI in `crates/bigolens-engine`.
+  - In C++ (transitional): only `engine/src/parser/clang_frontend.cpp` may include Clang headers; `bigolens_core` must not depend on Clang.
+  - The extension talks to the engine only through the versioned JSON protocol.
 - Protocol changes require schema updates, documentation updates and a version decision (see JSON_PROTOCOL.md).
 - Validate all external input: requests, constraint files, engine output, settings and environment variables.
 - Spawn processes without a shell, with fixed argument lists. Never execute user code outside the planned, isolated
@@ -36,7 +38,8 @@ These instructions apply to any AI coding agent working in this repository (Clau
 ## After changing code
 
 - Run the relevant checks and report their actual results:
-  - native: `cmake --build --preset dev && ctest --preset dev` (or the `no-clang` preset)
+  - Rust workspace: `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check`
+  - native C++: `cmake --build --preset dev && ctest --preset dev` (or the `no-clang` preset)
   - extension: `cd extension && npm run lint && npm test` (and `npm run test:integration` when the engine is built)
   - formatting: `scripts/development/format.sh --check`
 - **Never claim a test passed unless you ran it and saw it pass.** If a check could not be run (missing toolchain,

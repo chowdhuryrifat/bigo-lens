@@ -1,0 +1,19 @@
+[package]
+name = "bigolens-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Standalone CLI and JSON protocol runner for BigO Lens."
+
+[dependencies]
+bigolens-core = { path = "../bigolens-core" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "bigolens-engine"
+path = "src/main.rs"

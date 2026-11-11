@@ -8,6 +8,10 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Rust engine architecture (ADR 0012). Re-architects the standalone engine as a modular Cargo workspace in `crates/`:
+  - `crates/bigolens-core`: Pure Rust analysis core (`#![forbid(unsafe_code)]`) with domain models, symbolic expression trees (`Arc<Expr>`), numerical evaluator, constraints optimizer, memory model, and feasibility assessment.
+  - `crates/bigolens-engine`: CLI binary using `clap` providing JSON protocol IPC matching the versioned JSON protocol 1.0.
+  - Updates `RULES.md`, `AGENTS.md`, `ARCHITECTURE.md`, `SYSTEM_DESIGN.md`, and `CODING_STANDARDS.md` to establish Rust engineering rules and toolchain standards.
 - Self-contained Linux x64 `.vsix` (BL-108). The engine is linked statically against Clang/LLVM
   (`BIGOLENS_STATIC_CLANG`, `package` preset) and ships Clang's builtin headers, which the engine finds next to
   its executable. Adds `scripts/build/package-extension.sh`, `scripts/test/verify-vsix.sh` and the CI job
@@ -39,6 +43,44 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   finding's limitations, e.g. `T(n) = 2 T(n/2) + O(n), where n = hi - lo` for merge sort. Adds the solver interface
   `complexity::RecurrenceSolver` (no solvers yet) and the capability `recurrence_extraction: partial`.
 - `complexity::substitute` for symbolic expressions.
+- Common recurrence solving (BL-203). Solves divide-and-conquer recurrences `T(n) = a·T(n/b) + Θ(n^k (log n)^p)`
+  via `MasterTheoremSolver` and linear decrement recurrences `T(n) = T(n - c) + f(n)` via `LinearDecrementSolver`.
+  Recursive binary search resolves to `O(log n)` (Proven), merge sort to `O(n log n)` (Proven), and recursive linear sum
+  to `O(n)` (Proven). Multiple subtractive recursion (Fibonacci) remains unsupported with an explicit limitation.
+  Updates the `capabilities.features.recursion_analysis` value from `unsupported` to `partial`.
+- Interprocedural cost propagation for non-recursive callees (BL-204). LoopAnalyzer analyzes function bodies of
+  non-recursive callees defined in the main file and substitutes actual arguments into the callee cost, reporting
+  `O(m n)` when a loop over `n` calls an `O(m)` helper, and composing summations when the loop index is passed.
+  Recursive callees and mutual call cycles fall back to Estimated with explicit limitations.
+  Updates `capabilities.features.interprocedural_analysis` value from `unsupported` to `partial`.
+- STL cost model application to recognized container operations and top-level algorithms (BL-205).
+  Applies asymptotic costs from `estimation::stlCostTable()` (`std::vector`, `std::map`, `std::set`, `std::priority_queue`,
+  `std::unordered_map`, `std::sort`, `std::lower_bound`) to calls in loop nests and top-level algorithms, binding
+  container sizes from constructors, pointer/iterator offsets, parameters, or loop trips. Hash containers report average
+  $O(1)$ with `estimated` status and hash-collision limitation. Handled STL calls are no longer listed as unincluded costs.
+  Updates `capabilities.features.stl_cost_model` value from `data_only` to `partial`.
+- Two-pointer while loop analysis (BL-206). Recognizes two-pointer convergence loops (`while (l < r)`, `while (r > l)`,
+  `while (l <= r)`, `while (r >= l)`) where every path through the body performs exactly one of `++l`/`l++`/`l += 1` or
+  `--r`/`r--`/`r -= 1`, and nothing else writes to `l` or `r`. Resolves `l0` and `r0` from declarations, assignments, or
+  parameters, yielding $O(n)$ Proven bounds. Binary search and data-dependent termination shapes remain Unknown.
+- M2 specifications, capabilities, and examples synchronization (BL-207). Synchronized engine capabilities
+  (`recursion_analysis: partial`, `interprocedural_analysis: partial`, `stl_cost_model: partial`) across protocol schemas,
+  architecture documents, limitations, and regenerated example response fixtures.
+- Product constraint workload tightening (BL-301). Tightens monotone product expressions under product constraints
+  (e.g. `n·m ≤ 10^6` on grid loops with `n, m ≤ 10^6`), giving 10^6 with method `product-constraint-bound` and status
+  `proven`. Soundly bounds higher-power products (such as `n²·m` to 10^12) by substituting the product bound and
+  evaluating remaining factors at individual maxima. Non-monotone expressions and expressions where variables are not
+  multiplied together fall back with an assumption. Removes the "product constraint not used" assumption when applied.
+- Linear constraint workload tightening (BL-302). Tightens workloads for monotone expressions under linear constraints
+  (Σ cᵢ·xᵢ ≤ B with non-negative coefficients). Iteratively tightens individual variable maxima, bounds linear combinations
+  in addition, and solves closed-form constrained optimization for products along line segments (e.g. `n·m` with `n + m ≤ 2·10^5`
+  gives 10^10, Proven, method `linear-constraint-bound`). Negative coefficients and non-monotone expressions emit an assumption
+  and fall back soundly.
+- Multiple sum constraints and separable packing (BL-303). Supports multiple sum constraints sharing one count variable
+  (e.g. `Σn ≤ S₁` and `Σm ≤ S₂` over `t`). When the per-case cost is separable into additive terms depending on at most one
+  sum-constrained variable, each term is packed independently, giving exact tight bounds (e.g. `t·(n + m)` evaluates to
+  `S₁ + S₂`, Proven, method `sum-constraint-packing`). Interacting non-separable shapes fall back soundly to
+  `sum-constraint-cases`, while sum constraints with different count variables remain Unknown with an explicit limitation.
 
 ### Changed
 
@@ -60,5 +102,4 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 ### Not yet implemented
 
 - Runtime estimation and the benchmark runner (the `benchmark` action returns `not_implemented`).
-- Recurrence analysis, interprocedural analysis, applying STL costs to findings, and product/linear constraint
-  tightening.
+- Vector/string/map/set memory estimations (BL-304, BL-305) and benchmarking runner (M4).

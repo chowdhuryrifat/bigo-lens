@@ -10,6 +10,17 @@ updates:
       actions:
         patterns: ['*']
 
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      rust-dependencies:
+        patterns: ['*']
+
   - package-ecosystem: npm
     directory: /extension
     schedule:

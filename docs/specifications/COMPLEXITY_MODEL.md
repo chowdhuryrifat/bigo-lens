@@ -63,6 +63,7 @@ The analyzer runs Clang with `-fsyntax-only` on an in-memory file. Per function 
 | L11 | Same conditions with exactly one update `x /= c` (`c ≥ 2`) or `x >>= k` (`1 ≤ k ≤ 30`) | `log_c(x) + 1` | `logarithmic-loop` |
 | L12 | Range-for over a named container `v` | `v.size()` | `range-for-loop` |
 | L13 | Range-for over a constant-size array | its size (constant) | `range-for-loop` |
+| L14 | Two-pointer `while (l < r)` / `while (r > l)` where every path through the body performs exactly one of `++l`/`l++`/`l += 1` or `--r`/`r--`/`r -= 1` and nothing else writes to `l` or `r` | at most `r0 - l0` | `linear-loop` |
 
 Requirements common to `for` forms: single declared or assigned integer index; init, condition and increment all
 present; index not written in the body.
@@ -103,6 +104,7 @@ Pattern precedence for a nest: `test-case-loop` (outermost loop is `while (t--)`
 | Test-case loop | `'t' counts iterations (assumed non-negative at loop entry)` |
 | Countdown while | `'x' holds its value at loop entry and is non-negative` |
 | Range-for | `the container is not resized during iteration` |
+| Two-pointer loop | `two-pointer convergence: at most ` |
 | Early exit | `an early exit (break/return/goto/throw) may end a loop sooner; the count is an upper bound` |
 
 Trip counts are not clamped at zero: the "bound at least start" assumption makes a negative count impossible under
@@ -123,7 +125,8 @@ Applied per loop and combined with "weakest wins" (proven > estimated > unknown 
 | Unsigned index compared `>= 0` | `unsupported` | `unsigned index compared with >= 0 never terminates` |
 | `do … while` | `unsupported` | `do-while loops are not modelled yet` |
 | Bound variable possibly written in the body | `estimated` | limitation `bound variable 'n' may be modified inside the loop; the count assumes its initial value` |
-| Call to a user-defined function (defined in the main file) in the nest, excluding the implicit `begin()`/`end()` calls of a range-for header | `estimated` | limitation `calls user function 'f'; its cost is not included (interprocedural analysis is not implemented)` |
+| Call to a non-recursive user-defined function (defined in the main file) in the nest | unchanged (derived from caller and callee) | callee cost is substituted with formal parameters mapped to actual arguments |
+| Call to a recursive user-defined function or call cycle (or call depth > 8) in the nest | `estimated` | limitation `calls user function 'f'; its cost is not included (recursive functions are not inlined / call cycle detected)` |
 | Library calls in the nest (excluding operator calls, constructors and the implicit `begin()`/`end()` calls of a range-for header) | unchanged | limitation `per-iteration cost of library calls is not included: …` (up to 6 names) |
 | Early exit (`break`, `return`, `goto`, `throw`) | unchanged (still an upper bound) | assumption, see §2.2 |
 | Non-canonical `for`, unsupported bound expression, other `while` shapes (e.g. `while (lo < hi)` binary search, Collatz) | `unknown` | `data-dependent termination: the iteration count depends on values computed in the loop` or a more specific reason |
@@ -154,6 +157,7 @@ Storage findings: `static-array` is `proven` / `high`; `sized-vector` is `estima
 | `sqrt-loop` | `loop_nest` | `i * i <= n` loop |
 | `range-for-loop` | `loop_nest` | Range-based for |
 | `test-case-loop` | `loop_nest` | Outermost loop is `while (t--)` / `while (t-- > 0)` |
+| `stl-algorithm` | `loop_nest` | Call to an STL algorithm (e.g. `std::sort`) with asymptotic cost derived from the STL cost model |
 | `data-dependent-loop` | `loop_nest` | No expression, status `unknown` |
 | `unsupported-loop` | `loop_nest` | No expression, status `unsupported` |
 | `direct-recursion` | `recursion` | Function calls itself at one call site |
@@ -220,19 +224,24 @@ limitation: "elements that own further heap memory (e.g. nested containers) are 
 
 ---
 
-## 8. STL cost model (data only)
+## 8. STL cost model (partial)
 
 `engine/src/estimation/stl_cost_model.cpp` holds a table of average/worst/amortized costs (vector `operator[]`,
 `push_back` amortized, `erase`; map `find`/`operator[]`; set `insert`/`find`; unordered_map `find`/`operator[]`
 average O(1) worst O(n); priority_queue `push`/`pop`/`top`; `sort` O(n log n); `lower_bound`). It is exposed through
-the `capabilities` action (`stl_cost_model: data_only`) and is **not applied to findings** yet (planned, M2/M3
-follow-up). Until then, library calls appear only as limitations.
+the `capabilities` action (`stl_cost_model: partial`).
+
+**Application in loop nests and top-level algorithms (BL-205):**
+- Container operations (`std::vector`, `std::map`, `std::set`, `std::priority_queue`, `std::unordered_map`) called inside loop nests bind container size from constructors, pointer/iterator offsets, parameters, or active loop trips.
+- Hash containers (`std::unordered_map`) report average-case O(1) with status `estimated`, confidence `low`, and a limitation stating the worst-case linear time under hash collisions.
+- Recognized top-level algorithm calls outside loops (e.g. `std::sort`, `std::lower_bound`) produce a `loop_nest` finding with pattern `stl-algorithm` and status `proven`.
+- Recognized STL calls are handled and omitted from the "cost not included" limitations list. Other library calls remain listed as limitations.
 
 ---
 
 ## 9. Recursion
 
-**Implemented (BL-202): detection and recurrence extraction.** Direct self-calls are found by canonical
+**Implemented (BL-202, BL-203): detection, recurrence extraction, and recurrence solving.** Direct self-calls are found by canonical
 declaration identity; mutual recursion is not detected. Each recursive function yields one `recursion` finding:
 pattern `direct-recursion` or `multiple-direct-recursion`, provenance `clang-recursion-detector`. The front end
 extracts a front-end-independent `complexity::Recurrence`
@@ -245,12 +254,12 @@ extracts a front-end-independent `complexity::Recurrence`
 | Calls per invocation | The largest number of self-calls on any single execution path. `if`/`else`, `?:` and `return` are path-sensitive, so binary search has two call sites but at most one call per invocation. A self-call inside a loop makes it unknown. |
 | Work `f(n)` | The sum of the function's loop-nest costs (1 if there are none), rewritten in terms of `n`. For intervals, `lo → 0, hi → n`, checked to depend only on `hi − lo`. Unknown if a loop has an unknown count or contains a self-call. Calls to other user functions are listed as not included. |
 
-Without a solver the finding stays `unsupported` / confidence `none` / `time: null`. Its limitations start with the
+Without a solver (or when unsupported) the finding stays `unsupported` / confidence `none` / `time: null`. Its limitations start with the
 recurrence and the reason, for example:
 
 ```text
 extracted recurrence: T(n) = T(n - 1) + T(n - 2) + O(1)
-recurrence solving is not implemented yet; no bound is reported
+multiple recursion with subtractive arguments is not supported; exponential bounds are not derived
 ```
 
 Other renderings: `T(n) = 2 T(n/2) + O(n), where n = hi - lo` (merge sort); `T(n) = at most 1 of {T(n/2),
@@ -258,8 +267,11 @@ T(n/2)} + O(1), where n = hi - lo` (binary search); `T(m) = T(m - 1) + O(1), whe
 the symbol avoids clashing with a source identifier `n`). Shapes that are not recognised render as `T(?)`, with "no
 parameter that shrinks at every call".
 
-**Solving (planned, BL-203).** `complexity::RecurrenceSolver` implementations, passed to the `RequestHandler`,
-are tried in order by `analyzers::resolveRecurrences`. A solution sets the time expression, status and confidence,
-and moves the recurrence into `assumptions`. Planned solvers: the master theorem for `a·T(n/b) + f(n)` and
-summation for `T(n − c) + f(n)`. Fibonacci-like multiple subtractive recursion stays unsupported. The capability
-`recurrence_extraction` is `partial`; `recursion_analysis` stays `unsupported` until a solver exists.
+**Solving (BL-203).** `complexity::RecurrenceSolver` implementations (`MasterTheoremSolver` and `LinearDecrementSolver`),
+instantiated by default in `RequestHandler` or passed to `analyzers::resolveRecurrences`, solve common recurrence forms:
+- Divide-and-conquer: `T(n) = a·T(n/b) + Θ(n^k (log n)^p)` using the Master Theorem cases (yielding `Proven` status and `High` confidence for standard cases such as binary search `O(log n)` and merge sort `O(n log n)`).
+- Linear decrements: `T(n) = T(n - c) + f(n)` using summation for constant or linear work (yielding `Proven` status and `High` confidence, e.g. recursive linear sum `O(n)`).
+- Multiple subtractive calls (e.g. Fibonacci `T(n) = T(n - 1) + T(n - 2) + O(1)`) remain unsupported, noting that multiple recursion with subtractive arguments is not supported.
+
+A solution sets the time expression, status and confidence, and moves the extracted recurrence into `assumptions`.
+The capability `recurrence_extraction` is `partial`, and `recursion_analysis` is `partial`.

@@ -26,8 +26,9 @@ BigO Lens has three deliverables that communicate only through narrow, explicit 
 | Deliverable | Language | Location | Status |
 |---|---|---|---|
 | VS Code extension | TypeScript (Node 22 tooling, VS Code ^1.85) | `extension/` | Implemented (scaffold) |
-| Analysis engine `bigolens-engine` | C++20 | `engine/` | Partial |
-| Benchmark library `bigolens_benchmark` | C++20 | `benchmark/` | Partial (statistics and growth fitting only) |
+| Analysis engine `bigolens-engine` (Rust) | Rust (Cargo workspace, edition 2021/2024) | `crates/` | Active transition ([ADR 0012](docs/architecture/DECISIONS/0012-rust-engine-architecture.md)) |
+| Analysis engine `bigolens-engine` (C++ legacy) | C++20 | `engine/` | Implemented (reference baseline) |
+| Benchmark library `bigolens_benchmark` | C++20 / Rust | `benchmark/` | Partial (statistics and growth fitting only) |
 
 They are joined by a **versioned JSON protocol** (`shared/schemas/request.schema.json`, `shared/schemas/response.schema.json`, JSON Schema draft 2020-12). The extension starts one engine process per request, writes one JSON request to its stdin and reads one JSON response line from its stdout.
 
@@ -47,43 +48,40 @@ flowchart TD
     SIDECAR[("source.cpp.bigolens.json<br/>constraints sidecar")]
     SCHEMAS[("shared/schemas<br/>request and response JSON Schemas")]
 
-    subgraph Engine["bigolens-engine process (C++20)"]
-        MAIN["main.cpp<br/>CLI, bounded stdin read"]
-        subgraph Core["bigolens_core (no Clang dependency)"]
-            API["api<br/>parseRequest, RequestHandler"]
-            CPLX["complexity<br/>Expr, evaluate, asymptoticUpperBound"]
-            CONS["constraints<br/>ConstraintSet, evaluateWorkload"]
-            EST["estimation<br/>estimateMemory, STL cost table"]
-            FEAS["feasibility<br/>assessTime, assessMemory"]
-            MOD["models<br/>Finding, BoundStatus, Confidence"]
-            IFACE["analyzers::SourceAnalyzer<br/>abstract interface"]
+    subgraph RustEngine["bigolens-engine process (Rust workspace - ADR 0012)"]
+        CLI["crates/bigolens-engine<br/>CLI (clap), bounded stdin read"]
+        subgraph RustCore["crates/bigolens-core (#![forbid(unsafe_code)])"]
+            RAPI["api<br/>RequestHandler, request validation"]
+            RCPLX["complexity<br/>Expr, asymptotic ordering, recurrence"]
+            RCONS["constraints<br/>ConstraintSet, linear/sum/product optimizer"]
+            REST["estimation<br/>memory model, STL costs"]
+            RFEAS["feasibility<br/>time & memory assessment"]
+            RMOD["models<br/>Finding, BoundStatus, Confidence"]
+            RIFACE["SourceAnalyzer trait"]
         end
-        subgraph Front["bigolens_clang_frontend (optional)"]
-            CLANG["parser/clang_frontend.cpp<br/>ClangSourceAnalyzer via makeClangSourceAnalyzer"]
+        subgraph RustClang["crates/bigolens-clang (safe FFI)"]
+            RCLANG["Clang LibTooling AST parser via cxx"]
         end
-        MAIN --> API
-        API --> IFACE
-        API --> CPLX
-        API --> CONS
-        API --> EST
-        API --> FEAS
-        CLANG -.->|implements| IFACE
-    end
-
-    subgraph Bench["bigolens_benchmark (independent)"]
-        STATS["statistics: summarize"]
-        FIT["growth_fit: fitGrowth, predict"]
-        RUNNER["compiler adapter, runner, input generators, resource monitor<br/>(Planned M4)"]
+        CLI --> RAPI
+        RAPI --> RIFACE
+        RAPI --> RCPLX
+        RAPI --> RCONS
+        RAPI --> REST
+        RAPI --> RFEAS
+        RCLANG -.->|implements| RIFACE
     end
 
     SVC -->|"reads and validates"| SIDECAR
     SVC -->|"validates against"| SCHEMAS
-    SVC ==>|"spawn, JSON on stdin and stdout"| MAIN
-    RUNNER -.->|"planned integration"| API
-
-    classDef planned stroke-dasharray: 5 5,fill:#f4f4f4,color:#555
-    class WEB,RUNNER planned
+    SVC ==>|"spawn, JSON on stdin and stdout"| CLI
 ```
+
+### 1.1 The Rust workspace architecture (ADR 0012)
+
+The engine transitions to a high-performance, memory-safe Rust Cargo workspace divided into three focused crates:
+1. **`crates/bigolens-core`**: Pure Rust domain core with `#![forbid(unsafe_code)]`. Houses all domain logic (symbolic algebra, recurrences, constraints, feasibility, Serde JSON protocol serialization). Completely decoupled from Clang and platform C++ runtimes.
+2. **`crates/bigolens-clang`**: Encapsulates Clang AST extraction via a clean FFI boundary (`cxx`), preserving C++ semantic analysis fidelity while exposing safe Rust types.
+3. **`crates/bigolens-engine`**: Executable binary managing CLI argument parsing (`clap`), request dispatching, and stdout JSON protocol formatting.
 
 Dashed boxes are planned. Every other box exists in the repository.
 

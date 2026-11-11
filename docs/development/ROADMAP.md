@@ -35,6 +35,7 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 
 | Deliverable | Status |
 | --- | --- |
+| Rust workspace architecture ([ADR 0012](docs/architecture/DECISIONS/0012-rust-engine-architecture.md)): root `Cargo.toml`, `crates/bigolens-core` (`#![forbid(unsafe_code)]`), `crates/bigolens-engine` | Done |
 | CMake build (C++20, CMake 3.24 or newer) with options `BIGOLENS_ENABLE_CLANG`, `BIGOLENS_BUILD_TESTS`, `BIGOLENS_WARNINGS_AS_ERRORS`, and presets `dev`, `release`, `no-clang`, `ci` | Done |
 | Pinned dependencies (nlohmann/json 3.11.3, GoogleTest 1.15.2): `find_package` first, otherwise FetchContent with SHA-256 | Done |
 | Core library `bigolens_core`, kept free of Clang | Done |

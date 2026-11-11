@@ -144,10 +144,10 @@ json capabilities() {
            {{"loop_analysis", "partial"},
             {"while_countdown_loops", "partial"},
             {"range_for_loops", "partial"},
-            {"recursion_analysis", "unsupported"},
+            {"recursion_analysis", "partial"},
             {"recurrence_extraction", "partial"},
-            {"stl_cost_model", "data_only"},
-            {"interprocedural_analysis", "unsupported"},
+            {"stl_cost_model", "partial"},
+            {"interprocedural_analysis", "partial"},
             {"constraint_workload", "partial"},
             {"static_memory_estimate", "partial"},
             {"time_feasibility", "requires_runtime_estimate"},
@@ -156,6 +156,47 @@ json capabilities() {
 }
 
 }  // namespace
+
+RequestHandler::RequestHandler(analyzers::SourceAnalyzer* analyzer)
+    : analyzer_(analyzer), ownedSolvers_(complexity::standardRecurrenceSolvers()) {
+  solvers_.reserve(ownedSolvers_.size());
+  for (const auto& solver : ownedSolvers_) {
+    solvers_.push_back(solver.get());
+  }
+}
+
+RequestHandler::RequestHandler(analyzers::SourceAnalyzer* analyzer,
+                               std::vector<const complexity::RecurrenceSolver*> solvers)
+    : analyzer_(analyzer), solvers_(std::move(solvers)) {}
+
+RequestHandler::RequestHandler(RequestHandler&& other) noexcept
+    : analyzer_(other.analyzer_), ownedSolvers_(std::move(other.ownedSolvers_)) {
+  if (!ownedSolvers_.empty()) {
+    solvers_.reserve(ownedSolvers_.size());
+    for (const auto& solver : ownedSolvers_) {
+      solvers_.push_back(solver.get());
+    }
+  } else {
+    solvers_ = std::move(other.solvers_);
+  }
+}
+
+RequestHandler& RequestHandler::operator=(RequestHandler&& other) noexcept {
+  if (this != &other) {
+    analyzer_ = other.analyzer_;
+    ownedSolvers_ = std::move(other.ownedSolvers_);
+    solvers_.clear();
+    if (!ownedSolvers_.empty()) {
+      solvers_.reserve(ownedSolvers_.size());
+      for (const auto& solver : ownedSolvers_) {
+        solvers_.push_back(solver.get());
+      }
+    } else {
+      solvers_ = std::move(other.solvers_);
+    }
+  }
+  return *this;
+}
 
 json RequestHandler::handleText(std::string_view requestText) const {
   if (requestText.size() > kMaxRequestBytes) {

@@ -50,10 +50,20 @@ void resolveRecurrences(std::vector<models::Finding>& findings,
       continue;
     }
 
+    bool multipleSubtractive = false;
+    if (recurrence.maxCallsPerInvocation.value_or(0) > 1 && !recurrence.calls.empty()) {
+      multipleSubtractive =
+          std::all_of(recurrence.calls.begin(), recurrence.calls.end(),
+                      [](const complexity::RecursiveCall& c) { return c.change == complexity::SizeChange::Decrement; });
+    }
+
     finding.limitations.insert(finding.limitations.begin(), extracted);
-    finding.limitations.push_back(solvers.empty()
-                                      ? "recurrence solving is not implemented yet; no bound is reported"
-                                      : "no recurrence solver applies to this recurrence; no bound is reported");
+    finding.limitations.push_back(
+        solvers.empty()
+            ? "recurrence solving is not implemented yet; no bound is reported"
+            : (multipleSubtractive ? "multiple recursion with subtractive arguments is not supported; exponential "
+                                     "bounds are not derived"
+                                   : "no recurrence solver applies to this recurrence; no bound is reported"));
     appendUnique(finding.limitations, notes);
   }
 }
