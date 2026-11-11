@@ -47,7 +47,7 @@ flowchart TD
   BL303["BL-303 Multiple sum constraints"]:::done
   BL304["BL-304 Nested vectors + strings memory"]:::done
   BL305["BL-305 Map/set memory estimate"]:::done
-  BL306["BL-306 End-to-end T/N/sum-N test"]:::todo
+  BL306["BL-306 End-to-end T/N/sum-N test"]:::done
   BL307["BL-307 Sidecar error positions"]:::todo
 
   BL401["BL-401 Isolation ADR + spec"]:::todo
@@ -587,7 +587,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-306: End-to-end T/N/ΣN test through the extension
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-108
@@ -599,8 +599,8 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: an integration test. Out of scope: UI changes.
 
 **Acceptance criteria.**
-- [ ] The test passes in the CI extension job.
-- [ ] It skips with a clear message when no engine is available locally.
+- [x] The test passes in the CI extension job.
+- [x] It skips with a clear message when no engine is available locally.
 
 **Test cases.** The test itself.
 
