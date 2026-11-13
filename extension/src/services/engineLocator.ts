@@ -11,6 +11,10 @@ export interface LocatorEnvironment {
   platform: NodeJS.Platform;
   /** Injectable for tests. */
   isExecutable?: (path: string) => boolean;
+  /** Whether the active workspace is trusted (defaults to true). */
+  isWorkspaceTrusted?: boolean;
+  /** Whether the configured path originated from workspace or folder settings. */
+  isWorkspaceConfiguredPath?: boolean;
 }
 
 export interface LocatorResult {
@@ -74,8 +78,16 @@ export function locateEngine(env: LocatorEnvironment): LocatorResult {
   const binary = env.platform === 'win32' ? 'bigolens-engine.exe' : 'bigolens-engine';
   const searched: string[] = [];
 
+  const isTrusted = env.isWorkspaceTrusted ?? true;
+  const isWorkspaceConfig = env.isWorkspaceConfiguredPath ?? false;
+  const ignoreWorkspaceConfig = !isTrusted && isWorkspaceConfig;
+
+  if (ignoreWorkspaceConfig && env.configuredPath.trim() !== '') {
+    searched.push(`${env.configuredPath.trim()} (ignored: workspace-level setting in untrusted workspace)`);
+  }
+
   for (const [label, value] of [
-    ['setting bigoLens.enginePath', env.configuredPath.trim()],
+    ['setting bigoLens.enginePath', ignoreWorkspaceConfig ? '' : env.configuredPath.trim()],
     ['environment variable BIGOLENS_ENGINE_PATH', (env.environmentPath ?? '').trim()],
   ] as const) {
     if (value === '') {

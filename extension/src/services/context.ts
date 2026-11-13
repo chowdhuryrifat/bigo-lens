@@ -12,23 +12,42 @@ export interface ExtensionServices {
   output: vscode.OutputChannel;
 }
 
-export function readSettings(): { enginePath: string; cppStandard: CppStandard; timeoutMs: number } {
+export function readSettings(): {
+  enginePath: string;
+  cppStandard: CppStandard;
+  timeoutMs: number;
+  isWorkspaceConfiguredPath: boolean;
+} {
   const config = vscode.workspace.getConfiguration('bigoLens');
+  const inspect = config.inspect<string>('enginePath');
+  const isWorkspaceConfiguredPath = Boolean(inspect?.workspaceValue || inspect?.workspaceFolderValue);
+  const isTrusted = vscode.workspace.isTrusted;
+
+  let enginePath = config.get<string>('enginePath', '');
+  if (!isTrusted && isWorkspaceConfiguredPath) {
+    // In untrusted workspaces, ignore workspace-level enginePath overrides
+    enginePath = inspect?.globalValue ?? '';
+  }
+
   return {
-    enginePath: config.get<string>('enginePath', ''),
+    enginePath,
     cppStandard: config.get<CppStandard>('cppStandard', 'c++20'),
     timeoutMs: config.get<number>('analysisTimeoutMs', 30000),
+    isWorkspaceConfiguredPath,
   };
 }
 
 /** Creates a client for the configured engine, or explains why none was found. */
 export function createEngineClient(services: ExtensionServices): EngineClient | string {
   const settings = readSettings();
+  const isTrusted = vscode.workspace.isTrusted;
   const located = locateEngine({
     configuredPath: settings.enginePath,
     environmentPath: process.env.BIGOLENS_ENGINE_PATH,
     extensionRoot: services.extensionRoot,
     platform: process.platform,
+    isWorkspaceTrusted: isTrusted,
+    isWorkspaceConfiguredPath: settings.isWorkspaceConfiguredPath,
   });
   if (!located.path) {
     services.output.appendLine('Engine search order:');

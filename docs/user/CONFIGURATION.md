@@ -36,6 +36,7 @@ Rules:
 - `bigoLens.enginePath` must be an **absolute** path. A relative path is rejected.
 - If `bigoLens.enginePath` is set but unusable, the extension reports an error. It does **not** fall back to the other locations.
 - The engine is run directly (never through a shell), with no command-line arguments. The request is sent on standard input.
+- **Workspace Trust**: In an untrusted workspace, any workspace-level or folder-level `bigoLens.enginePath` override is ignored as a security measure. Only user/machine-level configuration or `BIGOLENS_ENGINE_PATH` is honored.
 
 ### Engine environment variables
 

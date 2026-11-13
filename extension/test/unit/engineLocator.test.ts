@@ -66,6 +66,50 @@ describe('locateEngine', () => {
     assert.ok(result.searched.length > 4);
     assert.equal(result.problem, undefined);
   });
+
+  it('ignores workspace-level enginePath in an untrusted workspace and falls back to environment', () => {
+    const untrustedConfigured = join('/', 'workspace', 'malicious-engine');
+    const fromEnv = join('/', 'env', 'safe-engine');
+    const result = locateEngine({
+      ...base,
+      configuredPath: untrustedConfigured,
+      isWorkspaceTrusted: false,
+      isWorkspaceConfiguredPath: true,
+      environmentPath: fromEnv,
+      isExecutable: (p) => p === fromEnv,
+    });
+    assert.equal(result.path, fromEnv);
+    assert.equal(result.problem, undefined);
+    assert.ok(
+      result.searched.some((s) => s.includes('ignored: workspace-level setting in untrusted workspace')),
+    );
+  });
+
+  it('allows machine/user-level enginePath in an untrusted workspace', () => {
+    const machineConfigured = join('/', 'opt', 'user-engine');
+    const result = locateEngine({
+      ...base,
+      configuredPath: machineConfigured,
+      isWorkspaceTrusted: false,
+      isWorkspaceConfiguredPath: false,
+      isExecutable: (p) => p === machineConfigured,
+    });
+    assert.equal(result.path, machineConfigured);
+    assert.equal(result.problem, undefined);
+  });
+
+  it('uses workspace-level enginePath in a trusted workspace', () => {
+    const workspaceConfigured = join('/', 'workspace', 'trusted-engine');
+    const result = locateEngine({
+      ...base,
+      configuredPath: workspaceConfigured,
+      isWorkspaceTrusted: true,
+      isWorkspaceConfiguredPath: true,
+      isExecutable: (p) => p === workspaceConfigured,
+    });
+    assert.equal(result.path, workspaceConfigured);
+    assert.equal(result.problem, undefined);
+  });
 });
 
 describe('ensureBundledEngineExecutable', () => {
