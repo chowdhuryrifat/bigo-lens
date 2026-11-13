@@ -156,6 +156,11 @@
           "minimum": 1000,
           "maximum": 600000,
           "description": "Maximum time in milliseconds to wait for the engine before it is terminated."
+        },
+        "bigoLens.analyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run complexity analysis on save for C++ files."
         }
       }
     }

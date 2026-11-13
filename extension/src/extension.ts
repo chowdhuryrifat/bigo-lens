@@ -12,6 +12,7 @@ import { ensureBundledEngineExecutable } from './services/engineLocator';
 import type { ReportSnapshot } from './services/reportHtml';
 import { SchemaValidator } from './services/schemaValidator';
 import { StatusBarManager } from './services/statusBar';
+import { SaveAnalysisCoordinator } from './services/saveAnalysis';
 
 export const COMMANDS = {
   analyzeActiveFile: 'bigoLens.analyzeActiveFile',
@@ -34,13 +35,32 @@ export function activate(context: vscode.ExtensionContext): void {
 
   statusBar.onActiveEditorChange(vscode.window.activeTextEditor);
 
+  const handleResults = (snapshot: ReportSnapshot & { uri: vscode.Uri }): void => {
+    lastSnapshot = snapshot;
+    statusBar.updateResults(snapshot.uri, snapshot.results, snapshot.displayPath);
+    if (ReportPanel.currentPanel) {
+      ReportPanel.currentPanel.updateSnapshot(snapshot);
+    }
+  };
+
+  const saveCoordinator = new SaveAnalysisCoordinator({
+    ...services,
+    tree,
+    diagnostics,
+    onResults: handleResults,
+  });
+
   context.subscriptions.push(
     output,
     tree,
     diagnostics,
     statusBar,
+    saveCoordinator,
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       statusBar.onActiveEditorChange(editor);
+    }),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      saveCoordinator.handleDidSave(document);
     }),
     vscode.window.registerTreeDataProvider('bigoLens.results', tree),
     vscode.commands.registerCommand(COMMANDS.analyzeActiveFile, () =>
@@ -48,13 +68,7 @@ export function activate(context: vscode.ExtensionContext): void {
         ...services,
         tree,
         diagnostics,
-        onResults: (snapshot) => {
-          lastSnapshot = snapshot;
-          statusBar.updateResults(snapshot.uri, snapshot.results, snapshot.displayPath);
-          if (ReportPanel.currentPanel) {
-            ReportPanel.currentPanel.updateSnapshot(snapshot);
-          }
-        },
+        onResults: handleResults,
       }),
     ),
     vscode.commands.registerCommand(COMMANDS.editConstraints, () => editConstraints()),

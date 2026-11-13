@@ -478,7 +478,7 @@ int main() {
 }
 "#;
     let mut quad_vars = HashMap::new();
-    quad_vars.insert("n".to_string(), VariableBound::range(1.0, 20_000.0));
+    quad_vars.insert("n".to_string(), VariableBound::range(1.0, 30_000.0));
     cases.push(DifferentialCase {
         name: "quadratic_nested_loops".to_string(),
         path: "quadratic_nested.cpp".to_string(),
@@ -491,7 +491,7 @@ int main() {
             ..Default::default()
         },
         benchmark_config: BenchmarkConfig {
-            sizes: vec![1_500, 3_000, 6_000, 12_000],
+            sizes: vec![3_000, 6_000, 12_000, 24_000],
             repetitions: 3,
             warmup: 1,
             per_run_timeout_ms: 3_000,
@@ -611,7 +611,15 @@ mod tests {
 
         // Under normal conditions, quadratic matches
         if !res.ambiguous {
-            assert_eq!(res.verdict, DifferentialVerdict::Matched);
+            assert_eq!(
+                res.verdict,
+                DifferentialVerdict::Matched,
+                "Expected Matched for quadratic case, but got {:?}. Empirical: {:?}, Expected: {:?}. Message: {}",
+                res.verdict,
+                res.empirical_model,
+                res.expected_model,
+                res.message
+            );
             assert_eq!(res.expected_model, Some(GrowthModel::Quadratic));
             assert_eq!(res.empirical_model, Some(GrowthModel::Quadratic));
         } else {
@@ -683,7 +691,7 @@ int main() {
 
         // Deliberately set expected class to linear O(n) for a quadratic program
         wrong_case.expected_class = Some("O(n)".to_string());
-        wrong_case.benchmark_config.sizes = vec![1_000, 2_000, 4_000, 8_000];
+        wrong_case.benchmark_config.sizes = vec![3_000, 6_000, 12_000, 24_000];
         wrong_case.benchmark_config.per_run_timeout_ms = 4_000;
 
         let report = run_differential_harness(&[wrong_case]);

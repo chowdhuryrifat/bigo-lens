@@ -1117,13 +1117,13 @@ int main() {
             },
             "constraints": {
                 "variables": {
-                    "n": { "min": 1, "max": 20000 }
+                    "n": { "min": 1, "max": 30000 }
                 },
-                "time_limit_seconds": 1.0,
+                "time_limit_seconds": 2.0,
                 "memory_limit_mb": 256.0
             },
             "benchmark_config": {
-                "sizes": [1000, 2000, 4000, 8000],
+                "sizes": [3000, 6000, 12000, 24000],
                 "repetitions": 3,
                 "warmup": 1,
                 "per_run_timeout_ms": 3000,
