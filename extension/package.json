@@ -39,6 +39,15 @@
     "onLanguage:javascript",
     "onLanguage:typescript"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "BigO Lens ignores workspace-level enginePath overrides and restricts process execution in untrusted workspaces.",
+      "restrictedConfigurations": [
+        "bigoLens.enginePath"
+      ]
+    }
+  },
   "contributes": {
     "commands": [
       {

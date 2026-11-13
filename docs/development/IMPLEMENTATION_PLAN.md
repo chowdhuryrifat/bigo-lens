@@ -919,7 +919,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-506: Workspace Trust support
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-104
@@ -931,7 +931,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the manifest and the locator behaviour.
 
 **Acceptance criteria.**
-- [ ] In an untrusted workspace, a workspace-level `enginePath` is not used.
+- [x] In an untrusted workspace, a workspace-level `enginePath` is not used.
 
 **Test cases.** Unit test for the locator under a simulated untrusted state.
 
