@@ -1,19 +1,22 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { AnalyzeResults } from '../../src/models/protocol';
+import type { AnalyzeResults, Finding } from '../../src/models/protocol';
 import {
   buildCspMetaTag,
   escapeHtml,
+  explainBoundStatus,
+  explainConfidence,
   generateNonce,
   renderReportHtml,
+  renderWorkloadChart,
   type ReportSnapshot,
 } from '../../src/services/reportHtml';
 
 function sampleResults(): AnalyzeResults {
   return {
     summary: {
-      finding_count: 1,
+      finding_count: 2,
       coverage: 'partial',
       dominant_finding_id: 'F1',
       max_time_workload: 10000,
@@ -33,31 +36,77 @@ function sampleResults(): AnalyzeResults {
           workload: {
             status: 'proven',
             upper_bound: 10000,
-            method: 'maxima-evaluation',
+            method: 'pointwise-maxima',
             assumptions: ['n <= 10000'],
             missing_bounds: [],
           },
         },
-        space: null,
+        space: {
+          expression: '4 * n',
+          asymptotic: 'O(n)',
+          variables: ['n'],
+          workload: {
+            status: 'estimated',
+            upper_bound: 40000,
+            method: 'linear-scaling',
+            assumptions: [],
+            missing_bounds: [],
+          },
+        },
         bound_status: 'proven',
         confidence: 'high',
         assumptions: ['n <= 10000'],
         limitations: [],
         provenance: 'clang-loop-analyzer',
       },
+      {
+        id: 'F2',
+        category: 'recursion',
+        pattern: 'collatz-recursion',
+        function: 'collatz',
+        location: { file: 'main.cpp', line: 25, column: 1 },
+        description: 'collatz conjecture step recursion',
+        time: {
+          expression: 'unknown',
+          asymptotic: null,
+          variables: ['x'],
+          workload: {
+            status: 'unknown',
+            upper_bound: null,
+            method: null,
+            assumptions: [],
+            missing_bounds: ['x'],
+          },
+        },
+        space: null,
+        bound_status: 'unknown',
+        confidence: 'none',
+        assumptions: [],
+        limitations: ['data-dependent step condition', 'open mathematical problem'],
+        provenance: 'bigolens-syntax',
+      },
     ],
     memory: {
       static_storage_bytes: 4,
       static_storage_saturated: false,
-      largest_local_array_bytes: 0,
-      estimated_minimum_bytes: 4,
+      largest_local_array_bytes: 1024,
+      estimated_minimum_bytes: 4096,
       estimated_minimum_status: 'proven',
-      assumptions: [],
-      items: [],
+      assumptions: ['flat memory model'],
+      items: [
+        {
+          name: 'buffer',
+          kind: 'global_static',
+          type: 'int[1000]',
+          exact_bytes: 4000,
+          symbolic_bytes: null,
+          location: { file: 'main.cpp', line: 3, column: 1 },
+        },
+      ],
     },
     feasibility: {
-      time: { status: 'likely_safe', reason: 'within time budget' },
-      memory: { status: 'likely_safe', reason: 'within memory budget' },
+      time: { status: 'likely_safe', reason: 'workload is well within the 1-second budget' },
+      memory: { status: 'likely_safe', reason: '4 KiB is well within the 256 MiB limit' },
     },
   };
 }
@@ -136,12 +185,10 @@ describe('reportHtml - HTML Escaping and XSS Prevention', () => {
       snapshot,
     });
 
-    // Must be escaped into &lt;img onerror=alert(1)&gt;
     assert.ok(
       html.includes('&lt;img onerror=alert(1)&gt;'),
       'The escaped payload must be present as text in the HTML',
     );
-    // Raw unescaped tag must NOT exist
     assert.ok(
       !html.includes('<img onerror'),
       'Raw <img onerror tag must not be present anywhere in the generated HTML',
@@ -183,38 +230,172 @@ describe('reportHtml - HTML Escaping and XSS Prevention', () => {
   });
 });
 
-describe('reportHtml - Structural Rendering', () => {
-  it('renders an empty state when no snapshot is provided', () => {
-    const html = renderReportHtml({ cspSource: 'vscode-webview:' });
+describe('reportHtml - Explanations and Semantics (BL-503)', () => {
+  it('explains bound status and confidence separately with distinct descriptions', () => {
+    const proven = explainBoundStatus('proven');
+    const estimated = explainBoundStatus('estimated');
+    const unknown = explainBoundStatus('unknown');
+    const unsupported = explainBoundStatus('unsupported');
 
-    assert.ok(html.includes('<!DOCTYPE html>'));
-    assert.ok(html.includes('No Analysis Available'));
-    assert.ok(html.includes('BigO Lens: Analyze Active File'));
+    assert.equal(proven.label, 'Proven');
+    assert.ok(proven.explanation.includes('Mathematically verified'));
+    assert.equal(estimated.label, 'Estimated');
+    assert.ok(estimated.explanation.includes('heuristically'));
+    assert.equal(unknown.label, 'Unknown');
+    assert.ok(unknown.explanation.includes('Could not derive'));
+    assert.equal(unsupported.label, 'Unsupported');
+    assert.ok(unsupported.explanation.includes('outside current analyzer'));
+
+    const high = explainConfidence('high');
+    const none = explainConfidence('none');
+    assert.equal(high.label, 'High');
+    assert.ok(high.explanation.includes('Exact pattern match'));
+    assert.equal(none.label, 'None');
+    assert.ok(none.explanation.includes('No confidence'));
   });
 
-  it('renders complete report when snapshot is provided', () => {
+  it('renders prominent alert box for unknown and unsupported results explaining their reasons', () => {
     const snapshot: ReportSnapshot = {
       displayPath: 'main.cpp',
       results: sampleResults(),
-      engineVersion: '1.2.3',
+      engineVersion: '0.1.0',
     };
 
     const html = renderReportHtml({
       cspSource: 'vscode-webview:',
       snapshot,
-      styleUri: 'vscode-webview://media/report.css',
-      scriptUri: 'vscode-webview://media/report.js',
     });
 
-    assert.ok(html.includes('BigO Lens Report &mdash; <span class="file-path">main.cpp</span>'));
-    assert.ok(html.includes('Engine v1.2.3'));
-    assert.ok(html.includes('id="finding-F1"'));
-    assert.ok(html.includes('data-action="navigate"'));
-    assert.ok(html.includes('data-line="10"'));
+    // F2 is unknown: should have an alert box with class alert-unknown
+    assert.ok(html.includes('class="alert-box alert-unknown"'));
+    assert.ok(html.includes('Unknown Bound'));
+    assert.ok(html.includes('Missing constraints for variable(s): <code>x</code>'));
+    assert.ok(html.includes('data-dependent step condition'));
+    assert.ok(html.includes('open mathematical problem'));
+  });
+
+  it('renders separate bound status and confidence dimension boxes in each card', () => {
+    const snapshot: ReportSnapshot = {
+      displayPath: 'main.cpp',
+      results: sampleResults(),
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    assert.ok(html.includes('class="status-confidence-grid"'));
+    assert.ok(html.includes('Bound Status:'));
+    assert.ok(html.includes('badge-status badge-proven'));
+    assert.ok(html.includes('Confidence:'));
+    assert.ok(html.includes('badge-confidence badge-high'));
+    assert.ok(html.includes('Mathematically verified upper bound'));
+  });
+
+  it('renders time and space quantities with expressions, asymptotic, workload and method', () => {
+    const snapshot: ReportSnapshot = {
+      displayPath: 'main.cpp',
+      results: sampleResults(),
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    // Time
+    assert.ok(html.includes('Time Complexity'));
+    assert.ok(html.includes('<code>n</code>'));
     assert.ok(html.includes('O(n)'));
-    assert.ok(html.includes('badge-proven'));
-    assert.ok(html.includes('<link rel="stylesheet" href="vscode-webview://media/report.css">'));
-    assert.ok(html.includes('<script nonce="'));
-    assert.ok(html.includes('src="vscode-webview://media/report.js"'));
+    assert.ok(html.includes('pointwise-maxima'));
+    assert.ok(html.includes('≤ 10000'));
+
+    // Space
+    assert.ok(html.includes('Space Complexity'));
+    assert.ok(html.includes('<code>4 * n</code>'));
+    assert.ok(html.includes('linear-scaling'));
+    assert.ok(html.includes('39.06 KiB')); // 40,000 bytes formatted
+  });
+
+  it('renders memory analysis lower bounds and items table', () => {
+    const snapshot: ReportSnapshot = {
+      displayPath: 'main.cpp',
+      results: sampleResults(),
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    assert.ok(html.includes('Memory Analysis (Lower Bounds)'));
+    assert.ok(html.includes('Static Storage'));
+    assert.ok(html.includes('Largest Local Array'));
+    assert.ok(html.includes('1.00 KiB')); // 1024 bytes
+    assert.ok(html.includes('Estimated Minimum'));
+    assert.ok(html.includes('4.00 KiB')); // 4096 bytes
+    assert.ok(html.includes('buffer'));
+    assert.ok(html.includes('global static'));
+    assert.ok(html.includes('int[1000]'));
+    assert.ok(html.includes('flat memory model'));
+  });
+
+  it('renders feasibility assessment cards with status and reasons', () => {
+    const snapshot: ReportSnapshot = {
+      displayPath: 'main.cpp',
+      results: sampleResults(),
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    assert.ok(html.includes('Feasibility Assessment'));
+    assert.ok(html.includes('Time Feasibility'));
+    assert.ok(html.includes('workload is well within the 1-second budget'));
+    assert.ok(html.includes('Memory Feasibility'));
+    assert.ok(html.includes('4 KiB is well within the 256 MiB limit'));
+  });
+});
+
+describe('reportHtml - Workload Chart (BL-503)', () => {
+  it('renders pure inline SVG chart comparing finding workloads against scale max', () => {
+    const findings: Finding[] = sampleResults().findings;
+    const chart = renderWorkloadChart(findings, 10000);
+
+    assert.ok(chart.includes('<svg'));
+    assert.ok(chart.includes('class="workload-svg"'));
+    assert.ok(chart.includes('role="img"'));
+    assert.ok(chart.includes('aria-label="Workload comparison chart"'));
+
+    // Check F1 dominant bar
+    assert.ok(chart.includes('data-finding-id="F1"'));
+    assert.ok(chart.includes('class="chart-bar bar-dominant"'));
+    assert.ok(chart.includes('solve()'));
+    assert.ok(chart.includes('≤ 10000'));
+
+    // Check F2 unknown indicator
+    assert.ok(chart.includes('data-finding-id="F2"'));
+    assert.ok(chart.includes('class="chart-bar bar-unknown"'));
+    assert.ok(chart.includes('unknown (missing: x)'));
+
+    // Check scale max header
+    assert.ok(chart.includes('Scale Max (10000)'));
+  });
+
+  it('returns empty string if findings list is empty or has no time findings', () => {
+    assert.equal(renderWorkloadChart([], 1000), '');
+
+    const noTimeFinding: Finding = {
+      ...sampleResults().findings[0]!,
+      time: null,
+    };
+    assert.equal(renderWorkloadChart([noTimeFinding], 1000), '');
   });
 });
