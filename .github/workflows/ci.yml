@@ -33,6 +33,15 @@ jobs:
         run: cargo fmt --check
       - name: Engine smoke check
         run: cargo run --bin bigolens-engine -- --request shared/examples/capabilities.request.json
+      - name: Differential test harness
+        run: cargo run --bin differential-harness -- --output target/differential-results.json
+      - name: Upload differential test results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: differential-results
+          path: target/differential-results.json
+          if-no-files-found: ignore
 
   native-linux:
     name: Native · Ubuntu · Clang frontend

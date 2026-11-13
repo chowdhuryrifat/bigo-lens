@@ -57,7 +57,7 @@ flowchart TD
   BL405["BL-405 Linux isolation"]:::done
   BL406["BL-406 Windows Job Objects"]:::todo
   BL407["BL-407 benchmark action + time feasibility"]:::done
-  BL408["BL-408 Differential tests"]:::todo
+  BL408["BL-408 Differential tests"]:::done
 
   BL501["BL-501 Constraint form UI"]:::todo
   BL502["BL-502 Webview + CSP"]:::crit
@@ -788,21 +788,21 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-408: Differential test harness
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-407
 
-**Description.** A harness that, for each controlled fixture program, compares the static asymptotic class with the measured growth fit (see [TESTING_STRATEGY.md §2.5](../engineering/TESTING_STRATEGY.md#25-differential-tests-planned-m4)). It runs on demand or in a non-blocking CI job.
+**Description.** A harness that, for each controlled fixture program, compares the static asymptotic class with the measured growth fit (see [TESTING_STRATEGY.md §2.5](../engineering/TESTING_STRATEGY.md#25-differential-tests-planned-m4)). It runs on demand or in a non-blocking CI job. Implemented in `crates/bigolens-engine/src/differential.rs` and the CLI binary `crates/bigolens-engine/src/bin/differential_harness.rs`.
 
 **Motivation.** It catches analyzer bugs using independent evidence.
 
 **Scope.** In scope: Linear, n log n and quadratic fixtures. Out of scope: performance thresholds.
 
 **Acceptance criteria.**
-- [ ] A confident disagreement fails the harness.
-- [ ] An ambiguous fit is reported, not failed.
-- [ ] The results artifact is uploaded from CI.
+- [x] A confident disagreement fails the harness.
+- [x] An ambiguous fit is reported, not failed.
+- [x] The results artifact is uploaded from CI.
 
 **Test cases.** A deliberately wrong expected class fails the harness (a test of the harness itself).
 

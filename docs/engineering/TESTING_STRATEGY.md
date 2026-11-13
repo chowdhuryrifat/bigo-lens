@@ -76,19 +76,17 @@ These are defined in `tests/CMakeLists.txt` with the label `integration`. They d
 
 CI runs all four on Linux. The smoke test runs under xvfb, and the integration test runs against an engine built in the same job.
 
-### 2.5 Differential tests (Planned M4)
+### 2.5 Differential tests (Exists, BL-408)
 
 Differential tests compare the growth class that static analysis **predicts** with the growth class **measured** for a controlled program. They exist to catch analyzer bugs that unit tests miss.
 
-Planned design (see [BENCHMARK_SPECIFICATION.md](../specifications/BENCHMARK_SPECIFICATION.md)):
+Implementation (see [BENCHMARK_SPECIFICATION.md](../specifications/BENCHMARK_SPECIFICATION.md) and `crates/bigolens-engine/src/differential.rs`):
 
-1. A curated set of controlled programs, built from the fixtures in `tests/fixtures/cpp/`, with input generators that sweep `n` over at least 4 distinct sizes.
-2. Each program is compiled and run by the M4 benchmark runner, inside the M4 sandbox.
-3. `bigolens::benchmark::fitGrowth` fits Linear, Linearithmic and Quadratic models.
-4. The test **passes** when the selected model equals the asymptotic class predicted by static analysis, or when the fit is `ambiguous` (an ambiguous fit is recorded, not counted as a failure). It **fails** on a confident disagreement.
-5. These tests run in a separate, non-blocking CI job, or on demand, because timing depends on the machine. They compare growth *classes*, never absolute times.
-
-Only the fitting and statistics library exists today, together with its unit tests. Nothing in the repository compiles or runs fixture programs.
+1. A curated set of controlled programs (Linear loop, N log N `05_sorting.cpp`, and Quadratic nested vector loops), with input generators that sweep `n` over 4 distinct sizes.
+2. Each program is compiled and executed by the benchmark runner.
+3. `fit_growth` fits Linear, Linearithmic and Quadratic models.
+4. The test **passes** when the selected model equals the asymptotic class predicted by static analysis, or when the fit is `ambiguous` (an ambiguous fit is recorded, not counted as a failure). It **fails** on a confident disagreement. Deliberately wrong expected classes are verified to fail the harness.
+5. The harness is available via `cargo run --bin differential-harness -- --output target/differential-results.json` and executed in CI, uploading the structured JSON artifact.
 
 ## 3. Regression fixtures (`tests/fixtures/cpp/`)
 

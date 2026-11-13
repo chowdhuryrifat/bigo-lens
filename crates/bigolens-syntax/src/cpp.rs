@@ -601,6 +601,75 @@ fn collect_allocations(
     Ok(())
 }
 
+/// Information about a detected C++ STL algorithm call.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CppStlCall {
+    pub location: SourceLocation,
+    pub cost_expr: ExprPtr,
+    pub pattern: String,
+    pub description: String,
+    pub function_name: String,
+    pub asymptotic: String,
+}
+
+/// Parse C++ STL algorithm calls (e.g. std::sort).
+pub fn parse_cpp_stl_calls(source: &str, file_name: &str) -> Result<Vec<CppStlCall>, SyntaxError> {
+    let mut parser = Parser::new();
+    let language = tree_sitter_cpp::LANGUAGE.into();
+    parser
+        .set_language(&language)
+        .map_err(|_| SyntaxError::ParseFailure)?;
+
+    let tree = parser
+        .parse(source, None)
+        .ok_or(SyntaxError::ParseFailure)?;
+    let root = tree.root_node();
+
+    let mut calls = Vec::new();
+    collect_stl_calls(root, source.as_bytes(), file_name, &mut calls)?;
+    Ok(calls)
+}
+
+fn collect_stl_calls(
+    node: Node,
+    source: &[u8],
+    file_name: &str,
+    calls: &mut Vec<CppStlCall>,
+) -> Result<(), SyntaxError> {
+    if node.kind() == "call_expression" {
+        if let Some(func_node) = node.child_by_field_name("function") {
+            let func_name = func_node.utf8_text(source).unwrap_or("");
+            if func_name == "std::sort" || func_name == "sort" {
+                let start = node.start_position();
+                let end = node.end_position();
+                let n = variable("n").unwrap_or_else(|_| constant(1.0).unwrap());
+                let log_n = bigolens_core::complexity::logarithm(n.clone(), 2.0)
+                    .unwrap_or_else(|_| constant(1.0).unwrap());
+                let cost_expr = multiply(vec![n, log_n]);
+                calls.push(CppStlCall {
+                    location: SourceLocation {
+                        file: file_name.to_string(),
+                        line: (start.row + 1) as u32,
+                        column: (start.column + 1) as u32,
+                        end_line: Some((end.row + 1) as u32),
+                        end_column: Some((end.column + 1) as u32),
+                    },
+                    cost_expr,
+                    pattern: "stl-algorithm".to_string(),
+                    description: "std::sort standard algorithm call".to_string(),
+                    function_name: "main".to_string(),
+                    asymptotic: "O(n log n)".to_string(),
+                });
+            }
+        }
+    }
+
+    for child in node.children(&mut node.walk()) {
+        collect_stl_calls(child, source, file_name, calls)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
