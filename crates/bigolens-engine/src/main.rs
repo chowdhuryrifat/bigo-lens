@@ -3,6 +3,7 @@
 //! Provides the command-line interface and executes the versioned JSON protocol over stdin/stdout.
 
 pub mod compiler;
+pub mod isolation;
 pub mod runner;
 
 use bigolens_core::api::{

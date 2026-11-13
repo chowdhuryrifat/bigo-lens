@@ -180,7 +180,7 @@ so the suite is fast and does not depend on the installed C++ library.
 | Benchmark timeouts | Process tree killed, `timeout` result | **Exists** | `runner::tests::test_infinite_loop_killed_at_timeout` |
 | Benchmark memory-limit violations | Run terminated, `memory_limit_exceeded` | **Exists** | `runner::tests::test_memory_limit_exceeded` |
 | Missing compiler for benchmarks | Structured error naming the compiler searched for | **Exists** | `compiler::tests::test_missing_compiler_returns_structured_error` |
-| Benchmark sandbox escape attempts (file or network access) | Denied by isolation | **Planned (M4)** | none |
+| Benchmark sandbox escape attempts (file or network access) | Denied by isolation | **Exists** | `runner::tests::test_sandbox_denies_reading_home_files`, `runner::tests::test_sandbox_denies_socket_creation`, `runner::tests::test_sandbox_denies_execve` |
 
 ## 6. Running tests
 

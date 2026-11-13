@@ -42,6 +42,10 @@ pub struct RunnerLimits {
     pub max_nproc: Option<u64>,
     /// Maximum open file descriptors (`RLIMIT_NOFILE`).
     pub max_nofile: u64,
+    /// Whether to enforce strong namespace and seccomp sandbox isolation (default: true).
+    pub isolate: bool,
+    /// Whether to allow fallback to process-limits-only when isolation is unavailable (default: false).
+    pub allow_unsandboxed: bool,
 }
 
 impl Default for RunnerLimits {
@@ -53,6 +57,8 @@ impl Default for RunnerLimits {
             max_output_bytes: 10 * 1024 * 1024,  // 10 MiB
             max_nproc: None,
             max_nofile: 64,
+            isolate: true,
+            allow_unsandboxed: false,
         }
     }
 }
@@ -138,6 +144,10 @@ pub fn execute_single_run(
     let max_out = limits.max_output_bytes;
     let max_nofile = limits.max_nofile;
     let max_nproc = limits.max_nproc;
+    let should_isolate = limits.isolate;
+
+    let bin_path_c = std::ffi::CString::new(executable.to_str().unwrap_or("")).unwrap_or_default();
+    let bin_fd = unsafe { libc::open(bin_path_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
 
     unsafe {
         cmd.pre_exec(move || {
@@ -189,13 +199,43 @@ pub fn execute_single_run(
                 libc::setrlimit(libc::RLIMIT_NPROC, &nproc_rlim);
             }
 
+            // 7. Apply unprivileged Linux namespaces and seccomp if requested
+            #[cfg(target_os = "linux")]
+            if should_isolate {
+                crate::isolation::apply_linux_namespaces()?;
+                crate::isolation::apply_seccomp_filter()?;
+
+                if bin_fd >= 0 {
+                    let empty = c"".as_ptr();
+                    let argv: [*const libc::c_char; 2] = [bin_path_c.as_ptr(), std::ptr::null()];
+                    let envp: [*const libc::c_char; 1] = [std::ptr::null()];
+                    libc::syscall(
+                        libc::SYS_execveat,
+                        bin_fd,
+                        empty,
+                        argv.as_ptr(),
+                        envp.as_ptr(),
+                        libc::AT_EMPTY_PATH,
+                    );
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+
             Ok(())
         });
     }
 
     let mut child = match cmd.spawn() {
-        Ok(c) => c,
+        Ok(c) => {
+            if bin_fd >= 0 {
+                unsafe { libc::close(bin_fd) };
+            }
+            c
+        }
         Err(e) => {
+            if bin_fd >= 0 {
+                unsafe { libc::close(bin_fd) };
+            }
             return SingleRunResult {
                 status: BenchmarkRunStatus::Error(format!("spawn failed: {}", e)),
                 wall_time: Duration::ZERO,
@@ -382,7 +422,33 @@ pub fn run_benchmark_series(
     warmup: usize,
     repetitions: usize,
 ) -> BenchmarkSampleResult {
-    let warnings = vec!["not sandboxed: running with process resource limits only".to_string()];
+    let isolation_available = crate::isolation::is_linux_isolation_available();
+    let is_isolated = limits.isolate && isolation_available;
+
+    if limits.isolate && !isolation_available && !limits.allow_unsandboxed {
+        return BenchmarkSampleResult {
+            status: BenchmarkRunStatus::Error(
+                "isolation_unavailable: unprivileged namespaces or seccomp are required for dynamic benchmarks (pass allow_unsandboxed: true to override)".to_string(),
+            ),
+            wall_time_summary: None,
+            cpu_time_summary: None,
+            peak_rss_bytes: 0,
+            raw_wall_times_ms: Vec::new(),
+            raw_cpu_times_ms: Vec::new(),
+            isolation_level: "none",
+            isolated: false,
+            warnings: vec!["isolation unavailable: failed closed".to_string()],
+        };
+    }
+
+    let (isolation_level, warnings) = if is_isolated {
+        ("linux-namespaces-seccomp", Vec::new())
+    } else {
+        (
+            "process-limits-only",
+            vec!["not sandboxed: running with process resource limits only".to_string()],
+        )
+    };
 
     // Warm-up runs (unmeasured)
     for _ in 0..warmup {
@@ -395,8 +461,8 @@ pub fn run_benchmark_series(
                 peak_rss_bytes: run.peak_rss_bytes,
                 raw_wall_times_ms: Vec::new(),
                 raw_cpu_times_ms: Vec::new(),
-                isolation_level: "process-limits-only",
-                isolated: false,
+                isolation_level,
+                isolated: is_isolated,
                 warnings,
             };
         }
@@ -417,8 +483,8 @@ pub fn run_benchmark_series(
                 peak_rss_bytes: run.peak_rss_bytes.max(max_peak_rss),
                 raw_wall_times_ms,
                 raw_cpu_times_ms,
-                isolation_level: "process-limits-only",
-                isolated: false,
+                isolation_level,
+                isolated: is_isolated,
                 warnings,
             };
         }
@@ -439,8 +505,8 @@ pub fn run_benchmark_series(
         peak_rss_bytes: max_peak_rss,
         raw_wall_times_ms,
         raw_cpu_times_ms,
-        isolation_level: "process-limits-only",
-        isolated: false,
+        isolation_level,
+        isolated: is_isolated,
         warnings,
     }
 }
@@ -729,7 +795,10 @@ int main() {
         )
         .expect("compilation failed");
 
-        let limits = RunnerLimits::default();
+        let limits = RunnerLimits {
+            isolate: false,
+            ..Default::default()
+        };
         let sample = run_benchmark_series(&bin, b"100000\n", &limits, 1, 5);
 
         assert_eq!(sample.status, BenchmarkRunStatus::Success);
@@ -741,6 +810,250 @@ int main() {
         let summary = sample.wall_time_summary.expect("summary should exist");
         assert_eq!(summary.count, 5);
         assert!(summary.median > 0.0);
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_reading_home_files() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_home");
+        let source = r#"
+#include <fstream>
+#include <iostream>
+int main() {
+    std::ifstream f("/home");
+    // Under unshare mount namespace, /home is an empty tmpfs with no user subdirectories
+    std::ifstream f2("/home/rifz/.bashrc");
+    if (f2.is_open()) {
+        std::cout << "LEAKED_HOME\n";
+        return 0;
+    }
+    std::cerr << "HOME_CONCEALED\n";
+    return 1;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("HOME_CONCEALED"));
+        let out = String::from_utf8_lossy(&res.stdout);
+        assert!(!out.contains("LEAKED_HOME"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_socket_creation() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_socket");
+        let source = r#"
+#include <sys/socket.h>
+#include <iostream>
+int main() {
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        std::cerr << "SOCKET_BLOCKED\n";
+        return 1;
+    }
+    std::cout << "SOCKET_ALLOWED\n";
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("SOCKET_BLOCKED"));
+        let out = String::from_utf8_lossy(&res.stdout);
+        assert!(!out.contains("SOCKET_ALLOWED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_execve() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_execve");
+        let source = r#"
+#include <unistd.h>
+#include <iostream>
+int main() {
+    char* argv[] = {(char*)"/bin/echo", (char*)"escaped", nullptr};
+    execv("/bin/echo", argv);
+    std::cerr << "EXECVE_BLOCKED\n";
+    return 1;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("EXECVE_BLOCKED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_ptrace() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_ptrace");
+        let source = r#"
+#include <sys/ptrace.h>
+#include <iostream>
+int main() {
+    long ret = ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+    if (ret < 0) {
+        std::cerr << "PTRACE_BLOCKED\n";
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("PTRACE_BLOCKED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_isolated_series_success() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("iso_series");
+        let source = r#"
+#include <iostream>
+int main() {
+    long long n;
+    if (std::cin >> n) {
+        std::cout << (n * 3) << "\n";
+    }
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            ..Default::default()
+        };
+        let sample = run_benchmark_series(&bin, b"10\n", &limits, 1, 3);
+        assert_eq!(sample.status, BenchmarkRunStatus::Success);
+        assert!(sample.isolated);
+        assert_eq!(sample.isolation_level, "linux-namespaces-seccomp");
+        assert!(sample.warnings.is_empty());
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_unsandboxed_override_warning() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("unsandboxed_warn");
+        let source = "int main() { return 0; }";
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: false,
+            allow_unsandboxed: true,
+            ..Default::default()
+        };
+        let res = run_benchmark_series(&bin, b"", &limits, 0, 1);
+        assert_eq!(res.status, BenchmarkRunStatus::Success);
+        assert!(!res.isolated);
+        assert_eq!(res.isolation_level, "process-limits-only");
+        assert!(res.warnings.iter().any(|w| w.contains("not sandboxed")));
 
         let _ = fs::remove_dir_all(&work_dir);
     }

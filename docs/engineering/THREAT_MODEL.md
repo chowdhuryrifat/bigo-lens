@@ -105,13 +105,13 @@ Benchmarking would compile and **execute** user code. That code may be hostile, 
 
 | Threat | STRIDE | Required mitigation | Status |
 | --- | --- | --- | --- |
-| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Designed (ADR 0014, BL-401) |
-| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Designed (ADR 0014, BL-401) |
-| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Designed (ADR 0014, BL-401) |
-| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Designed (ADR 0014, BL-401) |
-| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Designed (ADR 0014, BL-401) |
+| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Implemented (Linux, BL-405) |
+| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
+| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (Linux, BL-404) |
+| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Implemented (Linux, BL-404) |
+| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Implemented (Linux, BL-404) |
 | Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Designed (ADR 0014, BL-401) |
-| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Designed (ADR 0014, BL-401) |
+| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Implemented (honest labelling, BL-404, BL-405) |
 
 ### 4.3 Compiler argument injection (TB3, TB6)
 
