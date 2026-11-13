@@ -576,6 +576,7 @@ int main() {
         .expect("compilation failed");
 
         let limits = RunnerLimits {
+            wall_timeout: Duration::from_millis(3000),
             allow_unsandboxed: true,
             ..Default::default()
         };
@@ -697,6 +698,7 @@ int main() {
 
         let limits = RunnerLimits {
             max_output_bytes: 50 * 1024,
+            wall_timeout: Duration::from_millis(3000),
             allow_unsandboxed: true,
             ..Default::default()
         };
@@ -733,6 +735,7 @@ int main() {
         .expect("compilation failed");
 
         let limits = RunnerLimits {
+            wall_timeout: Duration::from_millis(3000),
             allow_unsandboxed: true,
             ..Default::default()
         };

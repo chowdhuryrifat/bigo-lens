@@ -18,6 +18,14 @@ thiserror.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+[lib]
+name = "bigolens_engine"
+path = "src/lib.rs"
+
 [[bin]]
 name = "bigolens-engine"
 path = "src/main.rs"
+
+[[bin]]
+name = "differential-harness"
+path = "src/bin/differential_harness.rs"

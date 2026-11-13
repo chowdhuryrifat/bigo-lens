@@ -98,6 +98,35 @@ pub fn analyze_source(
                     .collect();
                 process_allocations(mapped, constraints, &mut raw_findings);
             }
+            if let Ok(stls) = cpp::parse_cpp_stl_calls(source, file_name) {
+                for stl in stls {
+                    let wl_res = evaluate_workload(&stl.cost_expr, constraints);
+                    candidate_workloads.push(wl_res.clone());
+
+                    let time_qty = Quantity {
+                        expression: stl.cost_expr.to_string(),
+                        asymptotic: Some(stl.asymptotic.clone()),
+                        variables: stl.cost_expr.free_variables().into_iter().collect(),
+                        workload: wl_res.into(),
+                    };
+
+                    raw_findings.push(Finding {
+                        id: String::new(),
+                        category: FindingCategory::LoopNest,
+                        pattern: stl.pattern,
+                        description: stl.description,
+                        function_name: stl.function_name,
+                        location: stl.location,
+                        time: Some(time_qty),
+                        space: None,
+                        bound_status: BoundStatus::Proven,
+                        confidence: Confidence::Medium,
+                        assumptions: vec!["worst-case O(n log n) comparison sort".to_string()],
+                        limitations: Vec::new(),
+                        provenance: "bigolens-syntax".to_string(),
+                    });
+                }
+            }
         }
         "java" => {
             if let Ok(loops) = java::parse_java_loops(source, file_name) {
