@@ -53,10 +53,10 @@ flowchart TD
   BL401["BL-401 Isolation ADR + spec"]:::done
   BL402["BL-402 Compiler adapter"]:::done
   BL403["BL-403 Input generators"]:::done
-  BL404["BL-404 Runner + limits (Linux)"]:::todo
-  BL405["BL-405 Linux isolation"]:::todo
+  BL404["BL-404 Runner + limits (Linux)"]:::done
+  BL405["BL-405 Linux isolation"]:::done
   BL406["BL-406 Windows Job Objects"]:::todo
-  BL407["BL-407 benchmark action + time feasibility"]:::todo
+  BL407["BL-407 benchmark action + time feasibility"]:::done
   BL408["BL-408 Differential tests"]:::todo
 
   BL501["BL-501 Constraint form UI"]:::todo
@@ -765,7 +765,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-407: `benchmark` protocol action, runtime range and time feasibility
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-404, BL-405

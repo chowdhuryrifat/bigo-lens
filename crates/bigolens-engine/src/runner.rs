@@ -656,6 +656,7 @@ int main() {
 
         let limits = RunnerLimits {
             max_memory_bytes: 50 * 1024 * 1024,
+            wall_timeout: Duration::from_millis(3000),
             allow_unsandboxed: true,
             ..Default::default()
         };

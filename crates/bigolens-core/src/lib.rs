@@ -13,6 +13,7 @@ pub mod constraints;
 pub mod estimation;
 pub mod feasibility;
 pub mod generator;
+pub mod growth_fit;
 pub mod ir;
 pub mod models;
 pub mod recurrence;
