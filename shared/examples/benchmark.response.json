@@ -1,19 +1,166 @@
 {
-  "diagnostics": [],
-  "engine": {
-    "frontend": "Ubuntu clang version 20.1.8 (++20250804090239+87f0227cb601-1~exp1~20250804210352.139)",
-    "name": "bigolens-engine",
-    "protocol_version": "1.0",
-    "version": "0.1.0"
-  },
-  "errors": [
-    {
-      "code": "not_implemented",
-      "message": "dynamic benchmarking is planned for milestone M4 and is not implemented"
-    }
-  ],
+  "schema_version": "1.1",
   "request_id": "example-benchmark",
-  "results": null,
-  "schema_version": "1.0",
-  "status": "error"
+  "status": "ok",
+  "engine": {
+    "name": "bigolens-engine",
+    "version": "0.1.0",
+    "protocol_version": "1.1",
+    "frontend": "bigolens-syntax"
+  },
+  "results": {
+    "benchmark": {
+      "empirical_fit": {
+        "ambiguous": true,
+        "intercept": 2.1538212608695653,
+        "model": null,
+        "r_squared": 0.5113486408556539,
+        "rss": 4.873970986087228e-05,
+        "slope": 2.1310886956521564e-07
+      },
+      "extrapolated_runtime": {
+        "central_ms": 2.1964430347826083,
+        "extrapolated": true,
+        "max_ms": 2.2929679271290584,
+        "min_ms": 2.1964430347826083,
+        "target_size": {
+          "n": 200000.0
+        }
+      },
+      "isolated": true,
+      "isolation_level": "linux-namespaces-seccomp",
+      "samples": [
+        {
+          "peak_rss_bytes": 3588096,
+          "raw_samples_ms": [
+            2.165643,
+            2.15377,
+            2.151395,
+            2.114589,
+            1.260917
+          ],
+          "size": {
+            "n": 6250
+          },
+          "wall_time_mad_ms": 0.01424800000000026,
+          "wall_time_median_ms": 2.151395
+        },
+        {
+          "peak_rss_bytes": 3596288,
+          "raw_samples_ms": [
+            2.159707,
+            2.163268,
+            2.162081,
+            2.173954,
+            2.162081
+          ],
+          "size": {
+            "n": 12500
+          },
+          "wall_time_mad_ms": 0.001186999999999827,
+          "wall_time_median_ms": 2.162081
+        },
+        {
+          "peak_rss_bytes": 3584000,
+          "raw_samples_ms": [
+            2.1585189999999996,
+            2.1573320000000002,
+            2.154957,
+            2.160894,
+            2.15377
+          ],
+          "size": {
+            "n": 25000
+          },
+          "wall_time_mad_ms": 0.002375000000000238,
+          "wall_time_median_ms": 2.1573320000000002
+        },
+        {
+          "peak_rss_bytes": 3584000,
+          "raw_samples_ms": [
+            2.172767,
+            2.164456,
+            2.1359600000000003,
+            2.168018,
+            2.163269
+          ],
+          "size": {
+            "n": 50000
+          },
+          "wall_time_mad_ms": 0.003562000000000065,
+          "wall_time_median_ms": 2.164456
+        }
+      ],
+      "warnings": []
+    },
+    "feasibility": {
+      "memory": {
+        "reason": "no memory limit specified",
+        "status": "unknown"
+      },
+      "time": {
+        "reason": "no time limit configured",
+        "status": "unknown"
+      }
+    },
+    "findings": [
+      {
+        "assumptions": [],
+        "bound_status": "proven",
+        "category": "loop_nest",
+        "confidence": "high",
+        "description": "loop nest with trip count n",
+        "function": "main",
+        "id": "F1",
+        "limitations": [],
+        "location": {
+          "column": 3,
+          "end_column": 4,
+          "end_line": 10,
+          "file": "01_linear_loop.cpp",
+          "line": 8
+        },
+        "pattern": "linear-loop",
+        "provenance": "bigolens-syntax",
+        "space": null,
+        "time": {
+          "asymptotic": "O(n)",
+          "expression": "n",
+          "variables": [
+            "n"
+          ],
+          "workload": {
+            "assumptions": [
+              "no upper bound configured for 'n'"
+            ],
+            "method": null,
+            "missing_bounds": [
+              "n"
+            ],
+            "status": "unknown",
+            "upper_bound": null
+          }
+        }
+      }
+    ],
+    "memory": {
+      "assumptions": [
+        "process baseline, stack frames, standard-library internals and unmodelled heap allocations are not included; figures are lower bounds, not peak usage"
+      ],
+      "estimated_minimum_bytes": 0.0,
+      "estimated_minimum_status": "proven",
+      "items": [],
+      "largest_local_array_bytes": 0,
+      "static_storage_bytes": 0,
+      "static_storage_saturated": false
+    },
+    "summary": {
+      "coverage": "partial",
+      "dominant_finding_id": "F1",
+      "finding_count": 1,
+      "max_time_workload": null
+    }
+  },
+  "diagnostics": [],
+  "errors": []
 }

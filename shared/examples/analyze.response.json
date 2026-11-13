@@ -1,62 +1,59 @@
 {
-  "diagnostics": [],
-  "engine": {
-    "frontend": "Ubuntu clang version 20.1.8 (++20250804090239+87f0227cb601-1~exp1~20250804210352.139)",
-    "name": "bigolens-engine",
-    "protocol_version": "1.0",
-    "version": "0.1.0"
-  },
-  "errors": [],
+  "schema_version": "1.1",
   "request_id": "example-analyze-sum-constraint",
+  "status": "ok",
+  "engine": {
+    "name": "bigolens-engine",
+    "version": "0.1.0",
+    "protocol_version": "1.1",
+    "frontend": "bigolens-syntax"
+  },
   "results": {
     "feasibility": {
       "memory": {
-        "reason": "only lower bounds are known; peak memory requires measurement or a complete allocation model",
-        "status": "unknown"
+        "reason": "storage (0 bytes) is within the memory limit of 256 MB",
+        "status": "likely_safe"
       },
       "time": {
-        "reason": "no runtime estimate available; structural workload alone does not determine runtime",
+        "reason": "no time limit configured",
         "status": "unknown"
       }
     },
     "findings": [
       {
-        "assumptions": [
-          "loop bound assumed to be at least the start value",
-          "'t' counts iterations (assumed non-negative at loop entry)"
-        ],
+        "assumptions": [],
         "bound_status": "proven",
         "category": "loop_nest",
         "confidence": "high",
-        "description": "loop nest of depth 3; time expression counts executions of the innermost loop bodies",
+        "description": "loop nest with trip count n",
         "function": "main",
         "id": "F1",
         "limitations": [],
         "location": {
           "column": 3,
-          "end_column": 3,
+          "end_column": 4,
           "end_line": 19,
           "file": "09_sum_constrained_test_cases.cpp",
           "line": 9
         },
-        "pattern": "test-case-loop",
-        "provenance": "clang-loop-analyzer",
+        "pattern": "linear-loop",
+        "provenance": "bigolens-syntax",
         "space": null,
         "time": {
-          "asymptotic": "O(n^2 t)",
-          "expression": "t * n * n",
+          "asymptotic": "O(n)",
+          "expression": "n",
           "variables": [
-            "n",
-            "t"
+            "n"
           ],
           "workload": {
             "assumptions": [
+              "cost treated as per test case because 'n' is constrained across test cases ('t')",
               "worst case packs 1 test case(s) of maximum size (superadditive per-case cost)"
             ],
             "method": "sum-constraint-packing",
             "missing_bounds": [],
             "status": "proven",
-            "upper_bound": 40000000000.0
+            "upper_bound": 200000.0
           }
         }
       }
@@ -76,9 +73,9 @@
       "coverage": "partial",
       "dominant_finding_id": "F1",
       "finding_count": 1,
-      "max_time_workload": 40000000000.0
+      "max_time_workload": 200000.0
     }
   },
-  "schema_version": "1.0",
-  "status": "ok"
+  "diagnostics": [],
+  "errors": []
 }

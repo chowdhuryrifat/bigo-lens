@@ -240,7 +240,6 @@ pub struct Response {
     pub request_id: Option<String>,
     pub status: String,
     pub engine: EngineMetadata,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub results: Option<serde_json::Value>,
     pub diagnostics: Vec<Diagnostic>,
     pub errors: Vec<ProtocolError>,

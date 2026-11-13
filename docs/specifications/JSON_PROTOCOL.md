@@ -1,4 +1,4 @@
-# JSON Protocol Reference (version 1.0)
+# JSON Protocol Reference (version 1.1)
 
 The protocol between clients (the VS Code extension, scripts, tests) and `bigolens-engine`. The normative definitions
 are the JSON Schemas (draft 2020-12):
@@ -46,8 +46,8 @@ Related: [ARCHITECTURE.md](../../ARCHITECTURE.md) · [DATA_FLOW.md](../architect
 ## 2. Versioning fields
 
 - Requests carry `schema_version` as `"MAJOR.MINOR"`.
-- The engine accepts a request when **MAJOR equals its own and MINOR ≤ its own**. The engine at protocol 1.0 accepts
-  only `"1.0"`. Otherwise: `unsupported_schema_version` with `path: "/schema_version"`.
+- The engine accepts a request when **MAJOR equals its own and MINOR ≤ its own**. The engine at protocol 1.1 accepts
+  `"1.0"` and `"1.1"`. Otherwise: `unsupported_schema_version` with `path: "/schema_version"`.
 - A `schema_version` not of the form `MAJOR.MINOR` is `invalid_request`.
 - Responses carry the engine's own protocol version in `schema_version` and in `engine.protocol_version`.
 
@@ -184,7 +184,7 @@ Features reported by engine 0.1.0:
 | `constraint_workload` | `partial` |
 | `static_memory_estimate` | `partial` |
 | `time_feasibility` | `requires_runtime_estimate` |
-| `benchmark` | `not_implemented` |
+| `benchmark` | `supported` |
 
 `capabilities` works without the Clang frontend. Clients must tolerate feature names they do not know.
 
@@ -283,8 +283,27 @@ Run `bigolens-engine --request shared/examples/analyze.request.json` to obtain t
 
 ### 6.3 `benchmark`
 
-Not implemented (M4). Always returns `status: "error"` with `not_implemented` after the request validates (the
-`source` member is required).
+Dynamic benchmarking compiles user C++ code in an isolated environment, generates synthetic inputs, executes repeated runs across input sizes, fits growth models (linear, linearithmic, quadratic), extrapolates runtime to the configured upper bound, and assesses empirical time feasibility.
+
+Request options for `benchmark`:
+- `benchmark_config`:
+  - `sizes`: optional array of integer sizes (defaults to 4 sizes spanning $[1000, 8000]$ or configured variable bounds)
+  - `repetitions`: number of measured repetitions per size (default proposal 5)
+  - `warmup`: number of unmeasured warmup runs per size (default proposal 1)
+  - `seed`: PRNG seed for deterministic input generation (default 42)
+  - `per_run_timeout_ms`: timeout per run in milliseconds (default 1000)
+  - `allow_unsandboxed`: boolean override for testing in environments without Linux namespaces (default false)
+
+Response includes:
+- `results.findings`, `results.memory`, `results.summary`: from static analysis
+- `results.feasibility.time`: evaluated based on the empirical runtime estimate
+- `results.benchmark`:
+  - `isolated`: boolean indicating whether sandboxing was applied
+  - `isolation_level`: e.g. `"linux-namespaces-seccomp"` or `"process-limits-only"`
+  - `samples`: array of measurements per size (`size`, `wall_time_median_ms`, `wall_time_mad_ms`, `peak_rss_bytes`, `raw_samples_ms`)
+  - `empirical_fit`: `{ model, r_squared, rss, slope, intercept, ambiguous }`
+  - `extrapolated_runtime`: `{ target_size, min_ms, central_ms, max_ms, extrapolated }`
+  - `warnings`: array of human-readable warnings
 
 ---
 
@@ -296,7 +315,8 @@ Not implemented (M4). Always returns `status: "error"` with `not_implemented` af
 | `request_too_large` | Request > 4 MiB | `null` | — | `null` |
 | `invalid_request` | Schema or semantic validation failure; **all** problems found are reported, one error each | echoed if valid | JSON pointer | `null` |
 | `unsupported_schema_version` | Major differs or minor newer than the engine's | echoed if valid | `/schema_version` | `null` |
-| `not_implemented` | `benchmark` action | echoed | — | `null` |
+| `isolation_unavailable` | Sandboxed benchmarking requested on platform without namespace/seccomp support (and `allow_unsandboxed: false`) | echoed | — | `null` |
+| `not_implemented` | Unsupported action | echoed | — | `null` |
 | `frontend_unavailable` | `analyze` on an engine built with `BIGOLENS_ENABLE_CLANG=OFF` | echoed | — | `null` |
 | `source_parse_error` | The source has compile errors; `diagnostics` contains them (≤ 50 errors). Analysis never runs on an AST with errors | echoed | — | `null` |
 | `internal_error` | Unexpected exception inside the engine; details on stderr | echoed | — | `null` |

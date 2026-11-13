@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/chowdhuryrifat/bigo-lens/shared/schemas/response.schema.json",
   "title": "BigO Lens engine response",
-  "description": "One response written by bigolens-engine to standard output. Protocol version 1.0. See docs/specifications/JSON_PROTOCOL.md.",
+  "description": "One response written by bigolens-engine to standard output. Protocol version 1.1. See docs/specifications/JSON_PROTOCOL.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "request_id", "status", "engine", "results", "diagnostics", "errors"],
@@ -22,7 +22,12 @@
       }
     },
     "results": {
-      "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/capabilitiesResults" }, { "$ref": "#/$defs/analyzeResults" }]
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/capabilitiesResults" },
+        { "$ref": "#/$defs/analyzeResults" },
+        { "$ref": "#/$defs/benchmarkResults" }
+      ]
     },
     "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
     "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } }
@@ -249,6 +254,131 @@
               "note": { "type": "string" }
             }
           }
+        }
+      }
+    },
+    "benchmarkResults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findings", "memory", "feasibility", "summary", "benchmark"],
+      "properties": {
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "static_storage_bytes",
+            "static_storage_saturated",
+            "largest_local_array_bytes",
+            "estimated_minimum_bytes",
+            "estimated_minimum_status",
+            "assumptions",
+            "items"
+          ],
+          "properties": {
+            "static_storage_bytes": { "type": "integer", "minimum": 0 },
+            "static_storage_saturated": { "type": "boolean" },
+            "largest_local_array_bytes": { "type": "integer", "minimum": 0 },
+            "estimated_minimum_bytes": { "type": ["number", "null"] },
+            "estimated_minimum_status": { "$ref": "#/$defs/boundStatus" },
+            "assumptions": { "type": "array", "items": { "type": "string" } },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "kind", "type", "exact_bytes", "symbolic_bytes", "location"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "kind": { "enum": ["global_static", "local_array", "vector_buffer"] },
+                  "type": { "type": "string" },
+                  "exact_bytes": { "type": ["integer", "null"], "minimum": 0 },
+                  "symbolic_bytes": { "type": ["string", "null"] },
+                  "location": { "$ref": "#/$defs/location" }
+                }
+              }
+            }
+          }
+        },
+        "feasibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["time", "memory"],
+          "properties": {
+            "time": { "$ref": "#/$defs/assessment" },
+            "memory": { "$ref": "#/$defs/assessment" }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["finding_count", "max_time_workload", "dominant_finding_id", "coverage"],
+          "properties": {
+            "finding_count": { "type": "integer", "minimum": 0 },
+            "max_time_workload": { "type": ["number", "null"] },
+            "dominant_finding_id": { "type": ["string", "null"] },
+            "coverage": { "enum": ["partial"] }
+          }
+        },
+        "benchmark": { "$ref": "#/$defs/benchmarkData" }
+      }
+    },
+    "benchmarkData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isolated", "isolation_level", "samples", "empirical_fit", "extrapolated_runtime", "warnings"],
+      "properties": {
+        "isolated": { "type": "boolean" },
+        "isolation_level": { "type": "string" },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["size", "wall_time_median_ms", "wall_time_mad_ms", "peak_rss_bytes", "raw_samples_ms"],
+            "properties": {
+              "size": {
+                "type": "object",
+                "additionalProperties": { "type": "number" }
+              },
+              "wall_time_median_ms": { "type": "number" },
+              "wall_time_mad_ms": { "type": "number" },
+              "peak_rss_bytes": { "type": "integer", "minimum": 0 },
+              "raw_samples_ms": { "type": "array", "items": { "type": "number" } }
+            }
+          }
+        },
+        "empirical_fit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "r_squared", "rss", "slope", "intercept", "ambiguous"],
+          "properties": {
+            "model": { "type": ["string", "null"] },
+            "r_squared": { "type": "number" },
+            "rss": { "type": "number" },
+            "slope": { "type": "number" },
+            "intercept": { "type": "number" },
+            "ambiguous": { "type": "boolean" }
+          }
+        },
+        "extrapolated_runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target_size", "min_ms", "central_ms", "max_ms", "extrapolated"],
+          "properties": {
+            "target_size": {
+              "type": "object",
+              "additionalProperties": { "type": "number" }
+            },
+            "min_ms": { "type": "number" },
+            "central_ms": { "type": "number" },
+            "max_ms": { "type": "number" },
+            "extrapolated": { "type": "boolean" }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
         }
       }
     }
