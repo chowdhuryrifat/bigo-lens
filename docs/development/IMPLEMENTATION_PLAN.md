@@ -724,9 +724,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-405: Linux isolation (namespaces and seccomp)
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
-- **Estimated complexity:** XL (relative). This is the highest-uncertainty item, because kernel and distribution policies on unprivileged namespaces vary.
+- **Estimated complexity:** XL (relative).
 - **Dependencies:** BL-404
 
 **Description.** Add network and file system isolation for the benchmark process, using unprivileged user namespaces where available, plus a seccomp allow-list. When isolation cannot be established, fail closed: either refuse to run, or run only with an explicit "not sandboxed" user confirmation, as decided in BL-401.
@@ -736,8 +736,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: Linux. Out of scope: other platforms.
 
 **Acceptance criteria.**
-- [ ] Test programs attempting to open `$HOME` files, create sockets or `execve` other binaries are denied.
-- [ ] The behaviour when isolation is unavailable matches the ADR.
+- [x] Test programs attempting to open `$HOME` files, create sockets or `execve` other binaries are denied.
+- [x] The behaviour when isolation is unavailable matches the ADR.
 
 **Test cases.** File read outside the run directory, network connect, `execve`, `ptrace`, and the fallback path.
 
