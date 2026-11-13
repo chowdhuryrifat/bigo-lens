@@ -1012,6 +1012,7 @@ mod tests {
                 "sizes": [5000, 10000, 20000, 40000],
                 "repetitions": 3,
                 "warmup": 1,
+                "per_run_timeout_ms": 3000,
                 "allow_unsandboxed": true
             }
         });
@@ -1170,6 +1171,7 @@ int main() {
                 "sizes": [5000, 10000, 20000, 40000],
                 "repetitions": 3,
                 "warmup": 1,
+                "per_run_timeout_ms": 3000,
                 "allow_unsandboxed": true
             }
         });

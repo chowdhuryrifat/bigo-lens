@@ -60,7 +60,7 @@ flowchart TD
   BL408["BL-408 Differential tests"]:::done
 
   BL501["BL-501 Constraint form UI"]:::todo
-  BL502["BL-502 Webview + CSP"]:::crit
+  BL502["BL-502 Webview + CSP"]:::done
   BL503["BL-503 Explanations + charts"]:::crit
   BL504["BL-504 Status bar"]:::todo
   BL505["BL-505 Re-analyze on save"]:::todo
@@ -835,7 +835,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-502: Webview report infrastructure with strict CSP
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P0 (for M5)
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-207, BL-306
@@ -847,9 +847,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the panel, messaging and the security baseline. Out of scope: content (BL-503).
 
 **Acceptance criteria.**
-- [ ] The CSP meta tag is present, with a fresh nonce on each load.
-- [ ] Injecting `<img onerror>` via a function name renders it as text.
-- [ ] Unknown messages are rejected.
+- [x] The CSP meta tag is present, with a fresh nonce on each load.
+- [x] Injecting `<img onerror>` via a function name renders it as text.
+- [x] Unknown messages are rejected.
 
 **Test cases.** Unit tests for HTML generation (CSP and escaping), and a smoke test opening the panel.
 

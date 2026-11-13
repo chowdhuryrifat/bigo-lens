@@ -2,16 +2,20 @@ import * as vscode from 'vscode';
 
 import { analyzeActiveFile } from './commands/analyzeActiveFile';
 import { editConstraints } from './commands/editConstraints';
+import { openReport } from './commands/openReport';
 import { showCapabilities } from './commands/showCapabilities';
+import { ReportPanel } from './panels/reportPanel';
 import { DiagnosticsPublisher } from './providers/diagnosticsPublisher';
 import { ResultsTreeProvider } from './providers/resultsTreeProvider';
 import type { ExtensionServices } from './services/context';
 import { ensureBundledEngineExecutable } from './services/engineLocator';
+import type { ReportSnapshot } from './services/reportHtml';
 import { SchemaValidator } from './services/schemaValidator';
 
 export const COMMANDS = {
   analyzeActiveFile: 'bigoLens.analyzeActiveFile',
   editConstraints: 'bigoLens.editConstraints',
+  openReport: 'bigoLens.openReport',
   showCapabilities: 'bigoLens.showCapabilities',
 } as const;
 
@@ -24,6 +28,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const tree = new ResultsTreeProvider();
   const diagnostics = new DiagnosticsPublisher();
+  let lastSnapshot: ReportSnapshot | undefined;
 
   context.subscriptions.push(
     output,
@@ -31,9 +36,22 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnostics,
     vscode.window.registerTreeDataProvider('bigoLens.results', tree),
     vscode.commands.registerCommand(COMMANDS.analyzeActiveFile, () =>
-      analyzeActiveFile({ ...services, tree, diagnostics }),
+      analyzeActiveFile({
+        ...services,
+        tree,
+        diagnostics,
+        onResults: (snapshot) => {
+          lastSnapshot = snapshot;
+          if (ReportPanel.currentPanel) {
+            ReportPanel.currentPanel.updateSnapshot(snapshot);
+          }
+        },
+      }),
     ),
     vscode.commands.registerCommand(COMMANDS.editConstraints, () => editConstraints()),
+    vscode.commands.registerCommand(COMMANDS.openReport, () => {
+      openReport(context.extensionUri, () => lastSnapshot);
+    }),
     vscode.commands.registerCommand(COMMANDS.showCapabilities, () => showCapabilities(services)),
   );
   if (ensureBundledEngineExecutable(context.extensionPath, process.platform)) {
