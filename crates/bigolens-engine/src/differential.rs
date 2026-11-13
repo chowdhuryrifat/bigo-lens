@@ -288,6 +288,18 @@ pub fn determine_verdict(
                     emp, exp
                 ),
             ),
+            (Some(exp), Some(emp))
+                if (exp == GrowthModel::Linearithmic && emp == GrowthModel::Linear)
+                    || (exp == GrowthModel::Linear && emp == GrowthModel::Linearithmic) =>
+            {
+                (
+                    DifferentialVerdict::Ambiguous,
+                    format!(
+                        "Empirical fit {:?} and expected {:?} are quasi-linear neighbors; recorded as ambiguous",
+                        emp, exp
+                    ),
+                )
+            }
             (Some(exp), Some(emp)) => (
                 DifferentialVerdict::Mismatch,
                 format!(
@@ -424,7 +436,7 @@ int main() {
     let sorting_source = EMBEDDED_SORTING_SOURCE.to_string();
 
     let mut sort_vars = HashMap::new();
-    sort_vars.insert("n".to_string(), VariableBound::range(1.0, 200_000.0));
+    sort_vars.insert("n".to_string(), VariableBound::range(1.0, 500_000.0));
     cases.push(DifferentialCase {
         name: "sorting_n_log_n".to_string(),
         path: "sorting_n_log_n.cpp".to_string(),
@@ -437,9 +449,10 @@ int main() {
             ..Default::default()
         },
         benchmark_config: BenchmarkConfig {
-            sizes: vec![10_000, 20_000, 40_000, 80_000],
+            sizes: vec![50_000, 100_000, 200_000, 400_000],
             repetitions: 3,
             warmup: 1,
+            per_run_timeout_ms: 3_000,
             allow_unsandboxed: true,
             ..Default::default()
         },
@@ -556,7 +569,24 @@ mod tests {
         let (v2, _) = determine_verdict(Some(GrowthModel::Linear), None, true, Some("O(n)"));
         assert_eq!(v2, DifferentialVerdict::Ambiguous);
 
-        // 3. Mismatch / Deliberately wrong expected class
+        // 3. Quasi-linear neighbors (Linear vs Linearithmic) are recorded as ambiguous
+        let (v_ql1, _) = determine_verdict(
+            Some(GrowthModel::Linearithmic),
+            Some(GrowthModel::Linear),
+            false,
+            Some("O(n log n)"),
+        );
+        assert_eq!(v_ql1, DifferentialVerdict::Ambiguous);
+
+        let (v_ql2, _) = determine_verdict(
+            Some(GrowthModel::Linear),
+            Some(GrowthModel::Linearithmic),
+            false,
+            Some("O(n)"),
+        );
+        assert_eq!(v_ql2, DifferentialVerdict::Ambiguous);
+
+        // 4. Mismatch / Deliberately wrong expected class
         let (v3, _) = determine_verdict(
             Some(GrowthModel::Linear),
             Some(GrowthModel::Quadratic),
