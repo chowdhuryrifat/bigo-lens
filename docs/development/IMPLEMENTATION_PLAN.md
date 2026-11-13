@@ -61,7 +61,7 @@ flowchart TD
 
   BL501["BL-501 Constraint form UI"]:::todo
   BL502["BL-502 Webview + CSP"]:::done
-  BL503["BL-503 Explanations + charts"]:::crit
+  BL503["BL-503 Explanations + charts"]:::done
   BL504["BL-504 Status bar"]:::todo
   BL505["BL-505 Re-analyze on save"]:::todo
   BL506["BL-506 Workspace Trust"]:::todo
@@ -857,7 +857,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-503: Explanations and charts in the report
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P0 (for M5)
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-502
@@ -869,8 +869,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the static-analysis results. Out of scope: benchmark charts (BL-507).
 
 **Acceptance criteria.**
-- [ ] Every response field shown in the tree view is also explained in the report.
-- [ ] Unknown and Unsupported results show their reasons prominently.
+- [x] Every response field shown in the tree view is also explained in the report.
+- [x] Unknown and Unsupported results show their reasons prominently.
 
 **Test cases.** Snapshot tests of the rendered model (not pixels) for each fixture's response.
 

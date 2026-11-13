@@ -20,6 +20,10 @@
   --btn-hover: var(--vscode-button-hoverBackground, #1177bb);
   --badge-bg: var(--vscode-badge-background, #4d4d4d);
   --badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --accent-blue: var(--vscode-textLink-foreground, #3794ff);
+  --accent-green: var(--vscode-testing-iconPassed, #4caf50);
+  --accent-amber: var(--vscode-editorWarning-foreground, #cca700);
+  --accent-red: var(--vscode-editorError-foreground, #f14c4c);
 }
 
 body.report-body {
@@ -55,7 +59,7 @@ body.report-body {
 
 .file-path {
   font-family: var(--vscode-editor-font-family, monospace);
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: var(--accent-blue);
 }
 
 .engine-badge {
@@ -99,28 +103,248 @@ body.report-body {
   font-size: 0.85rem;
 }
 
-.findings-container h2 {
+.badge-feasibility-likely_safe {
+  color: var(--accent-green);
+}
+
+.badge-feasibility-borderline {
+  color: var(--accent-amber);
+}
+
+.badge-feasibility-high_risk {
+  color: var(--accent-red);
+}
+
+.badge-feasibility-unknown {
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+.report-section {
+  margin-bottom: 2rem;
+}
+
+.report-section h2 {
   font-size: 1.15rem;
   font-weight: 600;
-  margin-top: 0;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.4rem;
   margin-bottom: 1rem;
 }
 
+.report-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem 0;
+}
+
+/* Workload Chart Card */
+.workload-chart-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.chart-header {
+  margin-bottom: 1rem;
+}
+
+.chart-header h3 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.chart-subtitle {
+  font-size: 0.85rem;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+.chart-svg-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.workload-svg {
+  display: block;
+}
+
+.chart-axis {
+  stroke: var(--border-color);
+  stroke-width: 1.5;
+}
+
+.chart-axis-grid {
+  stroke: var(--border-color);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.axis-header {
+  font-size: 11px;
+  fill: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+.chart-label-id {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--fg-color);
+}
+
+.chart-label-func {
+  font-size: 11px;
+  fill: var(--vscode-descriptionForeground, #8c8c8c);
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.chart-val-text {
+  font-size: 11px;
+  fill: var(--fg-color);
+  font-weight: 500;
+}
+
+.chart-val-text.val-unknown {
+  fill: var(--accent-amber);
+  font-style: italic;
+}
+
+.chart-bar.bar-dominant {
+  fill: var(--btn-bg);
+}
+
+.chart-bar.bar-normal {
+  fill: var(--accent-green);
+}
+
+.chart-bar.bar-unknown {
+  fill: var(--accent-amber);
+  opacity: 0.7;
+}
+
+/* Prominent Alerts for Unknown / Unsupported */
+.alert-box {
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  border-left: 4px solid;
+}
+
+.alert-unknown {
+  background: rgba(204, 167, 0, 0.12);
+  border-left-color: var(--accent-amber);
+}
+
+.alert-unsupported {
+  background: rgba(241, 76, 76, 0.12);
+  border-left-color: var(--accent-red);
+}
+
+.alert-lead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.alert-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.alert-unknown .alert-badge {
+  color: var(--accent-amber);
+}
+
+.alert-unsupported .alert-badge {
+  color: var(--accent-red);
+}
+
+.alert-message {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.alert-details {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+/* Status Confidence Grid */
+.status-confidence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  background: rgba(0, 0, 0, 0.12);
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+}
+
+.dimension-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.dimension-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.dimension-name {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  font-weight: 600;
+}
+
+.dimension-desc {
+  font-size: 0.8rem;
+  margin: 0;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  line-height: 1.35;
+}
+
+/* Category Badge */
+.category-badge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  text-transform: uppercase;
+}
+
+/* Finding Cards */
 .finding-card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  padding: 1rem;
-  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.finding-card.card-unknown {
+  border-left: 3px solid var(--accent-amber);
+}
+
+.finding-card.card-unsupported {
+  border-left: 3px solid var(--accent-red);
 }
 
 .finding-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 0.75rem;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 0.75rem;
 }
 
 .finding-title {
@@ -136,15 +360,14 @@ body.report-body {
 }
 
 .finding-pattern {
-  font-family: monospace;
-  background: var(--vscode-textCodeBlock-background, rgba(255, 255, 255, 0.05));
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  font-size: 0.85rem;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9rem;
+  color: var(--vscode-symbolIcon-functionForeground, #b180d7);
 }
 
 .finding-func {
-  font-family: monospace;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--accent-blue);
   font-weight: 600;
 }
 
@@ -169,6 +392,24 @@ body.report-body {
   background: var(--btn-hover);
 }
 
+.finding-desc {
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0.75rem 0;
+}
+
+.finding-quantity-block {
+  margin-top: 0.75rem;
+}
+
+.quantity-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  margin: 0 0 0.35rem 0;
+  letter-spacing: 0.05em;
+}
+
 .finding-table {
   width: 100%;
   border-collapse: collapse;
@@ -178,17 +419,21 @@ body.report-body {
 
 .finding-table th {
   text-align: left;
-  padding: 0.4rem 0.6rem;
-  width: 15%;
+  padding: 0.35rem 0.5rem;
+  width: 16%;
   color: var(--vscode-descriptionForeground, #8c8c8c);
   font-weight: 500;
   border-top: 1px solid var(--border-color);
 }
 
 .finding-table td {
-  padding: 0.4rem 0.6rem;
-  width: 35%;
+  padding: 0.35rem 0.5rem;
+  width: 34%;
   border-top: 1px solid var(--border-color);
+}
+
+.asymptotic-tag {
+  color: var(--accent-blue);
 }
 
 .badge {
@@ -201,24 +446,48 @@ body.report-body {
 }
 
 .badge-proven {
-  background-color: var(--vscode-testing-iconPassed, #4caf50);
+  background-color: var(--accent-green);
   color: #fff;
 }
 
 .badge-estimated {
-  background-color: var(--vscode-editorWarning-foreground, #cca700);
+  background-color: var(--accent-amber);
   color: #1e1e1e;
 }
 
-.badge-unknown,
+.badge-unknown {
+  background-color: var(--accent-amber);
+  color: #1e1e1e;
+}
+
 .badge-unsupported {
-  background-color: var(--vscode-editorError-foreground, #f14c4c);
+  background-color: var(--accent-red);
   color: #fff;
 }
 
-.workload-method {
-  font-size: 0.8rem;
-  color: var(--vscode-descriptionForeground, #8c8c8c);
+.badge-confidence-high {
+  background-color: var(--accent-green);
+  color: #fff;
+}
+
+.badge-confidence-medium {
+  background-color: var(--accent-blue);
+  color: #fff;
+}
+
+.badge-confidence-low {
+  background-color: var(--accent-amber);
+  color: #1e1e1e;
+}
+
+.badge-confidence-none {
+  background-color: var(--badge-bg);
+  color: var(--badge-fg);
+}
+
+.workload-status {
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .finding-notes {
@@ -226,17 +495,116 @@ body.report-body {
   margin-top: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: rgba(0, 0, 0, 0.15);
-  border-left: 3px solid var(--vscode-editorInfo-foreground, #3794ff);
+  border-left: 3px solid var(--accent-blue);
   border-radius: 0 3px 3px 0;
 }
 
 .finding-notes.limitations {
-  border-left-color: var(--vscode-editorWarning-foreground, #cca700);
+  border-left-color: var(--accent-amber);
 }
 
 .finding-notes ul {
   margin: 0.25rem 0 0 1.25rem;
   padding: 0;
+}
+
+.finding-footer {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  text-align: right;
+}
+
+/* Memory Section */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.metric-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+}
+
+.metric-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+.metric-sub {
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 0.75rem 0;
+}
+
+.report-table th,
+.report-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.report-table th {
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  font-weight: 600;
+}
+
+.kind-tag {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Feasibility Section */
+.feasibility-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.feasibility-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.feasibility-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.feasibility-card-header h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.feasibility-reason {
+  font-size: 0.85rem;
+  margin: 0;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
 }
 
 .empty-state {
