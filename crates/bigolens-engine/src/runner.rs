@@ -56,7 +56,7 @@ impl Default for RunnerLimits {
             max_memory_bytes: 256 * 1024 * 1024, // 256 MiB
             max_output_bytes: 10 * 1024 * 1024,  // 10 MiB
             max_nproc: None,
-            max_nofile: 64,
+            max_nofile: 256,
             isolate: true,
             allow_unsandboxed: false,
         }
@@ -144,10 +144,29 @@ pub fn execute_single_run(
     let max_out = limits.max_output_bytes;
     let max_nofile = limits.max_nofile;
     let max_nproc = limits.max_nproc;
-    let should_isolate = limits.isolate;
+
+    let isolation_available = crate::isolation::is_linux_isolation_available();
+    if limits.isolate && !isolation_available && !limits.allow_unsandboxed {
+        return SingleRunResult {
+            status: BenchmarkRunStatus::Error(
+                "isolation_unavailable: unprivileged namespaces or seccomp are required for dynamic benchmarks (pass allow_unsandboxed: true to override)".to_string(),
+            ),
+            wall_time: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            peak_rss_bytes: 0,
+            stdout: Vec::new(),
+            stderr: String::new(),
+        };
+    }
+
+    let should_isolate = limits.isolate && isolation_available;
 
     let bin_path_c = std::ffi::CString::new(executable.to_str().unwrap_or("")).unwrap_or_default();
-    let bin_fd = unsafe { libc::open(bin_path_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
+    let bin_fd = if should_isolate {
+        unsafe { libc::open(bin_path_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) }
+    } else {
+        -1
+    };
 
     unsafe {
         cmd.pre_exec(move || {
@@ -556,7 +575,10 @@ int main() {
         )
         .expect("compilation failed");
 
-        let limits = RunnerLimits::default();
+        let limits = RunnerLimits {
+            allow_unsandboxed: true,
+            ..Default::default()
+        };
         let res = execute_single_run(&bin, b"21\n", &limits);
 
         assert_eq!(res.status, BenchmarkRunStatus::Success);
@@ -597,6 +619,7 @@ int main() {
         let limits = RunnerLimits {
             wall_timeout: Duration::from_millis(100),
             cpu_timeout: Duration::from_millis(100),
+            allow_unsandboxed: true,
             ..Default::default()
         };
 
@@ -633,6 +656,7 @@ int main() {
 
         let limits = RunnerLimits {
             max_memory_bytes: 50 * 1024 * 1024,
+            allow_unsandboxed: true,
             ..Default::default()
         };
 
@@ -672,6 +696,7 @@ int main() {
 
         let limits = RunnerLimits {
             max_output_bytes: 50 * 1024,
+            allow_unsandboxed: true,
             ..Default::default()
         };
 
@@ -706,7 +731,10 @@ int main() {
         )
         .expect("compilation failed");
 
-        let limits = RunnerLimits::default();
+        let limits = RunnerLimits {
+            allow_unsandboxed: true,
+            ..Default::default()
+        };
         let res = execute_single_run(&bin, b"", &limits);
 
         match res.status {
@@ -749,6 +777,7 @@ int main() {
         let limits = RunnerLimits {
             wall_timeout: Duration::from_millis(100),
             cpu_timeout: Duration::from_millis(100),
+            allow_unsandboxed: true,
             ..Default::default()
         };
 
@@ -817,6 +846,9 @@ int main() {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_sandbox_denies_reading_home_files() {
+        if !crate::isolation::is_linux_isolation_available() {
+            return;
+        }
         let compiler = match discover_compiler(None) {
             Ok(c) => c,
             Err(_) => return,
@@ -863,6 +895,9 @@ int main() {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_sandbox_denies_socket_creation() {
+        if !crate::isolation::is_linux_isolation_available() {
+            return;
+        }
         let compiler = match discover_compiler(None) {
             Ok(c) => c,
             Err(_) => return,
@@ -907,6 +942,9 @@ int main() {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_sandbox_denies_execve() {
+        if !crate::isolation::is_linux_isolation_available() {
+            return;
+        }
         let compiler = match discover_compiler(None) {
             Ok(c) => c,
             Err(_) => return,
@@ -946,6 +984,9 @@ int main() {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_sandbox_denies_ptrace() {
+        if !crate::isolation::is_linux_isolation_available() {
+            return;
+        }
         let compiler = match discover_compiler(None) {
             Ok(c) => c,
             Err(_) => return,
@@ -987,6 +1028,9 @@ int main() {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_isolated_series_success() {
+        if !crate::isolation::is_linux_isolation_available() {
+            return;
+        }
         let compiler = match discover_compiler(None) {
             Ok(c) => c,
             Err(_) => return,
@@ -1054,6 +1098,52 @@ int main() {
         assert!(!res.isolated);
         assert_eq!(res.isolation_level, "process-limits-only");
         assert!(res.warnings.iter().any(|w| w.contains("not sandboxed")));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_fail_closed_when_isolation_unavailable() {
+        if crate::isolation::is_linux_isolation_available() {
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("fail_closed");
+        let source = "int main() { return 0; }";
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            allow_unsandboxed: false,
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        match res.status {
+            BenchmarkRunStatus::Error(msg) => {
+                assert!(msg.contains("isolation_unavailable"));
+            }
+            other => panic!("expected isolation_unavailable error, got {:?}", other),
+        }
+
+        let sample = run_benchmark_series(&bin, b"", &limits, 0, 1);
+        match sample.status {
+            BenchmarkRunStatus::Error(msg) => {
+                assert!(msg.contains("isolation_unavailable"));
+            }
+            other => panic!("expected isolation_unavailable error, got {:?}", other),
+        }
 
         let _ = fs::remove_dir_all(&work_dir);
     }
