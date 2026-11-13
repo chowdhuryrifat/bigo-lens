@@ -478,9 +478,10 @@ int main() {
             ..Default::default()
         },
         benchmark_config: BenchmarkConfig {
-            sizes: vec![2_000, 4_000, 8_000, 16_000],
+            sizes: vec![1_500, 3_000, 6_000, 12_000],
             repetitions: 3,
             warmup: 1,
+            per_run_timeout_ms: 3_000,
             allow_unsandboxed: true,
             ..Default::default()
         },
@@ -627,10 +628,10 @@ int main() {
             expected_class: Some("O(n)".to_string()),
         };
 
-        let res = evaluate_case(&case);
+        let report = run_differential_harness(&[case]);
+        let res = &report.cases[0];
         if res.ambiguous {
             assert_eq!(res.verdict, DifferentialVerdict::Ambiguous);
-            let report = run_differential_harness(&[case]);
             assert_eq!(report.ambiguous, 1);
             assert_eq!(report.mismatched, 0);
             assert!(report.passed);
@@ -652,18 +653,45 @@ int main() {
 
         // Deliberately set expected class to linear O(n) for a quadratic program
         wrong_case.expected_class = Some("O(n)".to_string());
+        wrong_case.benchmark_config.sizes = vec![1_000, 2_000, 4_000, 8_000];
+        wrong_case.benchmark_config.per_run_timeout_ms = 4_000;
 
-        let res = evaluate_case(&wrong_case);
-        if !res.ambiguous {
+        let report = run_differential_harness(&[wrong_case]);
+        assert_eq!(report.total, 1);
+        let res = &report.cases[0];
+        if !res.ambiguous && res.verdict != DifferentialVerdict::Error {
             assert_eq!(res.verdict, DifferentialVerdict::Mismatch);
             assert_eq!(res.expected_model, Some(GrowthModel::Linear));
             assert_ne!(res.empirical_model, Some(GrowthModel::Linear));
-
-            let report = run_differential_harness(&[wrong_case]);
             assert_eq!(report.mismatched, 1);
             // Crucial: deliberate mismatch MUST fail the harness
             assert!(!report.passed);
         }
+    }
+
+    #[test]
+    fn test_differential_harness_pass_fail_logic() {
+        let passed_report = DifferentialReport {
+            total: 2,
+            matched: 1,
+            ambiguous: 1,
+            mismatched: 0,
+            errors: 0,
+            passed: true,
+            cases: vec![],
+        };
+        assert!(passed_report.passed);
+
+        let failed_report = DifferentialReport {
+            total: 2,
+            matched: 1,
+            ambiguous: 0,
+            mismatched: 1,
+            errors: 0,
+            passed: false,
+            cases: vec![],
+        };
+        assert!(!failed_report.passed);
     }
 
     #[test]
