@@ -36,6 +36,7 @@ export async function run(): Promise<void> {
     for (const id of [
       'bigoLens.analyzeActiveFile',
       'bigoLens.editConstraints',
+      'bigoLens.openReport',
       'bigoLens.showCapabilities',
     ]) {
       assert.ok(commands.includes(id), `${id} missing`);

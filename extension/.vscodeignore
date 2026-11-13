@@ -4,6 +4,7 @@
 **
 !out/src/**
 !schemas/**
+!media/**
 !bin/**
 !node_modules/**
 !package.json

@@ -54,6 +54,12 @@
         "icon": "$(settings-gear)"
       },
       {
+        "command": "bigoLens.openReport",
+        "title": "Open Report",
+        "category": "BigO Lens",
+        "icon": "$(graph)"
+      },
+      {
         "command": "bigoLens.showCapabilities",
         "title": "Show Engine Capabilities",
         "category": "BigO Lens"
@@ -79,7 +85,7 @@
     "viewsWelcome": [
       {
         "view": "bigoLens.results",
-        "contents": "Open a Python or C++ file and run an analysis.\n[Analyze Active File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)"
+        "contents": "Open a Python or C++ file and run an analysis.\n[Analyze Active File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)\n[Open Report](command:bigoLens.openReport)"
       }
     ],
     "menus": {
@@ -93,6 +99,11 @@
           "command": "bigoLens.editConstraints",
           "when": "view == bigoLens.results",
           "group": "navigation"
+        },
+        {
+          "command": "bigoLens.openReport",
+          "when": "view == bigoLens.results",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
@@ -103,6 +114,9 @@
         {
           "command": "bigoLens.editConstraints",
           "when": "editorLangId == cpp || editorLangId == python"
+        },
+        {
+          "command": "bigoLens.openReport"
         }
       ]
     },

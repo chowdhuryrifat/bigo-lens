@@ -13,6 +13,11 @@ import { analyzeRequest } from '../services/requestBuilder';
 export interface AnalyzeDependencies extends ExtensionServices {
   tree: ResultsTreeProvider;
   diagnostics: DiagnosticsPublisher;
+  onResults?: (snapshot: {
+    displayPath: string;
+    results: import('../models/protocol').AnalyzeResults;
+    engineVersion: string;
+  }) => void;
 }
 
 export const SUPPORTED_LANGUAGES = new Set([
@@ -142,11 +147,17 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
           return;
         }
         if (isAnalyzeResults(response.results)) {
+          const snapshot = {
+            displayPath,
+            results: response.results,
+            engineVersion: response.engine.version,
+          };
           deps.tree.show({
             uri: document.uri,
             results: response.results,
             engineVersion: response.engine.version,
           });
+          deps.onResults?.(snapshot);
           if (!constraints) {
             void vscode.window.showInformationMessage(
               'BigO Lens: analysis done without constraints, so workloads are unknown. Use "Edit Constraints" to add them.',
