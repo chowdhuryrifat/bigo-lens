@@ -13,12 +13,27 @@ async function main(): Promise<void> {
   // When launched from a VS Code terminal this variable is inherited and would
   // make the downloaded VS Code behave as plain Node.js.
   delete process.env.ELECTRON_RUN_AS_NODE;
-  await runTests({
-    extensionDevelopmentPath,
-    extensionTestsPath,
-    launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust'],
-    extensionTestsEnv: { BIGOLENS_E2E_REQUIRE_ENGINE: process.env.BIGOLENS_E2E_REQUIRE_ENGINE ?? '' },
-  });
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await runTests({
+        extensionDevelopmentPath,
+        extensionTestsPath,
+        launchArgs: [workspace, '--disable-extensions', '--disable-workspace-trust'],
+        extensionTestsEnv: { BIGOLENS_E2E_REQUIRE_ENGINE: process.env.BIGOLENS_E2E_REQUIRE_ENGINE ?? '' },
+      });
+      return;
+    } catch (err: unknown) {
+      if (attempt === maxAttempts) {
+        throw err;
+      }
+      process.stderr.write(
+        `runTests attempt ${attempt} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}. Retrying in 5s...\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
 }
 
 main().catch((err: unknown) => {
