@@ -17,6 +17,7 @@ export function readSettings(): {
   cppStandard: CppStandard;
   timeoutMs: number;
   isWorkspaceConfiguredPath: boolean;
+  analyzeOnSave: boolean;
 } {
   const config = vscode.workspace.getConfiguration('bigoLens');
   const inspect = config.inspect<string>('enginePath');
@@ -34,6 +35,7 @@ export function readSettings(): {
     cppStandard: config.get<CppStandard>('cppStandard', 'c++20'),
     timeoutMs: config.get<number>('analysisTimeoutMs', 30000),
     isWorkspaceConfiguredPath,
+    analyzeOnSave: config.get<boolean>('analyzeOnSave', false),
   };
 }
 

@@ -12,6 +12,7 @@ BigO Lens is configured in two places:
 | `bigoLens.enginePath` | string | `""` | Absolute path to the `bigolens-engine` executable. Leave it empty to search automatically (see below) |
 | `bigoLens.cppStandard` | `c++11` \| `c++14` \| `c++17` \| `c++20` \| `c++23` | `c++20` | Language standard used to parse the source |
 | `bigoLens.analysisTimeoutMs` | number (1000–600000) | `30000` | How long to wait for the engine before terminating it |
+| `bigoLens.analyzeOnSave` | boolean | `false` | Automatically re-analyze C++ files on save, with debouncing and cancellation of in-flight processes |
 
 Example user `settings.json`:
 
@@ -19,7 +20,8 @@ Example user `settings.json`:
 {
   "bigoLens.enginePath": "/home/you/src/bigo-lens/build/release/engine/bigolens-engine",
   "bigoLens.cppStandard": "c++17",
-  "bigoLens.analysisTimeoutMs": 60000
+  "bigoLens.analysisTimeoutMs": 60000,
+  "bigoLens.analyzeOnSave": true
 }
 ```
 

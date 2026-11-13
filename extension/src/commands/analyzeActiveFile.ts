@@ -55,18 +55,26 @@ export function normalizeLanguageId(id: string): string {
   }
 }
 
-export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void> {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || !SUPPORTED_LANGUAGES.has(editor.document.languageId)) {
-    void vscode.window.showWarningMessage(
-      'BigO Lens: open a supported file (C++, Python, Java, Rust, JavaScript, TypeScript) to analyze.',
-    );
+export interface AnalyzeDocumentOptions {
+  abortSignal?: AbortSignal;
+  showInformation?: boolean;
+}
+
+export async function analyzeDocument(
+  document: vscode.TextDocument,
+  deps: AnalyzeDependencies,
+  options?: AnalyzeDocumentOptions,
+): Promise<void> {
+  if (!SUPPORTED_LANGUAGES.has(document.languageId)) {
     return;
   }
-  const document = editor.document;
   const client = createEngineClient(deps);
   if (typeof client === 'string') {
-    void vscode.window.showErrorMessage(`BigO Lens: ${client}`);
+    if (options?.showInformation !== false) {
+      void vscode.window.showErrorMessage(`BigO Lens: ${client}`);
+    } else {
+      deps.output.appendLine(`BigO Lens: ${client}`);
+    }
     return;
   }
 
@@ -83,9 +91,11 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
         deps.output.appendLine(`  ${e}`);
       });
       deps.output.show(true);
-      void vscode.window.showErrorMessage(
-        'BigO Lens: the constraints file is invalid; see the BigO Lens output.',
-      );
+      if (options?.showInformation !== false) {
+        void vscode.window.showErrorMessage(
+          'BigO Lens: the constraints file is invalid; see the BigO Lens output.',
+        );
+      }
       return;
     }
     deps.diagnostics.clearConstraints(sidecarUri);
@@ -103,81 +113,115 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
     cppStandard: language === 'cpp' ? readSettings().cppStandard : undefined,
   });
 
-  await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Window, title: 'BigO Lens: analyzing', cancellable: true },
-    async (_progress, token) => {
-      const abort = new AbortController();
-      const subscription = token.onCancellationRequested(() => {
+  const runAnalysis = async (token?: vscode.CancellationToken): Promise<void> => {
+    const abort = new AbortController();
+    const sub = token?.onCancellationRequested(() => {
+      abort.abort();
+    });
+    if (options?.abortSignal) {
+      if (options.abortSignal.aborted) {
         abort.abort();
-      });
-      try {
-        const response = await client.send(request, abort.signal);
-        deps.diagnostics.publish(
-          document.uri,
-          isAnalyzeResults(response.results) ? response.results : null,
-          response.diagnostics,
+      } else {
+        options.abortSignal.addEventListener(
+          'abort',
+          () => {
+            abort.abort();
+          },
+          { once: true },
         );
-        if (response.status === 'error') {
-          if (sidecarUri) {
-            const constraintsErrors = response.errors.filter(
-              (e): e is typeof e & { path: string } =>
-                typeof e.path === 'string' && e.path.startsWith('/constraints'),
-            );
-            if (constraintsErrors.length > 0) {
-              try {
-                const sidecarBytes = await vscode.workspace.fs.readFile(sidecarUri);
-                const sidecarText = new TextDecoder().decode(sidecarBytes);
-                const sidecarDiagnostics = constraintsErrors.map((e) => {
-                  const relPath = e.path.replace(/^\/constraints/, '');
-                  return {
-                    message: e.message,
-                    path: relPath,
-                    range: findJsonPointerRange(sidecarText, relPath),
-                  };
-                });
-                deps.diagnostics.publishConstraints(sidecarUri, sidecarDiagnostics);
-              } catch {
-                // Ignore failure to read sidecar text
-              }
+      }
+    }
+    try {
+      const response = await client.send(request, abort.signal);
+      deps.diagnostics.publish(
+        document.uri,
+        isAnalyzeResults(response.results) ? response.results : null,
+        response.diagnostics,
+      );
+      if (response.status === 'error') {
+        if (sidecarUri) {
+          const constraintsErrors = response.errors.filter(
+            (e): e is typeof e & { path: string } =>
+              typeof e.path === 'string' && e.path.startsWith('/constraints'),
+          );
+          if (constraintsErrors.length > 0) {
+            try {
+              const sidecarBytes = await vscode.workspace.fs.readFile(sidecarUri);
+              const sidecarText = new TextDecoder().decode(sidecarBytes);
+              const sidecarDiagnostics = constraintsErrors.map((e) => {
+                const relPath = e.path.replace(/^\/constraints/, '');
+                return {
+                  message: e.message,
+                  path: relPath,
+                  range: findJsonPointerRange(sidecarText, relPath),
+                };
+              });
+              deps.diagnostics.publishConstraints(sidecarUri, sidecarDiagnostics);
+            } catch {
+              // Ignore failure to read sidecar text
             }
           }
-          const message = response.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
-          deps.output.appendLine(`Analysis failed: ${message}`);
-          deps.tree.show(undefined);
-          void vscode.window.showErrorMessage(`BigO Lens: ${message}`);
-          return;
         }
-        if (isAnalyzeResults(response.results)) {
-          const snapshot = {
-            uri: document.uri,
-            displayPath,
-            results: response.results,
-            engineVersion: response.engine.version,
-          };
-          deps.tree.show({
-            uri: document.uri,
-            results: response.results,
-            engineVersion: response.engine.version,
-          });
-          deps.onResults?.(snapshot);
-          if (!constraints) {
-            void vscode.window.showInformationMessage(
-              'BigO Lens: analysis done without constraints, so workloads are unknown. Use "Edit Constraints" to add them.',
-            );
-          }
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        deps.output.appendLine(`Engine failure: ${message}`);
-        if (err instanceof EngineError && err.stderr) {
-          deps.output.appendLine(err.stderr);
-        }
-        if (!(err instanceof EngineError && err.kind === 'cancelled')) {
+        const message = response.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
+        deps.output.appendLine(`Analysis failed: ${message}`);
+        deps.tree.show(undefined);
+        if (options?.showInformation !== false) {
           void vscode.window.showErrorMessage(`BigO Lens: ${message}`);
         }
-      } finally {
-        subscription.dispose();
+        return;
       }
-    },
-  );
+      if (isAnalyzeResults(response.results)) {
+        const snapshot = {
+          uri: document.uri,
+          displayPath,
+          results: response.results,
+          engineVersion: response.engine.version,
+        };
+        deps.tree.show({
+          uri: document.uri,
+          results: response.results,
+          engineVersion: response.engine.version,
+        });
+        deps.onResults?.(snapshot);
+        if (!constraints && options?.showInformation !== false) {
+          void vscode.window.showInformationMessage(
+            'BigO Lens: analysis done without constraints, so workloads are unknown. Use "Edit Constraints" to add them.',
+          );
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      deps.output.appendLine(`Engine failure: ${message}`);
+      if (err instanceof EngineError && err.stderr) {
+        deps.output.appendLine(err.stderr);
+      }
+      if (!(err instanceof EngineError && err.kind === 'cancelled') && options?.showInformation !== false) {
+        void vscode.window.showErrorMessage(`BigO Lens: ${message}`);
+      }
+    } finally {
+      sub?.dispose();
+    }
+  };
+
+  if (options?.showInformation === false) {
+    await runAnalysis();
+  } else {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'BigO Lens: analyzing', cancellable: true },
+      async (_progress, token) => {
+        await runAnalysis(token);
+      },
+    );
+  }
+}
+
+export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || !SUPPORTED_LANGUAGES.has(editor.document.languageId)) {
+    void vscode.window.showWarningMessage(
+      'BigO Lens: open a supported file (C++, Python, Java, Rust, JavaScript, TypeScript) to analyze.',
+    );
+    return;
+  }
+  await analyzeDocument(editor.document, deps, { showInformation: true });
 }

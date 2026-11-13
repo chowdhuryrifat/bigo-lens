@@ -898,7 +898,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-505: Opt-in re-analysis on save
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-104
@@ -910,8 +910,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: saves of C++ files.
 
 **Acceptance criteria.**
-- [ ] It is off by default.
-- [ ] Rapid saves spawn at most one concurrent engine per file.
+- [x] It is off by default.
+- [x] Rapid saves spawn at most one concurrent engine per file.
 
 **Test cases.** Unit tests for the debounce and cancel logic.
 
