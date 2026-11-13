@@ -14,6 +14,7 @@ export interface AnalyzeDependencies extends ExtensionServices {
   tree: ResultsTreeProvider;
   diagnostics: DiagnosticsPublisher;
   onResults?: (snapshot: {
+    uri: vscode.Uri;
     displayPath: string;
     results: import('../models/protocol').AnalyzeResults;
     engineVersion: string;
@@ -148,6 +149,7 @@ export async function analyzeActiveFile(deps: AnalyzeDependencies): Promise<void
         }
         if (isAnalyzeResults(response.results)) {
           const snapshot = {
+            uri: document.uri,
             displayPath,
             results: response.results,
             engineVersion: response.engine.version,

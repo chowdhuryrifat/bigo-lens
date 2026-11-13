@@ -148,6 +148,55 @@ export const ViewColumn = {
   Two: 2,
 } as const;
 
+export const StatusBarAlignment = {
+  Left: 1,
+  Right: 2,
+} as const;
+
+export class MarkdownString {
+  public value = '';
+  public isTrusted = false;
+
+  constructor(value = '', isTrusted = false) {
+    this.value = value;
+    this.isTrusted = isTrusted;
+  }
+
+  appendMarkdown(value: string): this {
+    this.value += value;
+    return this;
+  }
+}
+
+export class MockStatusBarItem {
+  public alignment: number;
+  public priority: number;
+  public text = '';
+  public tooltip: unknown = '';
+  public command?: string;
+  public name?: string;
+  public isVisible = false;
+  public isDisposed = false;
+
+  constructor(alignment = 2, priority = 0) {
+    this.alignment = alignment;
+    this.priority = priority;
+  }
+
+  show(): void {
+    this.isVisible = true;
+  }
+
+  hide(): void {
+    this.isVisible = false;
+  }
+
+  dispose(): void {
+    this.isDisposed = true;
+    this.isVisible = false;
+  }
+}
+
 export const TextEditorRevealType = {
   Default: 0,
   InCenter: 1,
@@ -186,6 +235,9 @@ export interface NavigationRecord {
 export const navigationRecords: NavigationRecord[] = [];
 
 export const window = {
+  createStatusBarItem: (alignment = 2, priority = 0): MockStatusBarItem => {
+    return new MockStatusBarItem(alignment, priority);
+  },
   activeTextEditor: undefined as
     | {
         document: { uri: MockUri };

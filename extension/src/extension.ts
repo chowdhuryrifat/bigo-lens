@@ -11,6 +11,7 @@ import type { ExtensionServices } from './services/context';
 import { ensureBundledEngineExecutable } from './services/engineLocator';
 import type { ReportSnapshot } from './services/reportHtml';
 import { SchemaValidator } from './services/schemaValidator';
+import { StatusBarManager } from './services/statusBar';
 
 export const COMMANDS = {
   analyzeActiveFile: 'bigoLens.analyzeActiveFile',
@@ -28,12 +29,19 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const tree = new ResultsTreeProvider();
   const diagnostics = new DiagnosticsPublisher();
+  const statusBar = new StatusBarManager();
   let lastSnapshot: ReportSnapshot | undefined;
+
+  statusBar.onActiveEditorChange(vscode.window.activeTextEditor);
 
   context.subscriptions.push(
     output,
     tree,
     diagnostics,
+    statusBar,
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      statusBar.onActiveEditorChange(editor);
+    }),
     vscode.window.registerTreeDataProvider('bigoLens.results', tree),
     vscode.commands.registerCommand(COMMANDS.analyzeActiveFile, () =>
       analyzeActiveFile({
@@ -42,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
         diagnostics,
         onResults: (snapshot) => {
           lastSnapshot = snapshot;
+          statusBar.updateResults(snapshot.uri, snapshot.results, snapshot.displayPath);
           if (ReportPanel.currentPanel) {
             ReportPanel.currentPanel.updateSnapshot(snapshot);
           }

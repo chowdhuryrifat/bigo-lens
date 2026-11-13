@@ -878,7 +878,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-504: Status-bar summary
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P3
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-502
@@ -890,7 +890,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: C++ editors only.
 
 **Acceptance criteria.**
-- [ ] The item is hidden for non-C++ files and updates after each analysis.
+- [x] The item is hidden for non-C++ files and updates after each analysis.
 
 **Test cases.** Unit tests for the text formatting, and a smoke test.
 
