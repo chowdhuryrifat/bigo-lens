@@ -35,84 +35,148 @@
   function showBanner(type, message, list) {
     if (!validationBanner) return;
     validationBanner.className = `validation-banner banner-${type}`;
-    let html = `<strong>${message}</strong>`;
+    validationBanner.replaceChildren();
+
+    const strong = document.createElement('strong');
+    strong.textContent = message;
+    validationBanner.appendChild(strong);
+
     if (list && list.length > 0) {
-      html += '<ul>';
+      const ul = document.createElement('ul');
       for (const item of list) {
-        html += `<li>${escapeHtml(item)}</li>`;
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
       }
-      html += '</ul>';
+      validationBanner.appendChild(ul);
     }
-    validationBanner.innerHTML = html;
     validationBanner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   function hideBanner() {
     if (!validationBanner) return;
     validationBanner.className = 'validation-banner hidden';
-    validationBanner.innerHTML = '';
+    validationBanner.replaceChildren();
   }
 
-  function escapeHtml(str) {
-    if (typeof str !== 'string') return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  // --- Rendering Rows ---
+  // --- Rendering Rows with Safe DOM Construction (No innerHTML) ---
 
   function renderVariableRow(v) {
+    if (!tbodyVariables) return;
     const tr = document.createElement('tr');
     tr.className = 'row-variable';
 
-    const name = v && v.name ? v.name : '';
-    const min = v && v.min !== undefined ? v.min : '';
-    const max = v && v.max !== undefined ? v.max : '';
-    const detected = v && v.detectedInSource ? v.detectedInSource : '';
+    const tdName = document.createElement('td');
+    const inputName = document.createElement('input');
+    inputName.type = 'text';
+    inputName.className = 'table-input input-var-name';
+    inputName.placeholder = 'e.g. n, v.size()';
+    inputName.value = v && v.name ? v.name : '';
+    tdName.appendChild(inputName);
 
-    tr.innerHTML = `
-      <td><input type="text" class="table-input input-var-name" placeholder="e.g. n, v.size()" value="${escapeHtml(name)}" /></td>
-      <td><input type="text" class="table-input input-var-min" placeholder="e.g. 1" value="${escapeHtml(min)}" /></td>
-      <td><input type="text" class="table-input input-var-max" placeholder="e.g. 2e5, 200000" value="${escapeHtml(max)}" /></td>
-      <td><span class="detected-label">${detected ? `<span class="badge badge-detected">${escapeHtml(detected)}</span>` : '<span style="opacity: 0.5;">—</span>'}</span></td>
-      <td><button type="button" class="btn btn-danger btn-delete-row" title="Delete variable">&times;</button></td>
-    `;
+    const tdMin = document.createElement('td');
+    const inputMin = document.createElement('input');
+    inputMin.type = 'text';
+    inputMin.className = 'table-input input-var-min';
+    inputMin.placeholder = 'e.g. 1';
+    inputMin.value = v && v.min !== undefined ? v.min : '';
+    tdMin.appendChild(inputMin);
 
-    tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+    const tdMax = document.createElement('td');
+    const inputMax = document.createElement('input');
+    inputMax.type = 'text';
+    inputMax.className = 'table-input input-var-max';
+    inputMax.placeholder = 'e.g. 2e5, 200000';
+    inputMax.value = v && v.max !== undefined ? v.max : '';
+    tdMax.appendChild(inputMax);
+
+    const tdDetected = document.createElement('td');
+    const detectedSpan = document.createElement('span');
+    detectedSpan.className = 'detected-label';
+    if (v && v.detectedInSource) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-detected';
+      badge.textContent = v.detectedInSource;
+      detectedSpan.appendChild(badge);
+    } else {
+      const empty = document.createElement('span');
+      empty.style.opacity = '0.5';
+      empty.textContent = '—';
+      detectedSpan.appendChild(empty);
+    }
+    tdDetected.appendChild(detectedSpan);
+
+    const tdActions = document.createElement('td');
+    const btnDelete = document.createElement('button');
+    btnDelete.type = 'button';
+    btnDelete.className = 'btn btn-danger btn-delete-row';
+    btnDelete.title = 'Delete variable';
+    btnDelete.textContent = '×';
+    btnDelete.addEventListener('click', () => {
       tr.remove();
       updateQuickaddChips();
     });
+    tdActions.appendChild(btnDelete);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdMin);
+    tr.appendChild(tdMax);
+    tr.appendChild(tdDetected);
+    tr.appendChild(tdActions);
 
     tbodyVariables.appendChild(tr);
   }
 
   function renderSumRow(sc) {
+    if (!tbodySum) return;
     const tr = document.createElement('tr');
     tr.className = 'row-sum';
 
-    const v = sc && sc.variable ? sc.variable : '';
-    const cv = sc && sc.count_variable ? sc.count_variable : '';
-    const total = sc && sc.max_total ? sc.max_total : '';
+    const tdVar = document.createElement('td');
+    const inputVar = document.createElement('input');
+    inputVar.type = 'text';
+    inputVar.className = 'table-input input-sum-var';
+    inputVar.placeholder = 'e.g. n';
+    inputVar.value = sc && sc.variable ? sc.variable : '';
+    tdVar.appendChild(inputVar);
 
-    tr.innerHTML = `
-      <td><input type="text" class="table-input input-sum-var" placeholder="e.g. n" value="${escapeHtml(v)}" /></td>
-      <td><input type="text" class="table-input input-sum-count" placeholder="e.g. t" value="${escapeHtml(cv)}" /></td>
-      <td><input type="text" class="table-input input-sum-total" placeholder="e.g. 2e5, 200000" value="${escapeHtml(total)}" /></td>
-      <td><button type="button" class="btn btn-danger btn-delete-row" title="Delete sum constraint">&times;</button></td>
-    `;
+    const tdCount = document.createElement('td');
+    const inputCount = document.createElement('input');
+    inputCount.type = 'text';
+    inputCount.className = 'table-input input-sum-count';
+    inputCount.placeholder = 'e.g. t';
+    inputCount.value = sc && sc.count_variable ? sc.count_variable : '';
+    tdCount.appendChild(inputCount);
 
-    tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+    const tdTotal = document.createElement('td');
+    const inputTotal = document.createElement('input');
+    inputTotal.type = 'text';
+    inputTotal.className = 'table-input input-sum-total';
+    inputTotal.placeholder = 'e.g. 2e5, 200000';
+    inputTotal.value = sc && sc.max_total ? sc.max_total : '';
+    tdTotal.appendChild(inputTotal);
+
+    const tdActions = document.createElement('td');
+    const btnDelete = document.createElement('button');
+    btnDelete.type = 'button';
+    btnDelete.className = 'btn btn-danger btn-delete-row';
+    btnDelete.title = 'Delete sum constraint';
+    btnDelete.textContent = '×';
+    btnDelete.addEventListener('click', () => {
       tr.remove();
     });
+    tdActions.appendChild(btnDelete);
+
+    tr.appendChild(tdVar);
+    tr.appendChild(tdCount);
+    tr.appendChild(tdTotal);
+    tr.appendChild(tdActions);
 
     tbodySum.appendChild(tr);
   }
 
   function renderProductRow(pc) {
+    if (!tbodyProduct) return;
     const tr = document.createElement('tr');
     tr.className = 'row-product';
 
@@ -120,22 +184,43 @@
     if (pc && pc.variables) {
       varsStr = Array.isArray(pc.variables) ? pc.variables.join(', ') : pc.variables;
     }
-    const maxProd = pc && pc.max_product ? pc.max_product : '';
 
-    tr.innerHTML = `
-      <td><input type="text" class="table-input input-prod-vars" placeholder="e.g. n, m" value="${escapeHtml(varsStr)}" /></td>
-      <td><input type="text" class="table-input input-prod-max" placeholder="e.g. 1e6, 1000000" value="${escapeHtml(maxProd)}" /></td>
-      <td><button type="button" class="btn btn-danger btn-delete-row" title="Delete product constraint">&times;</button></td>
-    `;
+    const tdVars = document.createElement('td');
+    const inputVars = document.createElement('input');
+    inputVars.type = 'text';
+    inputVars.className = 'table-input input-prod-vars';
+    inputVars.placeholder = 'e.g. n, m';
+    inputVars.value = varsStr;
+    tdVars.appendChild(inputVars);
 
-    tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+    const tdMax = document.createElement('td');
+    const inputMax = document.createElement('input');
+    inputMax.type = 'text';
+    inputMax.className = 'table-input input-prod-max';
+    inputMax.placeholder = 'e.g. 1e6, 1000000';
+    inputMax.value = pc && pc.max_product ? pc.max_product : '';
+    tdMax.appendChild(inputMax);
+
+    const tdActions = document.createElement('td');
+    const btnDelete = document.createElement('button');
+    btnDelete.type = 'button';
+    btnDelete.className = 'btn btn-danger btn-delete-row';
+    btnDelete.title = 'Delete product constraint';
+    btnDelete.textContent = '×';
+    btnDelete.addEventListener('click', () => {
       tr.remove();
     });
+    tdActions.appendChild(btnDelete);
+
+    tr.appendChild(tdVars);
+    tr.appendChild(tdMax);
+    tr.appendChild(tdActions);
 
     tbodyProduct.appendChild(tr);
   }
 
   function renderLinearRow(lc) {
+    if (!tbodyLinear) return;
     const tr = document.createElement('tr');
     tr.className = 'row-linear';
 
@@ -145,17 +230,37 @@
         .map(([k, val]) => `${k}: ${val}`)
         .join(', ');
     }
-    const bound = lc && lc.bound ? lc.bound : '';
 
-    tr.innerHTML = `
-      <td><input type="text" class="table-input input-lin-coeffs" placeholder="e.g. n: 1, m: 2" value="${escapeHtml(coeffStr)}" /></td>
-      <td><input type="text" class="table-input input-lin-bound" placeholder="e.g. 300000" value="${escapeHtml(bound)}" /></td>
-      <td><button type="button" class="btn btn-danger btn-delete-row" title="Delete linear constraint">&times;</button></td>
-    `;
+    const tdCoeffs = document.createElement('td');
+    const inputCoeffs = document.createElement('input');
+    inputCoeffs.type = 'text';
+    inputCoeffs.className = 'table-input input-lin-coeffs';
+    inputCoeffs.placeholder = 'e.g. n: 1, m: 2';
+    inputCoeffs.value = coeffStr;
+    tdCoeffs.appendChild(inputCoeffs);
 
-    tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+    const tdBound = document.createElement('td');
+    const inputBound = document.createElement('input');
+    inputBound.type = 'text';
+    inputBound.className = 'table-input input-lin-bound';
+    inputBound.placeholder = 'e.g. 300000';
+    inputBound.value = lc && lc.bound ? lc.bound : '';
+    tdBound.appendChild(inputBound);
+
+    const tdActions = document.createElement('td');
+    const btnDelete = document.createElement('button');
+    btnDelete.type = 'button';
+    btnDelete.className = 'btn btn-danger btn-delete-row';
+    btnDelete.title = 'Delete linear constraint';
+    btnDelete.textContent = '×';
+    btnDelete.addEventListener('click', () => {
       tr.remove();
     });
+    tdActions.appendChild(btnDelete);
+
+    tr.appendChild(tdCoeffs);
+    tr.appendChild(tdBound);
+    tr.appendChild(tdActions);
 
     tbodyLinear.appendChild(tr);
   }
@@ -163,7 +268,7 @@
   // --- Quickadd chips for detected variables ---
 
   function updateQuickaddChips() {
-    if (!quickaddBox || !quickaddChips) return;
+    if (!quickaddBox || !quickaddChips || !tbodyVariables) return;
     const detected = state.detectedVariables || [];
     if (detected.length === 0) {
       quickaddBox.classList.add('hidden');
@@ -187,7 +292,7 @@
     }
 
     quickaddBox.classList.remove('hidden');
-    quickaddChips.innerHTML = '';
+    quickaddChips.replaceChildren();
 
     unconfigured.forEach((dv) => {
       const btn = document.createElement('button');
@@ -240,59 +345,67 @@
 
   function gatherFormState() {
     const variables = [];
-    tbodyVariables.querySelectorAll('.row-variable').forEach((r) => {
-      const name = (r.querySelector('.input-var-name')?.value || '').trim();
-      const min = (r.querySelector('.input-var-min')?.value || '').trim();
-      const max = (r.querySelector('.input-var-max')?.value || '').trim();
-      const detected = r.querySelector('.detected-label')?.textContent?.trim() || undefined;
-      if (name) {
-        variables.push({
-          name,
-          min: min || undefined,
-          max: max || undefined,
-          detectedInSource: detected && detected !== '—' ? detected : undefined,
-        });
-      }
-    });
+    if (tbodyVariables) {
+      tbodyVariables.querySelectorAll('.row-variable').forEach((r) => {
+        const name = (r.querySelector('.input-var-name')?.value || '').trim();
+        const min = (r.querySelector('.input-var-min')?.value || '').trim();
+        const max = (r.querySelector('.input-var-max')?.value || '').trim();
+        const detected = r.querySelector('.detected-label')?.textContent?.trim() || undefined;
+        if (name) {
+          variables.push({
+            name,
+            min: min || undefined,
+            max: max || undefined,
+            detectedInSource: detected && detected !== '—' ? detected : undefined,
+          });
+        }
+      });
+    }
 
     const sumConstraints = [];
-    tbodySum.querySelectorAll('.row-sum').forEach((r) => {
-      const variable = (r.querySelector('.input-sum-var')?.value || '').trim();
-      const count_variable = (r.querySelector('.input-sum-count')?.value || '').trim();
-      const max_total = (r.querySelector('.input-sum-total')?.value || '').trim();
-      if (variable || count_variable || max_total) {
-        sumConstraints.push({ variable, count_variable, max_total });
-      }
-    });
+    if (tbodySum) {
+      tbodySum.querySelectorAll('.row-sum').forEach((r) => {
+        const variable = (r.querySelector('.input-sum-var')?.value || '').trim();
+        const count_variable = (r.querySelector('.input-sum-count')?.value || '').trim();
+        const max_total = (r.querySelector('.input-sum-total')?.value || '').trim();
+        if (variable || count_variable || max_total) {
+          sumConstraints.push({ variable, count_variable, max_total });
+        }
+      });
+    }
 
     const productConstraints = [];
-    tbodyProduct.querySelectorAll('.row-product').forEach((r) => {
-      const rawVars = (r.querySelector('.input-prod-vars')?.value || '').trim();
-      const max_product = (r.querySelector('.input-prod-max')?.value || '').trim();
-      if (rawVars || max_product) {
-        const vars = rawVars
-          .split(/[,\s]+/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        productConstraints.push({ variables: vars, max_product });
-      }
-    });
+    if (tbodyProduct) {
+      tbodyProduct.querySelectorAll('.row-product').forEach((r) => {
+        const rawVars = (r.querySelector('.input-prod-vars')?.value || '').trim();
+        const max_product = (r.querySelector('.input-prod-max')?.value || '').trim();
+        if (rawVars || max_product) {
+          const vars = rawVars
+            .split(/[,\s]+/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          productConstraints.push({ variables: vars, max_product });
+        }
+      });
+    }
 
     const linearConstraints = [];
-    tbodyLinear.querySelectorAll('.row-linear').forEach((r) => {
-      const rawCoeffs = (r.querySelector('.input-lin-coeffs')?.value || '').trim();
-      const bound = (r.querySelector('.input-lin-bound')?.value || '').trim();
-      if (rawCoeffs || bound) {
-        const coefficients = {};
-        rawCoeffs.split(',').forEach((part) => {
-          const [k, v] = part.split(':').map((s) => s.trim());
-          if (k && v) {
-            coefficients[k] = v;
-          }
-        });
-        linearConstraints.push({ coefficients, bound });
-      }
-    });
+    if (tbodyLinear) {
+      tbodyLinear.querySelectorAll('.row-linear').forEach((r) => {
+        const rawCoeffs = (r.querySelector('.input-lin-coeffs')?.value || '').trim();
+        const bound = (r.querySelector('.input-lin-bound')?.value || '').trim();
+        if (rawCoeffs || bound) {
+          const coefficients = {};
+          rawCoeffs.split(',').forEach((part) => {
+            const [k, v] = part.split(':').map((s) => s.trim());
+            if (k && v) {
+              coefficients[k] = v;
+            }
+          });
+          linearConstraints.push({ coefficients, bound });
+        }
+      });
+    }
 
     const timeLimitMs = (inputTime?.value || '').trim();
     const memoryLimitMb = (inputMemory?.value || '').trim();
@@ -352,9 +465,12 @@
     });
   });
 
-  // --- Handle Extension Messages ---
+  // --- Handle Extension Messages with Origin Check ---
 
   window.addEventListener('message', (event) => {
+    if (event.origin !== window.origin && event.origin !== location.origin) {
+      return;
+    }
     const message = event.data;
     if (!message || typeof message.type !== 'string') return;
 
