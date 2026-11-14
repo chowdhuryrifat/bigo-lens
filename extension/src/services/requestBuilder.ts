@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { PROTOCOL_VERSION, type Constraints, type CppStandard, type EngineRequest } from '../models/protocol';
+import {
+  PROTOCOL_VERSION,
+  type BenchmarkConfig,
+  type Constraints,
+  type CppStandard,
+  type EngineRequest,
+} from '../models/protocol';
 
 export function newRequestId(): string {
   return `vscode-${randomUUID()}`;
@@ -30,6 +36,19 @@ export function analyzeRequest(input: AnalyzeInput, requestId: string = newReque
   }
   if (input.constraints) {
     request.constraints = input.constraints;
+  }
+  return request;
+}
+
+export interface BenchmarkInput extends AnalyzeInput {
+  benchmarkConfig?: BenchmarkConfig | undefined;
+}
+
+export function benchmarkRequest(input: BenchmarkInput, requestId: string = newRequestId()): EngineRequest {
+  const request = analyzeRequest(input, requestId);
+  request.action = 'benchmark';
+  if (input.benchmarkConfig) {
+    request.benchmark_config = input.benchmarkConfig;
   }
   return request;
 }

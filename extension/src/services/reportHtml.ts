@@ -1,6 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
-import type { AnalyzeResults, BoundStatus, Confidence, Finding, Quantity } from '../models/protocol';
+import type {
+  AnalyzeResults,
+  BenchmarkData,
+  BoundStatus,
+  Confidence,
+  Finding,
+  Quantity,
+} from '../models/protocol';
 import { formatBytes, formatCount, statusLabel } from './format';
 
 export interface ReportSnapshot {
@@ -499,6 +506,247 @@ function renderFeasibilitySection(feasibility: AnalyzeResults['feasibility']): s
   `;
 }
 
+export function formatMilliseconds(ms: number): string {
+  if (ms < 0.001) {
+    return `${(ms * 1000).toFixed(1)} \u00b5s`;
+  }
+  if (ms < 1) {
+    return `${ms.toFixed(3)} ms`;
+  }
+  if (ms < 1000) {
+    return `${ms.toFixed(2)} ms`;
+  }
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+export function formatSizeRecord(record: Record<string, number>): string {
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    return '-';
+  }
+  return entries.map(([k, v]) => `${k} = ${formatCount(v)}`).join(', ');
+}
+
+/**
+ * Pure SVG runtime-range chart plotting measured sample points with MAD error bars,
+ * empirical fit curve, and target extrapolated range.
+ */
+export function renderRuntimeRangeChart(benchmark: BenchmarkData): string {
+  if (benchmark.samples.length === 0) {
+    return '';
+  }
+
+  const sortedSamples = [...benchmark.samples].sort((a, b) => {
+    const aVal = Object.values(a.size)[0] ?? 0;
+    const bVal = Object.values(b.size)[0] ?? 0;
+    return aVal - bVal;
+  });
+
+  const ext = benchmark.extrapolated_runtime;
+  const targetSizeVal =
+    Object.values(ext.target_size)[0] ??
+    Object.values(sortedSamples[sortedSamples.length - 1]?.size ?? {})[0] ??
+    0;
+
+  const sampleSizes = sortedSamples.map((s) => Object.values(s.size)[0] ?? 0);
+  const maxSampleX = Math.max(...sampleSizes, 1);
+  const maxX = Math.max(targetSizeVal, maxSampleX) * 1.05;
+
+  const sampleMaxTimes = sortedSamples.map((s) => s.wall_time_median_ms + s.wall_time_mad_ms);
+  const maxMeasuredY = Math.max(...sampleMaxTimes, 0.001);
+  const maxY = Math.max(ext.max_ms, maxMeasuredY) * 1.1;
+
+  const leftPad = 70;
+  const rightPad = 30;
+  const topPad = 30;
+  const bottomPad = 45;
+  const chartW = 600;
+  const chartH = 260;
+  const plotW = chartW - leftPad - rightPad;
+  const plotH = chartH - topPad - bottomPad;
+
+  const scaleX = (x: number): number => leftPad + (Math.max(0, x) / maxX) * plotW;
+  const scaleY = (y: number): number => topPad + plotH - (Math.max(0, y) / maxY) * plotH;
+
+  const yAxisZero = scaleY(0);
+  const yAxisMid = scaleY(maxY / 2);
+  const yAxisTop = scaleY(maxY);
+
+  const xAxisZero = scaleX(0);
+  const xAxisMid = scaleX(maxX / 2);
+  const xAxisRight = scaleX(maxX);
+
+  const points = sortedSamples.map((s) => {
+    const sizeVal = Object.values(s.size)[0] ?? 0;
+    return {
+      x: scaleX(sizeVal),
+      y: scaleY(s.wall_time_median_ms),
+      sizeVal,
+      median: s.wall_time_median_ms,
+      mad: s.wall_time_mad_ms,
+    };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+
+  const targetX = scaleX(targetSizeVal);
+  const targetY = scaleY(ext.central_ms);
+  const targetMinY = scaleY(ext.min_ms);
+  const targetMaxY = scaleY(ext.max_ms);
+
+  const lastPoint = points[points.length - 1];
+  const extrapPathD = lastPoint
+    ? `M ${lastPoint.x.toFixed(1)} ${lastPoint.y.toFixed(1)} L ${targetX.toFixed(1)} ${targetY.toFixed(1)}`
+    : '';
+
+  const errorBars = points
+    .map((p) => {
+      const topY = scaleY(p.median + p.mad);
+      const botY = scaleY(Math.max(0, p.median - p.mad));
+      return `
+        <line x1="${p.x.toFixed(1)}" y1="${topY.toFixed(1)}" x2="${p.x.toFixed(1)}" y2="${botY.toFixed(1)}" class="chart-error-bar" />
+        <line x1="${(p.x - 3).toFixed(1)}" y1="${topY.toFixed(1)}" x2="${(p.x + 3).toFixed(1)}" y2="${topY.toFixed(1)}" class="chart-error-cap" />
+        <line x1="${(p.x - 3).toFixed(1)}" y1="${botY.toFixed(1)}" x2="${(p.x + 3).toFixed(1)}" y2="${botY.toFixed(1)}" class="chart-error-cap" />
+      `;
+    })
+    .join('');
+
+  const circles = points
+    .map(
+      (p) => `
+        <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" class="chart-sample-point">
+          <title>Size: ${formatCount(p.sizeVal)}, Median: ${formatMilliseconds(p.median)} \u00b1 ${formatMilliseconds(p.mad)} (MAD)</title>
+        </circle>
+      `,
+    )
+    .join('');
+
+  return `
+    <div class="chart-container benchmark-chart-container">
+      <h3 class="chart-title">Empirical Runtime &amp; Extrapolation Curve</h3>
+      <svg
+        viewBox="0 0 ${chartW} ${chartH}"
+        class="benchmark-chart-svg"
+        role="img"
+        aria-label="Empirical runtime and extrapolated range chart"
+      >
+        <!-- Grid lines -->
+        <line x1="${leftPad}" y1="${yAxisZero.toFixed(1)}" x2="${(leftPad + plotW).toFixed(1)}" y2="${yAxisZero.toFixed(1)}" class="chart-axis-line" />
+        <line x1="${leftPad}" y1="${yAxisMid.toFixed(1)}" x2="${(leftPad + plotW).toFixed(1)}" y2="${yAxisMid.toFixed(1)}" class="chart-grid-line" />
+        <line x1="${leftPad}" y1="${yAxisTop.toFixed(1)}" x2="${(leftPad + plotW).toFixed(1)}" y2="${yAxisTop.toFixed(1)}" class="chart-grid-line" />
+        <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${(topPad + plotH).toFixed(1)}" class="chart-axis-line" />
+
+        <!-- Y Axis Labels -->
+        <text x="${(leftPad - 8).toFixed(1)}" y="${yAxisZero.toFixed(1)}" class="chart-tick-label" text-anchor="end" dominant-baseline="middle">0 ms</text>
+        <text x="${(leftPad - 8).toFixed(1)}" y="${yAxisMid.toFixed(1)}" class="chart-tick-label" text-anchor="end" dominant-baseline="middle">${formatMilliseconds(maxY / 2)}</text>
+        <text x="${(leftPad - 8).toFixed(1)}" y="${yAxisTop.toFixed(1)}" class="chart-tick-label" text-anchor="end" dominant-baseline="middle">${formatMilliseconds(maxY)}</text>
+        <text x="${leftPad}" y="${(topPad - 12).toFixed(1)}" class="chart-axis-header">Wall Time</text>
+
+        <!-- X Axis Labels -->
+        <text x="${xAxisZero.toFixed(1)}" y="${(yAxisZero + 18).toFixed(1)}" class="chart-tick-label" text-anchor="middle">0</text>
+        <text x="${xAxisMid.toFixed(1)}" y="${(yAxisZero + 18).toFixed(1)}" class="chart-tick-label" text-anchor="middle">${formatCount(Math.round(maxX / 2))}</text>
+        <text x="${xAxisRight.toFixed(1)}" y="${(yAxisZero + 18).toFixed(1)}" class="chart-tick-label" text-anchor="middle">${formatCount(Math.round(maxX))}</text>
+        <text x="${(leftPad + plotW / 2).toFixed(1)}" y="${(yAxisZero + 36).toFixed(1)}" class="chart-axis-header" text-anchor="middle">Input Size (n)</text>
+
+        <!-- Curve: measured samples -->
+        <path d="${pathD}" class="chart-fit-line" />
+
+        <!-- Error bars and sample dots -->
+        ${errorBars}
+        ${circles}
+
+        <!-- Curve: extrapolated to target -->
+        ${extrapPathD ? `<path d="${extrapPathD}" class="chart-extrapolated-line" stroke-dasharray="4,4" />` : ''}
+
+        <!-- Target range bar and caps -->
+        <line x1="${targetX.toFixed(1)}" y1="${targetMinY.toFixed(1)}" x2="${targetX.toFixed(1)}" y2="${targetMaxY.toFixed(1)}" class="chart-target-range-bar" stroke-dasharray="2,2" />
+        <line x1="${(targetX - 4).toFixed(1)}" y1="${targetMinY.toFixed(1)}" x2="${(targetX + 4).toFixed(1)}" y2="${targetMinY.toFixed(1)}" class="chart-target-cap" />
+        <line x1="${(targetX - 4).toFixed(1)}" y1="${targetMaxY.toFixed(1)}" x2="${(targetX + 4).toFixed(1)}" y2="${targetMaxY.toFixed(1)}" class="chart-target-cap" />
+
+        <!-- Target central point -->
+        <polygon
+          points="${targetX.toFixed(1)},${(targetY - 5).toFixed(1)} ${(targetX + 5).toFixed(1)},${targetY.toFixed(1)} ${targetX.toFixed(1)},${(targetY + 5).toFixed(1)} ${(targetX - 5).toFixed(1)},${targetY.toFixed(1)}"
+          class="chart-target-diamond"
+        >
+          <title>Extrapolated Target Size: ${formatCount(targetSizeVal)}, Central: ${formatMilliseconds(ext.central_ms)} [${formatMilliseconds(ext.min_ms)} \u2013 ${formatMilliseconds(ext.max_ms)}]</title>
+        </polygon>
+
+        <!-- Legend -->
+        <g class="chart-legend" transform="translate(${(leftPad + 10).toFixed(1)}, ${(topPad + 10).toFixed(1)})">
+          <circle cx="5" cy="5" r="4" class="chart-sample-point" />
+          <text x="14" y="8" class="chart-legend-text">Measured (Median \u00b1 MAD)</text>
+          <polygon points="175,0 180,5 175,10 170,5" class="chart-target-diamond" />
+          <text x="188" y="8" class="chart-legend-text">Extrapolated Range</text>
+        </g>
+      </svg>
+    </div>
+  `;
+}
+
+export function renderBenchmarkSection(benchmark: BenchmarkData): string {
+  const chartHtml = renderRuntimeRangeChart(benchmark);
+  const isIsolated = benchmark.isolated;
+  const isoBadgeClass = isIsolated ? 'badge-isolated' : 'badge-unisolated';
+  const isoBadgeText = isIsolated
+    ? `ISOLATED (${escapeHtml(benchmark.isolation_level)})`
+    : `NOT SANDBOXED (${escapeHtml(benchmark.isolation_level)})`;
+
+  const fit = benchmark.empirical_fit;
+  const ext = benchmark.extrapolated_runtime;
+
+  let warningsHtml = '';
+  if (benchmark.warnings.length > 0) {
+    warningsHtml = `
+      <div class="benchmark-warnings">
+        ${benchmark.warnings.map((w) => `<div class="alert alert-warning">${escapeHtml(w)}</div>`).join('')}
+      </div>
+    `;
+  }
+
+  let ambiguousHtml = '';
+  if (fit.ambiguous) {
+    ambiguousHtml = `
+      <div class="alert alert-warning">
+        <strong>Ambiguous Growth Fit:</strong> Multiple complexity models fit the empirical timings similarly. Extrapolated runtimes carry higher uncertainty.
+      </div>
+    `;
+  }
+
+  const maxRssBytes = benchmark.samples.reduce((max, s) => Math.max(max, s.peak_rss_bytes), 0);
+
+  return `
+    <section class="report-section benchmark-section" id="section-benchmark">
+      <div class="section-header-row">
+        <h2>Empirical Benchmark &amp; Runtime Range</h2>
+        <span class="badge ${isoBadgeClass}">${isoBadgeText}</span>
+      </div>
+      ${warningsHtml}
+      ${ambiguousHtml}
+      <div class="benchmark-cards-grid">
+        <div class="benchmark-card">
+          <span class="benchmark-card-title">Extrapolated Runtime</span>
+          <div class="benchmark-card-main">${formatMilliseconds(ext.central_ms)}</div>
+          <div class="benchmark-card-sub">Range: ${formatMilliseconds(ext.min_ms)} &ndash; ${formatMilliseconds(ext.max_ms)}</div>
+          <div class="benchmark-card-detail">Target: ${formatSizeRecord(ext.target_size)} &bull; Extrapolated: ${ext.extrapolated ? 'Yes' : 'No'}</div>
+        </div>
+        <div class="benchmark-card">
+          <span class="benchmark-card-title">Empirical Growth Fit</span>
+          <div class="benchmark-card-main">${escapeHtml(fit.model ?? 'unknown')}</div>
+          <div class="benchmark-card-sub">R&sup2; = ${fit.r_squared.toFixed(4)} &bull; RSS = ${fit.rss.toExponential(3)}</div>
+          <div class="benchmark-card-detail">Slope: ${fit.slope.toFixed(4)} &bull; Intercept: ${fit.intercept.toFixed(4)}</div>
+        </div>
+        <div class="benchmark-card">
+          <span class="benchmark-card-title">Peak Memory (RSS)</span>
+          <div class="benchmark-card-main">${formatBytes(maxRssBytes)}</div>
+          <div class="benchmark-card-sub">Measured across ${benchmark.samples.length} sample sizes</div>
+          <div class="benchmark-card-detail">Max RSS across benchmark child runs</div>
+        </div>
+      </div>
+      ${chartHtml}
+    </section>
+  `;
+}
+
 /**
  * Generates the complete HTML document for the BigO Lens report webview with strict CSP and escaping.
  */
@@ -536,6 +784,7 @@ export function renderReportHtml(options: RenderReportHtmlOptions): string {
     const memFeas = escapeHtml(snap.results.feasibility.memory.status.toUpperCase().replace('_', ' '));
 
     const chartHtml = renderWorkloadChart(findings, summary.max_time_workload);
+    const benchmarkHtml = snap.results.benchmark ? renderBenchmarkSection(snap.results.benchmark) : '';
     const memoryHtml = renderMemorySection(snap.results.memory);
     const feasibilityHtml = renderFeasibilitySection(snap.results.feasibility);
 
@@ -548,7 +797,10 @@ export function renderReportHtml(options: RenderReportHtmlOptions): string {
       <header class="report-header">
         <div class="header-main">
           <h1>BigO Lens Report &mdash; <span class="file-path">${escapeHtml(snap.displayPath)}</span></h1>
-          <span class="engine-badge">Engine v${escapeHtml(snap.engineVersion)}</span>
+          <div class="header-actions">
+            <span class="engine-badge">Engine v${escapeHtml(snap.engineVersion)}</span>
+            <button class="action-btn benchmark-btn" data-action="run-benchmark" title="Run benchmark on local machine (requires explicit confirmation)">Run Benchmark</button>
+          </div>
         </div>
         <div class="summary-bar">
           <div class="summary-item">
@@ -579,6 +831,7 @@ export function renderReportHtml(options: RenderReportHtmlOptions): string {
       </header>
       <main class="report-main">
         ${chartHtml}
+        ${benchmarkHtml}
         ${feasibilityHtml}
         ${memoryHtml}
         <section class="report-section findings-section" id="section-findings">

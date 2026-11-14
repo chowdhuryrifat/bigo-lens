@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { PROTOCOL_VERSION } from '../../src/models/protocol';
-import { analyzeRequest, capabilitiesRequest, newRequestId } from '../../src/services/requestBuilder';
+import {
+  analyzeRequest,
+  benchmarkRequest,
+  capabilitiesRequest,
+  newRequestId,
+} from '../../src/services/requestBuilder';
 
 describe('requestBuilder', () => {
   it('builds a capabilities request without a source', () => {
@@ -70,5 +75,35 @@ describe('requestBuilder', () => {
     const id = newRequestId();
     assert.match(id, /^[A-Za-z0-9_.:-]{1,128}$/);
     assert.notEqual(id, newRequestId());
+  });
+
+  it('builds a benchmark request with action benchmark and optional benchmarkConfig', () => {
+    const request = benchmarkRequest(
+      {
+        displayPath: 'src/bench.cpp',
+        content: 'int main(){}',
+        constraints: { time_limit_ms: 2000 },
+        cppStandard: 'c++20',
+        benchmarkConfig: {
+          sizes: [1000, 2000, 4000],
+          repetitions: 5,
+          warmup: 2,
+          per_run_timeout_ms: 3000,
+          allow_unsandboxed: false,
+        },
+      },
+      'bench-1',
+    );
+    assert.equal(request.action, 'benchmark');
+    assert.equal(request.request_id, 'bench-1');
+    assert.deepEqual(request.source, { path: 'src/bench.cpp', language: 'cpp', content: 'int main(){}' });
+    assert.deepEqual(request.constraints, { time_limit_ms: 2000 });
+    assert.deepEqual(request.benchmark_config, {
+      sizes: [1000, 2000, 4000],
+      repetitions: 5,
+      warmup: 2,
+      per_run_timeout_ms: 3000,
+      allow_unsandboxed: false,
+    });
   });
 });

@@ -234,13 +234,113 @@ export interface NavigationRecord {
 
 export const navigationRecords: NavigationRecord[] = [];
 
+export const ProgressLocation = {
+  SourceControl: 1,
+  Window: 10,
+  Notification: 15,
+} as const;
+
+export class EventEmitter<T> {
+  private readonly listeners: ((e: T) => unknown)[] = [];
+
+  public readonly event = (listener: (e: T) => unknown): { dispose: () => void } => {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        const index = this.listeners.indexOf(listener);
+        if (index >= 0) {
+          this.listeners.splice(index, 1);
+        }
+      },
+    };
+  };
+
+  public fire(data: T): void {
+    for (const listener of this.listeners) {
+      listener(data);
+    }
+  }
+
+  public dispose(): void {
+    this.listeners.length = 0;
+  }
+}
+
+export class TreeItem {
+  public iconPath?: unknown;
+  public description?: string;
+  public tooltip?: unknown;
+  public command?: unknown;
+
+  constructor(
+    public label: string,
+    public collapsibleState?: unknown,
+  ) {}
+}
+
+export const TreeItemCollapsibleState = {
+  None: 0,
+  Collapsed: 1,
+  Expanded: 2,
+} as const;
+
+export class ThemeIcon {
+  constructor(public id: string) {}
+}
+
+export const DiagnosticSeverity = {
+  Error: 0,
+  Warning: 1,
+  Information: 2,
+  Hint: 3,
+} as const;
+
+export class Diagnostic {
+  public source?: string;
+  public code?: unknown;
+
+  constructor(
+    public range: Range,
+    public message: string,
+    public severity?: unknown,
+  ) {}
+}
+
+export class MockDiagnosticCollection {
+  public readonly entries = new Map<string, Diagnostic[]>();
+
+  public set(uri: { fsPath?: string; toString?: () => string }, diagnostics: Diagnostic[]): void {
+    const key = uri.fsPath ?? (typeof uri.toString === 'function' ? uri.toString() : '');
+    this.entries.set(key, diagnostics);
+  }
+
+  public delete(uri: { fsPath?: string; toString?: () => string }): void {
+    const key = uri.fsPath ?? (typeof uri.toString === 'function' ? uri.toString() : '');
+    this.entries.delete(key);
+  }
+
+  public clear(): void {
+    this.entries.clear();
+  }
+
+  public dispose(): void {
+    this.clear();
+  }
+}
+
+export const languages = {
+  createDiagnosticCollection: (): MockDiagnosticCollection => {
+    return new MockDiagnosticCollection();
+  },
+};
+
 export const window = {
   createStatusBarItem: (alignment = 2, priority = 0): MockStatusBarItem => {
     return new MockStatusBarItem(alignment, priority);
   },
   activeTextEditor: undefined as
     | {
-        document: { uri: MockUri };
+        document: { uri: MockUri; languageId?: string; fileName?: string; getText?: () => string };
         selection?: Selection;
         revealRange?: (range: Range, type: unknown) => void;
       }
@@ -278,9 +378,56 @@ export const window = {
   showInformationMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
   showWarningMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
   showErrorMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
+  withProgress: <R>(
+    _options: { location: unknown; title?: string; cancellable?: boolean },
+    task: (
+      progress: { report: (value: { message?: string; increment?: number }) => void },
+      token: {
+        isCancellationRequested: boolean;
+        onCancellationRequested: (listener: () => void) => { dispose: () => void };
+      },
+    ) => Promise<R>,
+  ): Promise<R> => {
+    let cancelFn: (() => void) | undefined;
+    const token = {
+      isCancellationRequested: false,
+      onCancellationRequested: (listener: () => void) => {
+        cancelFn = listener;
+        return {
+          dispose: () => {
+            cancelFn = undefined;
+          },
+        };
+      },
+      cancel: () => {
+        token.isCancellationRequested = true;
+        cancelFn?.();
+      },
+    };
+    return task({ report: () => {} }, token);
+  },
 };
 
 export const workspace = {
+  isTrusted: true,
   workspaceFolders: undefined as { uri: MockUri }[] | undefined,
   openTextDocument: (uri: MockUri) => Promise.resolve({ uri }),
+  asRelativePath: (uri: unknown): string => {
+    if (typeof uri === 'object' && uri !== null && 'fsPath' in uri) {
+      return (uri as { fsPath: string }).fsPath;
+    }
+    return String(uri);
+  },
+  getConfiguration: () => ({
+    get: <T>(_section: string, defaultValue?: T): T | undefined => defaultValue,
+    inspect: <T>() => ({
+      globalValue: undefined as T | undefined,
+      workspaceValue: undefined as T | undefined,
+      workspaceFolderValue: undefined as T | undefined,
+    }),
+  }),
+};
+
+export const commands = {
+  executeCommand: (): Promise<unknown> => Promise.resolve(undefined),
 };

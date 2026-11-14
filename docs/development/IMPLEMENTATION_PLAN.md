@@ -62,10 +62,10 @@ flowchart TD
   BL501["BL-501 Constraint form UI"]:::todo
   BL502["BL-502 Webview + CSP"]:::done
   BL503["BL-503 Explanations + charts"]:::done
-  BL504["BL-504 Status bar"]:::todo
-  BL505["BL-505 Re-analyze on save"]:::todo
-  BL506["BL-506 Workspace Trust"]:::todo
-  BL507["BL-507 Benchmark controls"]:::todo
+  BL504["BL-504 Status bar"]:::done
+  BL505["BL-505 Re-analyze on save"]:::done
+  BL506["BL-506 Workspace Trust"]:::done
+  BL507["BL-507 Benchmark controls"]:::done
   BL508["BL-508 Accessibility"]:::todo
 
   BL601["BL-601 Validation corpus"]:::todo
@@ -939,7 +939,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-507: Benchmark controls in the UI
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-407, BL-502
@@ -951,9 +951,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the UI only.
 
 **Acceptance criteria.**
-- [ ] A benchmark never starts without explicit confirmation.
-- [ ] Cancel kills the process tree.
-- [ ] The isolation wording matches the platform's actual state.
+- [x] A benchmark never starts without explicit confirmation.
+- [x] Cancel kills the process tree.
+- [x] The isolation wording matches the platform's actual state.
 
 **Test cases.** Unit tests for the confirmation logic, and a smoke test.
 

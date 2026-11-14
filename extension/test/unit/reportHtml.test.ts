@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { AnalyzeResults, Finding } from '../../src/models/protocol';
+import type { AnalyzeResults, BenchmarkData, Finding } from '../../src/models/protocol';
 import {
   buildCspMetaTag,
   escapeHtml,
   explainBoundStatus,
   explainConfidence,
   generateNonce,
+  renderBenchmarkSection,
   renderReportHtml,
+  renderRuntimeRangeChart,
   renderWorkloadChart,
   type ReportSnapshot,
 } from '../../src/services/reportHtml';
@@ -397,5 +399,131 @@ describe('reportHtml - Workload Chart (BL-503)', () => {
       time: null,
     };
     assert.equal(renderWorkloadChart([noTimeFinding], 1000), '');
+  });
+});
+
+describe('reportHtml - Benchmark Section & Runtime-Range Chart (BL-507)', () => {
+  const sampleBenchmark: BenchmarkData = {
+    isolated: false,
+    isolation_level: 'rlimits only',
+    samples: [
+      {
+        size: { n: 1000 },
+        wall_time_median_ms: 0.45,
+        wall_time_mad_ms: 0.04,
+        peak_rss_bytes: 4 * 1024 * 1024,
+        raw_samples_ms: [0.42, 0.45, 0.49],
+      },
+      {
+        size: { n: 2000 },
+        wall_time_median_ms: 0.95,
+        wall_time_mad_ms: 0.08,
+        peak_rss_bytes: 4 * 1024 * 1024,
+        raw_samples_ms: [0.91, 0.95, 1.02],
+      },
+      {
+        size: { n: 4000 },
+        wall_time_median_ms: 1.92,
+        wall_time_mad_ms: 0.12,
+        peak_rss_bytes: 4 * 1024 * 1024,
+        raw_samples_ms: [1.88, 1.92, 2.05],
+      },
+    ],
+    empirical_fit: {
+      model: 'linear',
+      r_squared: 0.9992,
+      rss: 0.00025,
+      slope: 0.00048,
+      intercept: 0.012,
+      ambiguous: false,
+    },
+    extrapolated_runtime: {
+      target_size: { n: 100000 },
+      min_ms: 45.0,
+      central_ms: 48.0,
+      max_ms: 52.0,
+      extrapolated: true,
+    },
+    warnings: ['extrapolated beyond measured range'],
+  };
+
+  it('renders pure SVG runtime-range chart with points, error bars, and target diamond', () => {
+    const chartSvg = renderRuntimeRangeChart(sampleBenchmark);
+
+    assert.ok(chartSvg.includes('<svg'));
+    assert.ok(chartSvg.includes('class="benchmark-chart-svg"'));
+    assert.ok(chartSvg.includes('aria-label="Empirical runtime and extrapolated range chart"'));
+    assert.ok(chartSvg.includes('class="chart-sample-point"'));
+    assert.ok(chartSvg.includes('class="chart-error-bar"'));
+    assert.ok(chartSvg.includes('class="chart-target-diamond"'));
+    assert.ok(chartSvg.includes('class="chart-target-range-bar"'));
+    assert.ok(chartSvg.includes('class="chart-fit-line"'));
+    assert.ok(chartSvg.includes('class="chart-extrapolated-line"'));
+    assert.ok(chartSvg.includes('Wall Time'));
+    assert.ok(chartSvg.includes('Input Size (n)'));
+  });
+
+  it('returns empty string if samples are empty in renderRuntimeRangeChart', () => {
+    const emptyBench: BenchmarkData = {
+      ...sampleBenchmark,
+      samples: [],
+    };
+    assert.equal(renderRuntimeRangeChart(emptyBench), '');
+  });
+
+  it('renders benchmark section with transparent isolation badge, fit metrics, and warnings', () => {
+    const section = renderBenchmarkSection(sampleBenchmark);
+
+    assert.ok(section.includes('Empirical Benchmark &amp; Runtime Range'));
+    assert.ok(section.includes('NOT SANDBOXED (rlimits only)'));
+    assert.ok(section.includes('Extrapolated Runtime'));
+    assert.ok(section.includes('48.00 ms'));
+    assert.ok(section.includes('linear'));
+    assert.ok(section.includes('0.9992'));
+    assert.ok(section.includes('4.00 MiB'));
+    assert.ok(section.includes('extrapolated beyond measured range'));
+  });
+
+  it('renders isolated badge when benchmark.isolated is true', () => {
+    const isolatedBench: BenchmarkData = {
+      ...sampleBenchmark,
+      isolated: true,
+      isolation_level: 'linux-namespaces-seccomp',
+    };
+    const section = renderBenchmarkSection(isolatedBench);
+    assert.ok(section.includes('ISOLATED (linux-namespaces-seccomp)'));
+    assert.ok(section.includes('badge-isolated'));
+  });
+
+  it('renders ambiguous growth fit warning when fit is ambiguous', () => {
+    const ambigBench: BenchmarkData = {
+      ...sampleBenchmark,
+      empirical_fit: {
+        ...sampleBenchmark.empirical_fit,
+        ambiguous: true,
+      },
+    };
+    const section = renderBenchmarkSection(ambigBench);
+    assert.ok(section.includes('Ambiguous Growth Fit'));
+  });
+
+  it('includes Run Benchmark button in report header and benchmark section when present', () => {
+    const results = sampleResults();
+    results.benchmark = sampleBenchmark;
+    const snapshot: ReportSnapshot = {
+      displayPath: 'solution.cpp',
+      results,
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    assert.ok(html.includes('data-action="run-benchmark"'));
+    assert.ok(html.includes('Run Benchmark'));
+    assert.ok(html.includes('id="section-benchmark"'));
+    assert.ok(html.includes('Empirical Benchmark &amp; Runtime Range'));
   });
 });
