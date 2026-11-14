@@ -1,12 +1,21 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
+All notable changes to BigO Lens will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifications/JSON_PROTOCOL.md)).
 
 ## [Unreleased]
 
 ### Added
+
+- Per-platform `.vsix` packages, release signing & provenance, and marketplace publication strategy (BL-603, BL-604, BL-605):
+  - Added ADR 0013 (`docs/architecture/DECISIONS/0013-marketplace-and-open-vsx-publication.md`) establishing distribution strategy targeting Visual Studio Marketplace and Open VSX under publisher `bigolens`, token isolation via GitHub Actions Environment `marketplace` with mandatory manual reviewer approvals, and sovereign GitHub Releases fallback.
+  - Multi-platform packaging in `.github/workflows/release.yml` targeting `linux-x64`, `win32-x64`, `darwin-arm64`, and `darwin-x64`, bundling platform-specific engine binaries and generating standalone engine archives (`.tar.gz` and `.zip`).
+  - Automated SHA-256 checksum generation (`SHA256SUMS.txt`) and SLSA cryptographic build provenance attestations via `actions/attest-build-provenance` across all release artifacts.
+  - Least-privilege marketplace and Open VSX publication job in `.github/workflows/release.yml` scoped to protected `marketplace` environment.
+  - Verification guide in `SECURITY.md` documenting SHA-256 checksum and `gh attestation verify` commands.
 
 - Header parsing cost evaluation and precompiled preamble cache architecture (BL-607):
   - Benchmarking and measurement tool `scripts/benchmark/measure-header-parse.py` measuring Clang syntax-only compilation and AST parse times across five representative C++ suites (minimal baseline, algorithms, containers, I/O streams, and full competitive programming bundle) under cold AST parsing versus Clang precompiled header (PCH) compilation.
@@ -15,180 +24,11 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 - Validation corpus and automated scoring harness (BL-601):
   - Curated validation corpus in `tests/corpus/` containing 20 self-contained representative algorithmic solutions across linear loops, two-pointer loops, sliding windows, multi-level nested loops, grid traversals, triangular summations, logarithmic halving loops, divide-and-conquer recurrences (merge sort, binary search), STL algorithms and containers (`std::sort`, `std::set`), dynamic programming with nested 2D vectors, and unprovable near-miss patterns (Collatz loops, iterative binary search without monotonicity proofs, naive Fibonacci recursion, Euclidean GCD) verifying the Prime Directive.
-  - Machine-readable catalog `tests/corpus/manifest.json` with ground-truth asymptotic classes, bound statuses, and mathematical rationales.
-  - Automated scoring harness in `scripts/test/score-corpus.py` calculating precision, honest unknown/unsupported percentages, and per-pattern metrics, generating structured JSON artifacts and formatted Markdown summaries.
-  - Unit test suite in `scripts/test/test_score_corpus.py` validating metrics calculation, finding extraction, Markdown generation, and synthetic evaluations.
-  - Integrated into CI workflow (`ci.yml`) and `scripts/test/run-all-tests.sh` with automated artifact upload.
+  - Machine-readable manifest `tests/corpus/manifest.json` defining exact ground truth for time/space complexity, constraints, and classification rationales.
+  - Automated scoring CLI `scripts/test/score-corpus.py` reporting accuracy, precision, unprovable rate, and regression detection against manifest with `--fail-on-regression`.
+  - Comprehensive unit test suite `scripts/test/test_score_corpus.py` verifying metric calculation, threshold enforcement, report generation, and CLI exit codes.
+  - Automated CI scoring step in `.github/workflows/ci.yml` and integration into `scripts/test/run-all-tests.sh`.
 
-- Protocol stability review and formal deprecation policy ahead of 1.0 (BL-606):
-  - Formulated and published deprecation lifecycle and client warning policy in `docs/specifications/JSON_PROTOCOL.md §8.1`.
-  - Audited all protocol fields across `analyze`, `capabilities`, and `benchmark` actions, and verified 100% compliance with `shared/schemas/`.
-
-### Changed
-
-- Engine CLI argument parser (`engine/src/main.cpp`): refactored command-line loop from modifying `for` counter inside body to a clean `while` loop, eliminating static analysis loop-counter modification warnings.
-
-- Accessibility review across tree view, webview report, constraint form, and status bar (BL-508). Completes Milestone M5 deliverables:
-  - Screen-reader accessibility: Populates `accessibilityInformation` on all tree items in `ResultsTreeProvider` (sections, findings with full context including ID, line, bound status, confidence, and summary, and detail nodes), and on the status bar item (`StatusBarManager`) with complete analysis summary text.
-  - ARIA landmarks and roles: Implements semantic ARIA attributes throughout webviews, including `role="main"`, `role="region"` with `aria-label` or `aria-labelledby` for summary bar, feasibility cards, memory section, benchmark section, findings section, and detected variables quick-add box.
-  - Table accessibility: Equips all data tables in report and constraint form with proper `<th scope="col">` and `<th scope="row">` headers for assistive technology.
-  - Visual charts: Provides SVG `<title>`, `<desc>`, `role="img"`, and `aria-label` descriptions for both the workload comparison chart and the empirical benchmark runtime-range chart.
-  - Keyboard navigation: Ensures every interactive element (navigation buttons, action buttons, table delete buttons, inputs, and quick-add chips) is keyboard-focusable with prominent `:focus-visible` styling (`outline: 2px solid var(--vscode-focusBorder)`).
-  - High-contrast mode support: Implements high-contrast stylesheet rules targeting `.vscode-high-contrast`, `.vscode-high-contrast-light`, and `@media (forced-colors: active)` with distinct borders (`--vscode-contrastBorder`).
-  - Status not conveyed by colour alone: Uses distinctive border shapes (solid for pass/proven, dashed for warn/estimated, double for fail/unsupported/critical alert, dotted for unknown) alongside textual labels, icons, and status badges so that analysis states are clear in monochrome and high-contrast themes.
-  - Unit test suites covering ARIA landmark generation, table scopes, status bar accessibility labels, and tree item accessibility information.
-
-- Benchmark controls in the UI (BL-507). Adds user-initiated `bigoLens.runBenchmark` command and empirical runtime-range webview controls. Features:
-  - Explicit modal confirmation dialog stating the platform's honest isolation level (e.g. Linux namespaces & seccomp where available, otherwise transparently labeled not sandboxed with resource limits only) prior to executing user code (`THREAT_MODEL.md §4.2`, `BENCHMARK_SPECIFICATION.md §11`).
-  - Strict Workspace Trust enforcement: benchmarking is blocked immediately in untrusted workspaces (`!vscode.workspace.isTrusted`).
-  - Progress notification with cancellation support: canceling aborts the engine client and terminates the child process tree via `SIGKILL`.
-  - Pure SVG runtime-range chart plotting empirical sample points with MAD error bars, fitted growth curve, and extrapolated target range bar with uncertainty interval.
-  - Empirical benchmark summary cards displaying extrapolated runtime (min, central, max), empirical growth fit metrics ($R^2$, RSS, slope, intercept), ambiguous fit alert, and measured peak RSS.
-  - Interactive "Run Benchmark" action button in report webview header with typed webview messaging (`validateWebviewMessage`).
-  - Comprehensive unit test suites covering platform isolation wording, modal confirmation refusal and acceptance, cancellation abort, structured error handling (`not_implemented`), SVG chart rendering, and report integration.
-
-- Constraint form UI (BL-501). Adds visual form webview for configuring sidecar constraints (`bigoLens.configureConstraints`). Features:
-  - Lossless two-way synchronization between the form state and the sidecar `.bigolens.json` document.
-  - Number normalizer parsing standard integers, scientific notation (e.g. `2e5`), and power multiplication expressions (e.g. `2*10^5`), rejecting non-integers and numbers exceeding $10^{18}$.
-  - Tables for variable bounds, sum constraints (`[used]`), product constraints (`[validated]`), and linear constraints (`[validated]`).
-  - Automatic detection and display of unconstrained source variables from the last analysis findings, with quick-add chips.
-  - Inline validation against schema and semantic rules (bounds ordering `min <= max`, variable declaration requirements, valid identifier syntax).
-  - Webview infrastructure adhering strictly to `THREAT_MODEL.md §4.10` with strict CSP (`default-src 'none'`, per-load random nonce, no `unsafe-inline`), strictly validated `postMessage` protocol, and local resource root restrictions.
-  - Action buttons to "Validate", "Save to Sidecar", and "Save & Analyze" directly from the form.
-  - Comprehensive unit test coverage for numeric parser, round-trip model conversions, validation rules, webview messaging, HTML generation, and panel lifecycle.
-
-- Opt-in re-analysis on save (BL-505). Adds `bigoLens.analyzeOnSave` setting (default `false`) and `SaveAnalysisCoordinator` in `extension/src/services/saveAnalysis.ts`. Automatically runs analysis on save for C++ files with debouncing (300 ms window) and in-flight engine process cancellation via `AbortController`, ensuring rapid saves spawn at most one concurrent engine process per file. Keeps errors non-intrusive (no popups during background auto-analysis on save). Documents configuration in `CONFIGURATION.md` and adds unit tests verifying debounce and cancellation behavior.
-
-- Status-bar summary (BL-504). Adds status-bar item (`StatusBarManager`) positioned on the right that shows dominant asymptotic complexity, workload bound, and feasibility status icons (`BigO: O(n log n) (≤ 1.200e5) · time ? · mem ✓`). Clicking the status-bar item opens the detailed webview report (`bigoLens.openReport`). Displays rich Markdown hover tooltip with dominant finding breakdown, exact workload, and feasibility reasoning. Automatically hidden for non-C++ editors and updates whenever an analysis completes. Adds comprehensive unit tests covering formatting, indicators, tooltip generation, and editor lifecycle transitions.
-
-- Workspace Trust support (BL-506). Declares `capabilities.untrustedWorkspaces` (`supported: "limited"`, `restrictedConfigurations: ["bigoLens.enginePath"]`) in the extension manifest. Enforces in `locateEngine` and `readSettings` that any workspace-level or folder-level `bigoLens.enginePath` override is strictly ignored in untrusted workspaces, preventing malicious repositories from executing attacker-controlled binaries upon workspace open. Machine/user-level settings and `BIGOLENS_ENGINE_PATH` remain trusted. Updates `THREAT_MODEL.md §4.4` to Implemented and documents trust behavior in `CONFIGURATION.md`.
-
-- Explanations and charts in the report webview (BL-503). Renders comprehensive static-analysis finding cards showing expression, asymptotic class, variables, and workload with evaluation method (`pointwise-maxima`, etc.), missing variable bounds, and assumptions. Separately explains bound status (`Proven`, `Estimated`, `Unknown`, `Unsupported`) and confidence (`High`, `Medium`, `Low`, `None`) with distinct dimension boxes so users understand mathematical guarantees versus analyzer certainty. Prominently displays Unknown and Unsupported results with alert boxes highlighting the root causes (data-dependent loop termination, open mathematical problems, missing variable constraints). Adds memory analysis lower bounds (static storage, largest local array, estimated minimum, and items table) and feasibility assessment sections (time and memory status with explanations). Renders a pure inline SVG workload-versus-budget horizontal bar chart using bundled assets only (zero external libraries, strictly CSP-compliant). Adds unit test suite with 100% pass rate.
-
-- Webview report infrastructure with strict Content Security Policy (BL-502). Adds webview panel for displaying complexity analysis reports (`bigoLens.openReport`), configured with a strict Content Security Policy (`default-src 'none'`, fresh 128-bit cryptographically random nonce on each load for scripts and inline styles, local asset origins for stylesheets, images, and fonts, no `unsafe-eval`, no `unsafe-inline`), `localResourceRoots` strictly restricted to `[vscode.Uri.joinPath(extensionUri, 'media')]`, strict HTML escaping (`escapeHtml`) on all dynamic source identifiers and analysis strings preventing script injection, and schema-validated `postMessage` communication rejecting unknown message types and malformed payloads. Adds UI contributions (command palette, editor title action, welcome view button) and unit test coverage. Updates `THREAT_MODEL.md §4.10` to Implemented.
-
-- Differential test harness (BL-408). Adds `crates/bigolens-engine/src/differential.rs` and the `differential-harness` binary (`crates/bigolens-engine/src/bin/differential_harness.rs`) comparing static complexity classes against measured empirical growth models (Linear, Linearithmic, Quadratic) across controlled fixtures. A confident disagreement fails the harness; ambiguous fits are reported without failing; deliberately wrong expected classes fail the harness. Produces structured JSON result artifacts and runs in CI via `actions/upload-artifact@v4`. Exposes `bigolens-engine` as a library (`src/lib.rs`).
-
-- `benchmark` protocol action, growth model fitting, and time feasibility (BL-407). Bumps protocol version to 1.1 with backward compatibility for 1.0 requests. Implements end-to-end `benchmark` action compiling source in sandboxed RAII temporary workspaces, generating deterministic inputs with `crates/bigolens-core/src/generator.rs`, executing repeated runs across scaling sizes with Linux namespace/seccomp isolation and rlimits, fitting candidate growth models (Linear, Linearithmic, Quadratic) using ordinary least squares in `crates/bigolens-core/src/growth_fit.rs`, extrapolating runtime ranges to constraint maxima, and evaluating empirical time feasibility (likely safe, borderline, high risk) according to `FEASIBILITY_MODEL.md §3`. Updates request and response schemas, example responses, and documentation.
-
-- Linux container isolation with unprivileged user/network/mount namespaces and seccomp-bpf (BL-405). Adds `crates/bigolens-engine/src/isolation.rs` implementing unprivileged user namespaces (`CLONE_NEWUSER`), private network namespaces (`CLONE_NEWNET`), and mount namespaces (`CLONE_NEWNS`) that obscure host `$HOME` directories with private tmpfs. Adds seccomp-bpf filter that blocks unauthorized process creation (`execve`), network operations (`socket`, `connect`, `bind`, `listen`, `accept`), and tracing (`ptrace`). Adds fail-closed policy requiring explicit `allow_unsandboxed: true` override when isolation is unavailable on the host.
-- Linux benchmark runner with timeouts, resource limits (rlimits), process groups, and sample statistics (BL-404). Adds `crates/bigolens-engine/src/runner.rs` executing benchmark target binaries with monotonic wall-clock and CPU timeouts (`RLIMIT_CPU`), virtual memory ceiling (`RLIMIT_AS`), output caps (`RLIMIT_FSIZE`), file descriptor limits (`RLIMIT_NOFILE`), process count ceilings (`RLIMIT_NPROC`), and process-group isolation (`setpgid(0, 0)`) with an RAII kill-tree (`kill(-pgid, SIGKILL)`). Adds sample statistics in `crates/bigolens-core/src/statistics.rs` computing robust median, MAD, and relative spread across warmup and repeated runs, and reports honest `"not sandboxed"` transparency warnings until full Linux namespace isolation lands.
-- Constraint-driven input generators (BL-403). Adds `crates/bigolens-core/src/generator.rs` with declarative input-format schemas (`SingleInteger`, `Array`, `TestCases`, `SumConstrainedCases`), a seeded 64-bit deterministic SplitMix64 pseudo-random generator, strict bound and byte-limit checking, and sum-constrained test case distribution.
-- Fix clang-tidy readability braces in `clang_frontend.cpp` to ensure Code Quality CI passing on GitHub Actions.
-
-- Compiler adapter with fixed argv (BL-402). Adds `crates/bigolens-engine/src/compiler.rs` discovering system C++ compilers (`clang++`, `g++`, `cl.exe`), compiling benchmark source with fixed argument vectors (validated C++ standards and optimization levels), flag escape protection (`--` and path prefixing), and structured diagnostic parsing from stderr without shell execution.
-
-- Benchmark isolation architecture and specification (BL-401). Defines ADR 0014 selecting platform-specific isolation (Linux unprivileged user/mount/network/PID namespaces, seccomp-bpf, rlimits, and process-group kill-tree; Windows Job Objects with restricted tokens; macOS process limits with explicit "not sandboxed" labelling; fail-closed policy requiring explicit `allow_unsandboxed: true`). Finalizes the Protocol 1.1 `benchmark` action request and response schema in `BENCHMARK_SPECIFICATION.md` and updates `THREAT_MODEL.md`.
-
-- Multi-language complexity analysis expansion in Rust (`bigolens-syntax`). Expands language support to compute algorithmic complexity and memory allocations regardless of source language across C++, Python, Java, Rust, and JavaScript/TypeScript:
-  - `java.rs`: parses Java standard `for` loops, enhanced `for` loops (`arr.length`), logarithmic `while` loops, recursive divide-and-conquer (`mergeSort`) and linear decrement methods, and array/heap allocations (`new int[n]`).
-  - `rust_lang.rs`: parses Rust range `for` loops (`0..n`, `0..=n`), triangular nested loops, halving `while` loops, recursive functions (`merge_sort`), and vector allocations (`vec![0; n]`, `Vec::with_capacity(n)`).
-  - `javascript.rs`: parses JavaScript/TypeScript standard `for` loops, `for..in`/`for..of` loops, halving `while` loops, recursive functions, and heap allocations (`new Array(n)`).
-  - `cpp.rs`: adds C++ recursion analysis and dynamic heap allocation analysis (`new int[n]`).
-  - Updates `request.schema.json` to allow all supported language identifiers in `source.language`.
-  - Updates VS Code extension activation events and language normalization to support analyzing Java, Rust, JavaScript, and TypeScript files directly from the editor.
-
-- Map validation errors to positions in sidecar files (BL-307). When ajv or the engine reports validation errors or inverted ranges (`{min: 10, max: 1}`) with a JSON-pointer path under `/constraints`, the extension maps the pointer using an RFC 6901 JSON scanner to source lines/columns and publishes diagnostics directly on `<file>.bigolens.json`. Underlines keys, handles array indices, and decodes escaped pointer tokens.
-
-- End-to-end sum-constrained extension integration tests (BL-306). Adds end-to-end integration and smoke test coverage for `09_sum_constrained_test_cases.cpp` with a sidecar constraints file ($t \le 10, n \le 2\cdot 10^5, \sum n \le 2\cdot 10^5$), verifying $4\cdot 10^{10}$ workload derivation with the `sum-constraint-packing` method.
-- Memory estimates for node-based containers (BL-305). Loops inserting into `std::set` or `std::map` report estimated memory based on libstdc++/libc++ 32-byte node overhead plus value size, marked as `Estimated` with an explicit assumption string (noting upper bounds on conditional insertions and excluded allocator overhead).
-- Rust engine architecture (ADR 0012). Re-architects the standalone engine as a modular Cargo workspace in `crates/`:
-  - `crates/bigolens-core`: Pure Rust analysis core (`#![forbid(unsafe_code)]`) with domain models, symbolic expression trees (`Arc<Expr>`), numerical evaluator, constraints optimizer, memory model, and feasibility assessment.
-  - `crates/bigolens-engine`: CLI binary using `clap` providing JSON protocol IPC matching the versioned JSON protocol 1.0.
-  - Updates `RULES.md`, `AGENTS.md`, `ARCHITECTURE.md`, `SYSTEM_DESIGN.md`, and `CODING_STANDARDS.md` to establish Rust engineering rules and toolchain standards.
-- Self-contained Linux x64 `.vsix` (BL-108). The engine is linked statically against Clang/LLVM
-  (`BIGOLENS_STATIC_CLANG`, `package` preset) and ships Clang's builtin headers, which the engine finds next to
-  its executable. Adds `scripts/build/package-extension.sh`, `scripts/test/verify-vsix.sh` and the CI job
-  `package-linux` (ADR 0011).
-- `bigolens-engine --version` prints the Clang resource directory in use.
-- The VS Code smoke suite can run an end-to-end analysis (`BIGOLENS_E2E_REQUIRE_ENGINE=1`) against an unpacked
-  `.vsix` (`BIGOLENS_E2E_EXTENSION_PATH`).
-- Project foundation: CMake build with presets, C++20 native engine, TypeScript VS Code extension, documentation,
-  GitHub Actions workflows, issue and pull request templates.
-- JSON protocol 1.0 with request/response JSON schemas, request validation in the engine and response validation
-  in the extension; example requests with responses generated by the engine.
-- Engine CLI `bigolens-engine` with request size, source size and nesting-depth limits; every failure is reported as
-  a structured error response.
-- Symbolic expression trees, a numeric evaluator with overflow and budget detection, and asymptotic (O) derivation.
-- Clang LibTooling frontend (partial): counted, nested, sequential, triangular, logarithmic and square-root `for`
-  loops; `while (t--)` test-case loops; countdown/halving `while` loops; range-based `for`; direct recursion
-  detection (reported as unsupported); global/static storage, local arrays and sized `std::vector` buffers.
-- Constraint workload evaluation with variable bounds and sum constraints across test cases.
-- Conservative memory estimate (lower bounds) and time/memory feasibility classification.
-- STL operation cost table (data only).
-- Benchmark statistics (median, MAD) and growth-model fitting (linear, linearithmic, quadratic) library.
-- VS Code commands to analyze the active file, edit a constraints sidecar file and show engine capabilities; an
-  Analysis Results tree view and Problems-panel diagnostics.
-
-- Loop-form coverage fixtures (BL-201): `tests/fixtures/cpp/forms/` has positive and near-miss cases for every
-  supported form and status rule, checked by the table-driven `tests/integration/loop_forms_test.cpp`.
-
-- Recurrence extraction for direct recursion (BL-202). The extracted recurrence is reported first in the
-  finding's limitations, e.g. `T(n) = 2 T(n/2) + O(n), where n = hi - lo` for merge sort. Adds the solver interface
-  `complexity::RecurrenceSolver` (no solvers yet) and the capability `recurrence_extraction: partial`.
-- `complexity::substitute` for symbolic expressions.
-- Common recurrence solving (BL-203). Solves divide-and-conquer recurrences `T(n) = a·T(n/b) + Θ(n^k (log n)^p)`
-  via `MasterTheoremSolver` and linear decrement recurrences `T(n) = T(n - c) + f(n)` via `LinearDecrementSolver`.
-  Recursive binary search resolves to `O(log n)` (Proven), merge sort to `O(n log n)` (Proven), and recursive linear sum
-  to `O(n)` (Proven). Multiple subtractive recursion (Fibonacci) remains unsupported with an explicit limitation.
-  Updates the `capabilities.features.recursion_analysis` value from `unsupported` to `partial`.
-- Interprocedural cost propagation for non-recursive callees (BL-204). LoopAnalyzer analyzes function bodies of
-  non-recursive callees defined in the main file and substitutes actual arguments into the callee cost, reporting
-  `O(m n)` when a loop over `n` calls an `O(m)` helper, and composing summations when the loop index is passed.
-  Recursive callees and mutual call cycles fall back to Estimated with explicit limitations.
-  Updates `capabilities.features.interprocedural_analysis` value from `unsupported` to `partial`.
-- STL cost model application to recognized container operations and top-level algorithms (BL-205).
-  Applies asymptotic costs from `estimation::stlCostTable()` (`std::vector`, `std::map`, `std::set`, `std::priority_queue`,
-  `std::unordered_map`, `std::sort`, `std::lower_bound`) to calls in loop nests and top-level algorithms, binding
-  container sizes from constructors, pointer/iterator offsets, parameters, or loop trips. Hash containers report average
-  $O(1)$ with `estimated` status and hash-collision limitation. Handled STL calls are no longer listed as unincluded costs.
-  Updates `capabilities.features.stl_cost_model` value from `data_only` to `partial`.
-- Two-pointer while loop analysis (BL-206). Recognizes two-pointer convergence loops (`while (l < r)`, `while (r > l)`,
-  `while (l <= r)`, `while (r >= l)`) where every path through the body performs exactly one of `++l`/`l++`/`l += 1` or
-  `--r`/`r--`/`r -= 1`, and nothing else writes to `l` or `r`. Resolves `l0` and `r0` from declarations, assignments, or
-  parameters, yielding $O(n)$ Proven bounds. Binary search and data-dependent termination shapes remain Unknown.
-- M2 specifications, capabilities, and examples synchronization (BL-207). Synchronized engine capabilities
-  (`recursion_analysis: partial`, `interprocedural_analysis: partial`, `stl_cost_model: partial`) across protocol schemas,
-  architecture documents, limitations, and regenerated example response fixtures.
-- Product constraint workload tightening (BL-301). Tightens monotone product expressions under product constraints
-  (e.g. `n·m ≤ 10^6` on grid loops with `n, m ≤ 10^6`), giving 10^6 with method `product-constraint-bound` and status
-  `proven`. Soundly bounds higher-power products (such as `n²·m` to 10^12) by substituting the product bound and
-  evaluating remaining factors at individual maxima. Non-monotone expressions and expressions where variables are not
-  multiplied together fall back with an assumption. Removes the "product constraint not used" assumption when applied.
-- Linear constraint workload tightening (BL-302). Tightens workloads for monotone expressions under linear constraints
-  (Σ cᵢ·xᵢ ≤ B with non-negative coefficients). Iteratively tightens individual variable maxima, bounds linear combinations
-  in addition, and solves closed-form constrained optimization for products along line segments (e.g. `n·m` with `n + m ≤ 2·10^5`
-  gives 10^10, Proven, method `linear-constraint-bound`). Negative coefficients and non-monotone expressions emit an assumption
-  and fall back soundly.
-- Multiple sum constraints and separable packing (BL-303). Supports multiple sum constraints sharing one count variable
-  (e.g. `Σn ≤ S₁` and `Σm ≤ S₂` over `t`). When the per-case cost is separable into additive terms depending on at most one
-  sum-constrained variable, each term is packed independently, giving exact tight bounds (e.g. `t·(n + m)` evaluates to
-  `S₁ + S₂`, Proven, method `sum-constraint-packing`). Interacting non-separable shapes fall back soundly to
-  `sum-constraint-cases`, while sum constraints with different count variables remain Unknown with an explicit limitation.
-- Memory estimates for nested vectors and sized strings (BL-304). Extends storage analysis in the C++ engine to recognize
-  2D vectors (e.g. `std::vector<std::vector<T>> v(n, std::vector<T>(m))`), reporting symbolic bytes
-  `n·m·sizeof(T) + n·sizeof(vector<T>)` using Clang type layout, and sized `std::string` constructions (`std::string s(n, 'c')`)
-  reporting symbolic bytes `n`. Both emit `Estimated` bounds with explicit exclusions for allocator overhead and container
-  bookkeeping. Triggers `high_risk` memory feasibility when evaluations exceed configured memory limits.
-
-### Changed
-
-- Development and CI tooling now require Node.js 22 (Node 20 reached end of life). Upgraded ESLint 10,
-  `@eslint/js` 10, `@vscode/test-electron` 3, `@vscode/vsce` 4 and `@types/node` 22. Test scripts use
-  `node --test` glob patterns, which Node 22 requires.
-
-### Fixed
-
-- `while` loops with an unbraced single-statement body (`while (x != 0) x /= 10;`) are now recognised. They were
-  reported as Unknown.
-- Range-for loops over user-defined containers are no longer downgraded to Estimated because of the implicit
-  `begin()`/`end()` calls in the loop header.
-
-- The packaged extension now contains its runtime dependency `ajv`. It was previously packaged with
-  `--no-dependencies` and would have failed to activate when installed from a `.vsix`.
-- The extension restores the executable bit of the bundled engine if archive extraction dropped it.
-
-### Not yet implemented
-
-- Runtime estimation and the benchmark runner (the `benchmark` action returns `not_implemented`).
-- Map/set memory estimations (BL-305) and benchmarking runner (M4).
+- Protocol stability and formal deprecation policy (BL-606):
+  - Protocol stability review ahead of v1.0 documented in `docs/specifications/JSON_PROTOCOL.md §8.1`.
+  - Defined semver guarantees, 6-month deprecation lifecycle (`active` -> `deprecated` -> `removed`), migration path requirements, schema validation test suite, and telemetry-free deprecation warnings.

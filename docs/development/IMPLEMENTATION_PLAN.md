@@ -12,10 +12,10 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-605: Marketplace and Open VSX publication decision](#bl-605-marketplace-and-open-vsx-publication-decision).**
+> **[BL-602: Graduate the Clang front end on macOS and Windows](#bl-602-graduate-the-clang-front-end-on-macos-and-windows).**
 >
-> M1 through M5, as well as validation corpus scoring (BL-601) and protocol stability/deprecation review (BL-606), are complete!
-> BL-605 establishes the publication policy, publisher credentials scoping, and release distribution strategy ahead of packaging.
+> M1 through M5, as well as release packaging (BL-603), cryptographic provenance (BL-604), marketplace publication (BL-605), validation corpus (BL-601), and protocol stability (BL-606), are complete!
+> BL-602 graduates native Clang frontend support on macOS and Windows.
 
 ## Dependency graph
 
@@ -70,9 +70,9 @@ flowchart TD
 
   BL601["BL-601 Validation corpus"]:::done
   BL602["BL-602 Clang frontend on macOS/Windows"]:::todo
-  BL603["BL-603 Per-platform .vsix"]:::todo
-  BL604["BL-604 Signing + provenance"]:::todo
-  BL605["BL-605 Marketplace decision"]:::todo
+  BL603["BL-603 Per-platform .vsix"]:::done
+  BL604["BL-604 Signing + provenance"]:::done
+  BL605["BL-605 Marketplace decision"]:::done
   BL606["BL-606 Protocol stability review"]:::done
   BL607["BL-607 Parse-time reduction"]:::done
 
@@ -1029,7 +1029,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-603: Per-platform .vsix packages
 
-- **Status:** Not started
+- **Status:** Done. Per-platform `.vsix` packaging workflow targeting `linux-x64`, `win32-x64`, `darwin-arm64`, and `darwin-x64` in `.github/workflows/release.yml`, with bundled native engine executables and standalone engine archive bundles (`.tar.gz` and `.zip`).
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-108, BL-602
@@ -1041,7 +1041,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: packaging in `release.yml`.
 
 **Acceptance criteria.**
-- [ ] Each package installs and analyses a fixture in a CI smoke test on its platform.
+- [x] Each package installs and analyses a fixture in a CI smoke test on its platform.
 
 **Test cases.** A per-platform install-and-analyse smoke test.
 
@@ -1049,7 +1049,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-604: Release signing, checksums and provenance
 
-- **Status:** Not started
+- **Status:** Done. SHA-256 checksum manifest generation (`SHA256SUMS.txt`), cryptographic build provenance attestations via `actions/attest-build-provenance` in `.github/workflows/release.yml`, and verification documentation in `SECURITY.md`.
 - **Priority:** P2
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-603
@@ -1061,8 +1061,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: checksums and attestations. Signing certificates are subject to a separate decision.
 
 **Acceptance criteria.**
-- [ ] Every release lists checksums.
-- [ ] Attestations verify with `gh attestation verify`.
+- [x] Every release lists checksums.
+- [x] Attestations verify with `gh attestation verify`.
 
 **Test cases.** Verification of a test release.
 
@@ -1070,7 +1070,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-605: Marketplace and Open VSX publication decision
 
-- **Status:** Not started
+- **Status:** Done. Accepted ADR 0013 (`docs/architecture/DECISIONS/0013-marketplace-and-open-vsx-publication.md`) establishing publication under publisher `bigolens` for Visual Studio Marketplace and Open VSX. Publication job in `.github/workflows/release.yml` scoped to protected GitHub environment `marketplace` with manual reviewer approval requirement and least-privilege permissions (`contents: read`).
 - **Priority:** P3
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-604
@@ -1082,8 +1082,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the decision, and optionally the workflow.
 
 **Acceptance criteria.**
-- [ ] The ADR is accepted.
-- [ ] If publishing, the token is stored as an environment-protected secret, available only to the publishing job.
+- [x] The ADR is accepted.
+- [x] If publishing, the token is stored as an environment-protected secret, available only to the publishing job.
 
 **Test cases.** A dry run (`vsce package`) in CI.
 

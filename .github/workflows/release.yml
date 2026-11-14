@@ -44,61 +44,131 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   build:
+    name: Build & package · ${{ matrix.target }}
     needs: validate
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-24.04
+            binary_name: bigolens-engine
+          - target: win32-x64
+            os: windows-2022
+            binary_name: bigolens-engine.exe
+          - target: darwin-arm64
+            os: macos-latest
+            binary_name: bigolens-engine
+          - target: darwin-x64
+            os: macos-13
+            binary_name: bigolens-engine
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.validate.outputs.tag }}
-      - name: Install toolchain and Clang development packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build \
-            clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
-            libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
-            zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: extension/package-lock.json
-      - name: Build, test and package (statically linked engine bundled in the .vsix)
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y --no-install-recommends xvfb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build xvfb \
+            clang-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev libclang-${LLVM_VERSION}-dev \
+            libclang-cpp${LLVM_VERSION}-dev libpolly-${LLVM_VERSION}-dev \
+            zlib1g-dev libzstd-dev libedit-dev libxml2-dev libcurl4-openssl-dev
+
+      - name: Build engine (Linux static package)
+        if: runner.os == 'Linux'
+        run: |
           scripts/build/package-extension.sh -G Ninja \
             -DClang_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/clang \
             -DLLVM_DIR=/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm
           (cd extension && npm run lint && npm test)
-      - name: Verify the .vsix
-        run: xvfb-run -a scripts/test/verify-vsix.sh extension/bigo-lens.vsix
-      - name: Assemble artifacts
+
+      - name: Build engine (Windows and macOS)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cargo build --release --bin bigolens-engine
+          mkdir -p extension/bin
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/release/bigolens-engine.exe extension/bin/
+          else
+            cp target/release/bigolens-engine extension/bin/
+            chmod 0755 extension/bin/bigolens-engine
+          fi
+
+      - name: Build extension and package platform VSIX (BL-603)
+        shell: bash
         env:
           VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
           mkdir -p dist
-          # Self-contained engine (static Clang/LLVM) plus Clang builtin headers (ADR 0011).
-          tar -C extension/bin -czf "dist/bigolens-engine-$VERSION-linux-x64.tar.gz" .
-          cp extension/bigo-lens.vsix "dist/bigo-lens-$VERSION-linux-x64.vsix"
-          (cd dist && sha256sum * > SHA256SUMS)
-          ls -l dist | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+          cd extension
+          npm ci
+          npm run compile
+          npx @vscode/vsce package --target "$TARGET" --out "../dist/bigo-lens-$VERSION-$TARGET.vsix"
+
+      - name: Verify the Linux .vsix
+        if: runner.os == 'Linux'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: xvfb-run -a scripts/test/verify-vsix.sh "dist/bigo-lens-$VERSION-linux-x64.vsix"
+
+      - name: Assemble standalone engine archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            tar -C extension/bin -czf "dist/bigolens-engine-$VERSION-$TARGET.tar.gz" .
+            powershell -Command "Compress-Archive -Path extension/bin/* -DestinationPath dist/bigolens-engine-$VERSION-$TARGET.zip" || true
+          else
+            tar -C extension/bin -czf "dist/bigolens-engine-$VERSION-$TARGET.tar.gz" .
+          fi
+
+      - name: Upload artifacts for target
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.target }}
           path: dist/
           if-no-files-found: error
 
-  publish:
+  release:
+    name: GitHub Release & Provenance (BL-604)
     needs: [validate, build]
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release-artifacts
+          pattern: release-artifacts-*
           path: dist
+          merge-multiple: true
+
+      - name: Generate SHA-256 Checksums (BL-604)
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate build provenance attestations (BL-604)
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: 'dist/*'
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -108,4 +178,49 @@ jobs:
           flags=(--repo "$GITHUB_REPOSITORY" --title "BigO Lens $TAG" --generate-notes --verify-tag)
           [[ "$DRAFT" == "true" ]] && flags+=(--draft)
           gh release create "$TAG" dist/* "${flags[@]}"
-      # Publishing to the VS Code Marketplace is intentionally not automated.
+
+      - name: Upload aggregated release artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: all-release-artifacts
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Marketplace & Open VSX Publication (BL-605)
+    needs: [validate, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: all-release-artifacts
+          path: dist
+      - name: Publish to Visual Studio Marketplace & Open VSX
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ] && [ -z "$OVSX_PAT" ]; then
+            echo "::warning::Neither VSCE_PAT nor OVSX_PAT is configured; skipping publication."
+            exit 0
+          fi
+          for vsix in dist/*.vsix; do
+            echo "Publishing package $vsix..."
+            if [ -n "$VSCE_PAT" ]; then
+              npx --yes @vscode/vsce publish --packagePath "$vsix" -p "$VSCE_PAT"
+            else
+              echo "::warning::VSCE_PAT not provided; skipping Visual Studio Marketplace for $vsix."
+            fi
+            if [ -n "$OVSX_PAT" ]; then
+              npx --yes ovsx publish --packagePath "$vsix" -p "$OVSX_PAT"
+            else
+              echo "::warning::OVSX_PAT not provided; skipping Open VSX for $vsix."
+            fi
+          done

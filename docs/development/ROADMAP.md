@@ -179,15 +179,15 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 - A validation corpus of representative solutions, with expected classifications, scored in CI (accuracy is reported, never fabricated) (Done, BL-601)
 - Protocol stability review ahead of 1.0 and formal deprecation policy (Done, BL-606)
 - Evaluation of header parsing cost and precompiled preamble caching architecture (Done, BL-607)
-- Engine binaries for every platform where the Clang front end is supported, bundled into per-platform `.vsix` packages (Planned, BL-603)
-- Release signing, checksums and provenance (Planned, BL-604)
-- A decision on, and if taken, the process for Marketplace or Open VSX publication (Planned, BL-605)
+- Engine binaries for every platform where the Clang front end is supported, bundled into per-platform `.vsix` packages (Done, BL-603)
+- Release signing, checksums and provenance (Done, BL-604)
+- A decision on, and if taken, the process for Marketplace or Open VSX publication (Done, BL-605)
 
 **Exit criteria**
 
 - [x] Published, reproducible validation results with methodology.
-- [ ] Signed release artifacts with checksums.
-- [ ] An installation path documented for each supported platform.
+- [x] Signed release artifacts with checksums.
+- [x] An installation path documented for each supported platform.
 
 ---
 
