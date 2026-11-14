@@ -118,7 +118,7 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 
 ## M4: Benchmarking
 
-**Status: Done (Linux isolation & runner; Windows Job Objects planned in BL-406)**
+**Status: Done**
 
 **Goal:** measure user programs, which must be user-initiated and resource-limited, to obtain a runtime range with explicit uncertainty, and use it for time feasibility and for differential testing of the static analyzer.
 
@@ -130,7 +130,7 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 | Compiler adapter with a fixed argv, compiler discovery and structured compile errors | Done |
 | Input generators driven by the constraints | Done |
 | Runner with timeouts, memory limits, process-tree cleanup and per-run temporary directories | Done |
-| Platform isolation (Linux namespaces, seccomp and rlimits; Windows Job Objects; a macOS strategy) | Done (Linux implemented in BL-405; Windows BL-406 planned) |
+| Platform isolation (Linux namespaces, seccomp and rlimits; Windows Job Objects; a macOS strategy) | Done (Linux implemented in BL-405; Windows Job Objects in BL-406) |
 | `benchmark` protocol action | Done |
 | Runtime range feeding time feasibility | Done |
 | Differential tests comparing the predicted growth class with the measured fit | Done |

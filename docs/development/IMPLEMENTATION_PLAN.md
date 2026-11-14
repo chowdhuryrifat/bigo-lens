@@ -55,7 +55,7 @@ flowchart TD
   BL403["BL-403 Input generators"]:::done
   BL404["BL-404 Runner + limits (Linux)"]:::done
   BL405["BL-405 Linux isolation"]:::done
-  BL406["BL-406 Windows Job Objects"]:::todo
+  BL406["BL-406 Windows Job Objects"]:::done
   BL407["BL-407 benchmark action + time feasibility"]:::done
   BL408["BL-408 Differential tests"]:::done
 
@@ -745,7 +745,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-406: Windows runner with Job Objects
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-404
@@ -757,7 +757,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: Windows. Out of scope: AppContainer, unless the ADR requires it.
 
 **Acceptance criteria.**
-- [ ] The same negative tests as BL-404 pass on Windows CI.
+- [x] The same negative tests as BL-404 pass on Windows CI.
 
 **Test cases.** As in BL-404.
 
