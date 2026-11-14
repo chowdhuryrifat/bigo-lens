@@ -17,7 +17,11 @@ export interface ReadyMessage {
   type: 'ready';
 }
 
-export type WebviewIncomingMessage = NavigateMessage | ReadyMessage;
+export interface RunBenchmarkMessage {
+  type: 'runBenchmark';
+}
+
+export type WebviewIncomingMessage = NavigateMessage | ReadyMessage | RunBenchmarkMessage;
 
 export type MessageValidationResult =
   { ok: true; message: WebviewIncomingMessage } | { ok: false; error: string };
@@ -39,6 +43,9 @@ export function validateWebviewMessage(raw: unknown): MessageValidationResult {
   switch (candidate.type) {
     case 'ready': {
       return { ok: true, message: { type: 'ready' } };
+    }
+    case 'runBenchmark': {
+      return { ok: true, message: { type: 'runBenchmark' } };
     }
     case 'navigate': {
       if (

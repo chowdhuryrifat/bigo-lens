@@ -10,6 +10,12 @@ describe('Webview Message Validation', () => {
     assert.deepEqual(result.message, { type: 'ready' });
   });
 
+  it('accepts a valid runBenchmark message', () => {
+    const result = validateWebviewMessage({ type: 'runBenchmark' });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.message, { type: 'runBenchmark' });
+  });
+
   it('accepts a valid navigate message with line only', () => {
     const result = validateWebviewMessage({
       type: 'navigate',

@@ -97,6 +97,8 @@ export class ReportPanel implements vscode.Disposable {
     const msg = result.message;
     if (msg.type === 'navigate') {
       void this.navigateToLocation(msg.location);
+    } else if (msg.type === 'runBenchmark') {
+      void vscode.commands.executeCommand('bigoLens.runBenchmark');
     }
   }
 

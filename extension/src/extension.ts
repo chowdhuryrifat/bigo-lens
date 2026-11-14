@@ -4,6 +4,7 @@ import { analyzeActiveFile } from './commands/analyzeActiveFile';
 import { configureConstraints } from './commands/configureConstraints';
 import { editConstraints } from './commands/editConstraints';
 import { openReport } from './commands/openReport';
+import { runBenchmark } from './commands/runBenchmark';
 import { showCapabilities } from './commands/showCapabilities';
 import { ReportPanel } from './panels/reportPanel';
 import { DiagnosticsPublisher } from './providers/diagnosticsPublisher';
@@ -20,6 +21,7 @@ export const COMMANDS = {
   editConstraints: 'bigoLens.editConstraints',
   configureConstraints: 'bigoLens.configureConstraints',
   openReport: 'bigoLens.openReport',
+  runBenchmark: 'bigoLens.runBenchmark',
   showCapabilities: 'bigoLens.showCapabilities',
 } as const;
 
@@ -91,6 +93,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(COMMANDS.openReport, () => {
       openReport(context.extensionUri, () => lastSnapshot);
     }),
+    vscode.commands.registerCommand(COMMANDS.runBenchmark, () =>
+      runBenchmark({
+        ...services,
+        tree,
+        diagnostics,
+        onResults: handleResults,
+      }),
+    ),
     vscode.commands.registerCommand(COMMANDS.showCapabilities, () => showCapabilities(services)),
   );
   if (ensureBundledEngineExecutable(context.extensionPath, process.platform)) {

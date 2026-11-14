@@ -620,3 +620,200 @@ body.report-body {
 .empty-state p {
   color: var(--vscode-descriptionForeground, #8c8c8c);
 }
+
+/* Header Actions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: 1px solid transparent;
+  padding: 0.25rem 0.65rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: background-color 0.1s ease;
+}
+
+.action-btn:hover {
+  background: var(--btn-hover);
+}
+
+.action-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
+}
+
+/* Benchmark Section */
+.benchmark-section {
+  border-left: 3px solid var(--accent-blue);
+  padding-left: 1rem;
+}
+
+.section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-header-row h2 {
+  margin: 0;
+}
+
+.badge-isolated {
+  background-color: var(--accent-green);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+}
+
+.badge-unisolated {
+  background-color: var(--accent-amber);
+  color: #111111;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+}
+
+.benchmark-warnings {
+  margin-bottom: 0.75rem;
+}
+
+.benchmark-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.benchmark-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.benchmark-card-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+.benchmark-card-main {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--fg-color);
+}
+
+.benchmark-card-sub {
+  font-size: 0.82rem;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  margin-top: 0.2rem;
+}
+
+.benchmark-card-detail {
+  font-size: 0.75rem;
+  color: var(--vscode-descriptionForeground, #8c8c8c);
+  margin-top: 0.3rem;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/* Benchmark SVG Chart */
+.benchmark-chart-container {
+  margin-top: 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.benchmark-chart-svg {
+  width: 100%;
+  max-width: 650px;
+  height: auto;
+  display: block;
+}
+
+.chart-axis-line {
+  stroke: var(--border-color);
+  stroke-width: 1.5;
+}
+
+.chart-grid-line {
+  stroke: var(--border-color);
+  stroke-width: 1;
+  stroke-dasharray: 2, 3;
+  opacity: 0.6;
+}
+
+.chart-tick-label {
+  fill: var(--vscode-descriptionForeground, #8c8c8c);
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.chart-axis-header {
+  fill: var(--fg-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chart-fit-line {
+  fill: none;
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 2;
+}
+
+.chart-extrapolated-line {
+  fill: none;
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 2;
+}
+
+.chart-error-bar,
+.chart-error-cap {
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 1.5;
+}
+
+.chart-sample-point {
+  fill: var(--vscode-charts-blue, #3794ff);
+  stroke: var(--bg-color);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.chart-target-range-bar,
+.chart-target-cap {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 1.5;
+}
+
+.chart-target-diamond {
+  fill: var(--vscode-charts-orange, #d18616);
+  stroke: var(--bg-color);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.chart-legend-text {
+  fill: var(--fg-color);
+  font-size: 10px;
+  font-family: inherit;
+}

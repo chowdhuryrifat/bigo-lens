@@ -25,6 +25,15 @@ export interface Constraints {
   memory_limit_mb?: number;
 }
 
+export interface BenchmarkConfig {
+  sizes?: number[];
+  repetitions?: number;
+  warmup?: number;
+  seed?: number;
+  per_run_timeout_ms?: number;
+  allow_unsandboxed?: boolean;
+}
+
 export interface EngineRequest {
   schema_version: string;
   request_id: string;
@@ -32,6 +41,7 @@ export interface EngineRequest {
   source?: { path: string; language: string; content: string };
   constraints?: Constraints;
   options?: { cpp_standard?: CppStandard };
+  benchmark_config?: BenchmarkConfig;
 }
 
 export interface SourceLocation {
@@ -78,6 +88,40 @@ export interface Assessment {
   reason: string;
 }
 
+export interface BenchmarkSample {
+  size: Record<string, number>;
+  wall_time_median_ms: number;
+  wall_time_mad_ms: number;
+  peak_rss_bytes: number;
+  raw_samples_ms: number[];
+}
+
+export interface EmpiricalFit {
+  model: string | null;
+  r_squared: number;
+  rss: number;
+  slope: number;
+  intercept: number;
+  ambiguous: boolean;
+}
+
+export interface ExtrapolatedRuntime {
+  target_size: Record<string, number>;
+  min_ms: number;
+  central_ms: number;
+  max_ms: number;
+  extrapolated: boolean;
+}
+
+export interface BenchmarkData {
+  isolated: boolean;
+  isolation_level: string;
+  samples: BenchmarkSample[];
+  empirical_fit: EmpiricalFit;
+  extrapolated_runtime: ExtrapolatedRuntime;
+  warnings: string[];
+}
+
 export interface AnalyzeResults {
   findings: Finding[];
   memory: {
@@ -103,6 +147,11 @@ export interface AnalyzeResults {
     dominant_finding_id: string | null;
     coverage: 'partial';
   };
+  benchmark?: BenchmarkData | undefined;
+}
+
+export interface BenchmarkResults extends AnalyzeResults {
+  benchmark: BenchmarkData;
 }
 
 export interface CapabilitiesResults {
@@ -135,13 +184,17 @@ export interface EngineResponse {
   request_id: string | null;
   status: 'ok' | 'error';
   engine: { name: string; version: string; protocol_version: string; frontend: string | null };
-  results: AnalyzeResults | CapabilitiesResults | null;
+  results: AnalyzeResults | BenchmarkResults | CapabilitiesResults | null;
   diagnostics: Diagnostic[];
   errors: ProtocolError[];
 }
 
 export function isAnalyzeResults(results: EngineResponse['results']): results is AnalyzeResults {
   return results !== null && 'findings' in results;
+}
+
+export function isBenchmarkResults(results: EngineResponse['results']): results is BenchmarkResults {
+  return isAnalyzeResults(results) && results.benchmark !== undefined;
 }
 
 export function isCapabilitiesResults(results: EngineResponse['results']): results is CapabilitiesResults {

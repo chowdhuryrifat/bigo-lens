@@ -8,6 +8,15 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Benchmark controls in the UI (BL-507). Adds user-initiated `bigoLens.runBenchmark` command and empirical runtime-range webview controls. Features:
+  - Explicit modal confirmation dialog stating the platform's honest isolation level (e.g. Linux namespaces & seccomp where available, otherwise transparently labeled not sandboxed with resource limits only) prior to executing user code (`THREAT_MODEL.md §4.2`, `BENCHMARK_SPECIFICATION.md §11`).
+  - Strict Workspace Trust enforcement: benchmarking is blocked immediately in untrusted workspaces (`!vscode.workspace.isTrusted`).
+  - Progress notification with cancellation support: canceling aborts the engine client and terminates the child process tree via `SIGKILL`.
+  - Pure SVG runtime-range chart plotting empirical sample points with MAD error bars, fitted growth curve, and extrapolated target range bar with uncertainty interval.
+  - Empirical benchmark summary cards displaying extrapolated runtime (min, central, max), empirical growth fit metrics ($R^2$, RSS, slope, intercept), ambiguous fit alert, and measured peak RSS.
+  - Interactive "Run Benchmark" action button in report webview header with typed webview messaging (`validateWebviewMessage`).
+  - Comprehensive unit test suites covering platform isolation wording, modal confirmation refusal and acceptance, cancellation abort, structured error handling (`not_implemented`), SVG chart rendering, and report integration.
+
 - Constraint form UI (BL-501). Adds visual form webview for configuring sidecar constraints (`bigoLens.configureConstraints`). Features:
   - Lossless two-way synchronization between the form state and the sidecar `.bigolens.json` document.
   - Number normalizer parsing standard integers, scientific notation (e.g. `2e5`), and power multiplication expressions (e.g. `2*10^5`), rejecting non-integers and numbers exceeding $10^{18}$.
