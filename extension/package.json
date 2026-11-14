@@ -3,7 +3,7 @@
   "displayName": "BigO Lens",
   "description": "Constraint-aware code complexity analysis across programming languages (C++, Python, Java, Rust, JavaScript): AST static analysis, symbolic workload estimation and memory feasibility.",
   "version": "0.1.0",
-  "publisher": "bigo-lens",
+  "publisher": "bigolens",
   "license": "MIT",
   "private": true,
   "repository": {

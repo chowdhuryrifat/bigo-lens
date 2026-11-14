@@ -53,10 +53,58 @@ This section describes the code **as it is today**:
 - **Failures are structured.** The request handler converts errors into JSON error responses, and stdout carries only the single JSON response.
 - **The extension** spawns the engine without a shell (`shell: false`), with no arguments, a timeout and a 16 MiB output cap. It validates every engine response and every constraints file against JSON Schemas.
 - **Benchmarking is not implemented.** The `benchmark` action returns `not_implemented`. When benchmarking is built (milestone M4), it will compile and run user code. It **must not be described as sandboxed** until real platform isolation is implemented and tested. A timeout alone is not a sandbox. The requirements are in [THREAT_MODEL.md §4.2](docs/engineering/THREAT_MODEL.md#42-malicious-benchmark-programs-tb6-planned-m4).
-- **There is no webview yet.** A future webview must use a strict Content Security Policy and nonce scripts.
-- **Known gaps:** release artifacts are not signed. Workspace Trust is not yet declared. `bigoLens.enginePath` is a machine-scoped setting, so a workspace cannot override which engine executable runs.
+- **Webviews use strict CSP and nonce scripts.** The constraint configuration form and report panels enforce a restrictive Content Security Policy and per-session cryptographically random nonces.
+- **Workspace Trust is enforced.** In untrusted workspaces, BigO Lens operates in restricted mode, ignoring workspace-scoped `bigoLens.enginePath` overrides and refusing benchmark execution.
+- **Release artifacts are attested and checksummed.** All release artifacts include SHA-256 checksums (`SHA256SUMS.txt`) and signed SLSA build provenance attestations.
 
 The full analysis of assets, trust boundaries, threats and mitigations (implemented and planned) is in [docs/engineering/THREAT_MODEL.md](docs/engineering/THREAT_MODEL.md).
+
+## Release artifact verification
+
+Official releases on GitHub Releases include:
+1. Platform-specific `.vsix` packages (`linux-x64`, `win32-x64`, `darwin-arm64`, `darwin-x64`) and standalone engine archive bundles (`.tar.gz` and `.zip`).
+2. A cryptographic checksum manifest: `SHA256SUMS.txt`.
+3. Signed SLSA build provenance attestations generated via GitHub's Sigstore OIDC authority (`actions/attest-build-provenance`).
+
+Users, security teams, and automated environments should verify artifact integrity and authenticity prior to installation.
+
+### 1. Verifying SHA-256 Checksums
+
+Download the release artifact and `SHA256SUMS.txt` from the GitHub release page, then verify:
+
+- **Linux:**
+  ```bash
+  sha256sum --check --ignore-missing SHA256SUMS.txt
+  ```
+- **macOS:**
+  ```bash
+  shasum -a 256 --check --ignore-missing SHA256SUMS.txt
+  ```
+- **Windows (PowerShell):**
+  ```powershell
+  Get-FileHash -Algorithm SHA256 .\bigo-lens-*.vsix
+  # Compare the resulting Hash string with the corresponding entry in SHA256SUMS.txt
+  ```
+
+### 2. Verifying Cryptographic Build Provenance
+
+We use GitHub Artifact Attestations (`actions/attest-build-provenance`) backed by Sigstore to cryptographically prove that each release artifact was built on official GitHub-hosted runners directly from the release commit in `chowdhuryrifat/bigo-lens`.
+
+Verify the attestation using the [GitHub CLI (`gh`)](https://cli.github.com/):
+
+```bash
+# Verify a specific platform package:
+gh attestation verify bigo-lens-0.1.0-linux-x64.vsix --repo chowdhuryrifat/bigo-lens
+
+# Or verify all downloaded artifacts in the directory:
+gh attestation verify * --owner chowdhuryrifat
+```
+
+A successful verification confirms that:
+- The artifact was built on official GitHub Actions runners.
+- The build was initiated by the official release workflow (`.github/workflows/release.yml`).
+- The source commit matches the exact tagged release in the repository.
+- The artifact has not been modified or tampered with in transit.
 
 ## Supply chain
 
@@ -64,11 +112,12 @@ The full analysis of assets, trust boundaries, threats and mitigations (implemen
 - npm dependencies are locked (`package-lock.json`) and installed with `npm ci`.
 - CI runs CodeQL (C/C++ and JavaScript/TypeScript), dependency review on pull requests, and `npm audit`. Dependabot proposes updates weekly for GitHub Actions and npm.
 - Workflows use official actions only, and run with `permissions: contents: read` unless a job needs more.
+- Release workflows generate cryptographic build provenance attestations for all release artifacts and require manual reviewer approval via the `marketplace` environment before publishing.
 
 ## Secret handling rules
 
 - **Never commit secrets:** no tokens, API keys, passwords, private keys, `.env` files or credentials of any kind, in code, fixtures, examples, documentation or commit history.
-- CI currently needs no secrets beyond the automatically scoped `GITHUB_TOKEN`. Any future secret (for example a Marketplace publishing token) must be stored as a GitHub encrypted secret, preferably in a protected environment, available only to the job that needs it, and never printed to logs.
+- Publication credentials (`VSCE_PAT`, `OVSX_PAT`) are stored as encrypted secrets scoped exclusively to the protected GitHub Actions Environment named `marketplace`. Access to this environment requires **mandatory human reviewer approval**, ensuring no automated push can publish artifacts without review.
 - `.npmrc` files in this repository contain only project settings, never registry credentials.
 - If a secret is committed by mistake, **revoke it immediately**. Removing it from history is not enough. Then tell the maintainers through a private vulnerability report.
 - Do not put secrets, personal data or proprietary source code in bug reports. Reduce reproductions to a minimal example.
