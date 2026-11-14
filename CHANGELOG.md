@@ -8,6 +8,16 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Constraint form UI (BL-501). Adds visual form webview for configuring sidecar constraints (`bigoLens.configureConstraints`). Features:
+  - Lossless two-way synchronization between the form state and the sidecar `.bigolens.json` document.
+  - Number normalizer parsing standard integers, scientific notation (e.g. `2e5`), and power multiplication expressions (e.g. `2*10^5`), rejecting non-integers and numbers exceeding $10^{18}$.
+  - Tables for variable bounds, sum constraints (`[used]`), product constraints (`[validated]`), and linear constraints (`[validated]`).
+  - Automatic detection and display of unconstrained source variables from the last analysis findings, with quick-add chips.
+  - Inline validation against schema and semantic rules (bounds ordering `min <= max`, variable declaration requirements, valid identifier syntax).
+  - Webview infrastructure adhering strictly to `THREAT_MODEL.md §4.10` with strict CSP (`default-src 'none'`, per-load random nonce, no `unsafe-inline`), strictly validated `postMessage` protocol, and local resource root restrictions.
+  - Action buttons to "Validate", "Save to Sidecar", and "Save & Analyze" directly from the form.
+  - Comprehensive unit test coverage for numeric parser, round-trip model conversions, validation rules, webview messaging, HTML generation, and panel lifecycle.
+
 - Opt-in re-analysis on save (BL-505). Adds `bigoLens.analyzeOnSave` setting (default `false`) and `SaveAnalysisCoordinator` in `extension/src/services/saveAnalysis.ts`. Automatically runs analysis on save for C++ files with debouncing (300 ms window) and in-flight engine process cancellation via `AbortController`, ensuring rapid saves spawn at most one concurrent engine process per file. Keeps errors non-intrusive (no popups during background auto-analysis on save). Documents configuration in `CONFIGURATION.md` and adds unit tests verifying debounce and cancellation behavior.
 
 - Status-bar summary (BL-504). Adds status-bar item (`StatusBarManager`) positioned on the right that shows dominant asymptotic complexity, workload bound, and feasibility status icons (`BigO: O(n log n) (≤ 1.200e5) · time ? · mem ✓`). Clicking the status-bar item opens the detailed webview report (`bigoLens.openReport`). Displays rich Markdown hover tooltip with dominant finding breakdown, exact workload, and feasibility reasoning. Automatically hidden for non-C++ editors and updates whenever an analysis completes. Adds comprehensive unit tests covering formatting, indicators, tooltip generation, and editor lifecycle transitions.

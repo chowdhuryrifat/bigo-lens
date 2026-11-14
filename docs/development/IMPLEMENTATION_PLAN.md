@@ -814,7 +814,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-501: Constraint form UI
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P1
 - **Estimated complexity:** M (relative)
 - **Dependencies:** BL-307
@@ -826,8 +826,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: create and edit. Out of scope: problem-statement extraction.
 
 **Acceptance criteria.**
-- [ ] A round trip (form, file, form) is lossless.
-- [ ] Invalid input is rejected inline with the schema message.
+- [x] A round trip (form, file, form) is lossless.
+- [x] Invalid input is rejected inline with the schema message.
 
 **Test cases.** Unit tests for the form-model serialization, and a smoke test for opening the form.
 
