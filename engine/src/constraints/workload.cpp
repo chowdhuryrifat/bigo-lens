@@ -377,8 +377,18 @@ complexity::EvalResult evalAddWithConstraints(const Expr& expr, const complexity
 
 /// Evaluates a Multiply expression under monotone variable bounds and applies product
 /// and linear constraints to find tight bounds for composite terms.
+///
+/// Flattens nested multiplication terms, groups variable powers, and iteratively applies
+/// the constraint (product or linear combination) that yields the greatest reduction ratio
+/// over the naive pointwise product of maxima.
+///
+/// @param expr The multiplication expression AST node to evaluate.
+/// @param bindings Maximum known upper bounds for free variables.
+/// @param ctx Active constraint context tracking applied constraints and minimum bounds.
+/// @return EvalResult containing the tightened upper bound or evaluation error.
 complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const complexity::Bindings& bindings,
                                                    ConstraintContext& ctx) {
+  // Step 1: Recursively flatten all associative nested Multiply operations into a single factor list.
   std::vector<ExprPtr> flat;
   std::function<void(const ExprPtr&)> flatten = [&](const ExprPtr& factor) {
     if (factor->kind() == ExprKind::Multiply) {
@@ -393,6 +403,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     flatten(op);
   }
 
+  // Step 2: Separate factors into variable powers (e.g. n^2 * m) and other non-variable factors.
   std::map<std::string, double> varExponents;
   std::vector<ExprPtr> otherFactors;
   for (const auto& f : flat) {
@@ -403,8 +414,10 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     }
   }
 
+  // Running accumulator for bounded factors.
   double acc = 1.0;
 
+  // Step 3: Iteratively select and apply the constraint that produces the greatest reduction ratio.
   while (true) {
     enum class CandidateType { None, Product, Linear };
     CandidateType bestType = CandidateType::None;
@@ -418,7 +431,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     double bestLinearBound = 0.0;
     std::vector<std::string> bestLinearVars;
 
-    // 1. Check Product Constraints
+    // Step 3a: Evaluate candidate Product Constraints (e.g. n * m <= 1e5).
     for (size_t i = 0; i < ctx.products.size(); ++i) {
       const auto& pc = ctx.products[i];
       bool allPresent = true;
@@ -444,6 +457,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
       if (!allPresent || amin < 1.0) {
         continue;
       }
+      // Compute the effective product bound and the resulting reduction ratio.
       double peff = std::min(static_cast<double>(pc.maxProduct), mprod);
       double reduction = (mprod > 0.0) ? std::pow(peff / mprod, amin) : 1.0;
       if (reduction < bestReduction || (bestType == CandidateType::None && peff <= mprod)) {
@@ -456,7 +470,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
       }
     }
 
-    // 2. Check Linear Constraints
+    // Step 3b: Evaluate candidate Linear Constraints (e.g. n + m <= 2e5).
     for (size_t j = 0; j < ctx.linear.size(); ++j) {
       const auto& lc = ctx.linear[j];
       bool allNonNeg = true;
@@ -470,6 +484,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
         continue;
       }
 
+      // Collect variables that appear in this linear constraint and have remaining positive exponent.
       std::vector<std::string> matchedVars;
       for (const auto& [v, coeff] : lc.coefficients) {
         if (coeff > 0) {
@@ -480,6 +495,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
         }
       }
 
+      // Optimization case: 2-variable linear constraint (e.g. c_x * x + c_y * y <= B).
       if (matchedVars.size() == 2) {
         const std::string& x = matchedVars[0];
         const std::string& y = matchedVars[1];
@@ -492,6 +508,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
         double Mx = bindings.at(x);
         double My = bindings.at(y);
 
+        // Subtract minimum contributions from other variables appearing in the constraint.
         double minOther = 0.0;
         for (const auto& [u, ucoeff] : lc.coefficients) {
           if (u != x && u != y && ucoeff > 0) {
@@ -501,7 +518,9 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
         }
         double beff = static_cast<double>(lc.bound) - minOther;
         if (beff > 0.0) {
+          // Use Lagrange multiplier / AM-GM unconstrained optimal point: x* = (a_x / (a_x + a_y)) * (B / c_x).
           double xstar = (ax / (ax + ay)) * (beff / cx);
+          // Clamp optimal point to the feasible domain defined by variable bounds.
           double xlo = std::max(mx, (beff - cy * My) / cx);
           double xhi = std::min(Mx, (beff - cy * my) / cx);
           if (xlo <= xhi) {
@@ -520,10 +539,12 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
           }
         }
       } else if (matchedVars.size() > 2) {
+        // Multi-variable linear constraint case (k > 2 variables).
         double sumA = 0.0;
         for (const auto& v : matchedVars) {
           sumA += varExponents.at(v);
         }
+        // Account for minimum contributions of non-matched variables.
         double minOther = 0.0;
         for (const auto& [u, ucoeff] : lc.coefficients) {
           if (ucoeff > 0 && std::find(matchedVars.begin(), matchedVars.end(), u) == matchedVars.end()) {
@@ -540,6 +561,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
             double av = varExponents.at(v);
             double mv = ctx.minima.count(v) ? ctx.minima.at(v) : 0.0;
             double Mv = bindings.at(v);
+            // Proportional allocation of bound across all matched variables.
             double xvstar = (av / sumA) * (beff / cv);
             double xvopt = std::clamp(xvstar, mv, Mv);
             linBound *= std::pow(xvopt, av);
@@ -557,10 +579,12 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
       }
     }
 
+    // Step 3c: Stop when no candidate constraint yields further bound tightening.
     if (bestType == CandidateType::None) {
       break;
     }
 
+    // Step 3d: Apply selected constraint reduction and deduct exponents from consumed variables.
     if (bestType == CandidateType::Product) {
       const auto& bestPc = ctx.products[bestIdx];
       ctx.productApplied[bestIdx] = true;
@@ -584,6 +608,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     }
   }
 
+  // Step 4: Multiply remaining unconstrained variable powers evaluated at their individual maxima.
   for (const auto& [name, exp] : varExponents) {
     if (exp > 0.0) {
       auto it = bindings.find(name);
@@ -594,6 +619,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     }
   }
 
+  // Step 5: Recursively evaluate all non-variable factors and multiply into accumulator.
   for (const auto& of : otherFactors) {
     auto r = evalMonotoneWithConstraints(*of, bindings, ctx);
     if (!r.ok()) {
@@ -602,6 +628,7 @@ complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const compl
     acc *= r.value;
   }
 
+  // Step 6: Verify result finiteness to prevent numerical overflow.
   if (!std::isfinite(acc)) {
     return complexity::EvalResult{complexity::EvalStatus::Overflow, 0.0, "value exceeds the representable range"};
   }
@@ -798,12 +825,30 @@ WorkloadResult evaluateWorkloadWithoutSums(const Expr& expr, const ConstraintSet
   return finish(complexity::evaluate(expr, maxima), "pointwise-maxima");
 }
 
-/// Evaluates workload under sum constraints, supporting single-sum superadditive packing,
-/// multi-sum separable packing over shared count variables, or sound case-multiplier fallbacks.
+/// Evaluates the worst-case workload of an expression subject to sum constraints over test cases.
+///
+/// Supports three primary evaluation strategies:
+/// 1. Single-sum superadditive packing: when per-case cost is superadditive (e.g. f(n) = n log n),
+///    worst-case total cost occurs when packing as many maximal cases as the total sum allows.
+/// 2. Multi-sum separable terms packing: when per-case cost decomposes into separable terms where each
+///    term depends on at most one sum-constrained variable, packs each term independently.
+/// 3. Monotone fallback: soundly bounds workload by (number of test cases) * (per-case maximum).
+///
+/// @param expr Asymptotic cost expression to evaluate.
+/// @param cs Active user-configured constraint set.
+/// @param free Free variables occurring in the cost expression.
+/// @param sums Vector of active SumConstraint definitions covering free variables.
+/// @param maxima Maximum upper bounds for variables.
+/// @param monotone Whether the cost expression is provably monotone non-decreasing.
+/// @param status Bound status (Proven or Estimated).
+/// @param ctx Active constraint context for linear and product bounds.
+/// @param result Base WorkloadResult to populate with bound and assumptions.
+/// @return Populated WorkloadResult with upper bound and derived assumptions.
 WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& cs, const std::set<std::string>& free,
                                         const std::vector<const SumConstraint*>& sums, complexity::Bindings maxima,
                                         bool monotone, BoundStatus status, ConstraintContext& ctx,
                                         WorkloadResult result) {
+  // Helper to record final status, workload bound, and estimation method.
   auto finish = [&](const complexity::EvalResult& eval, std::string method) {
     if (!eval.ok()) {
       result.status = BoundStatus::Unknown;
@@ -816,6 +861,7 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
     return result;
   };
 
+  // Step 1: Verify all active sum constraints share the identical test-case count variable.
   const std::string& countVar = sums.front()->countVariable;
   const bool sameCount =
       std::all_of(sums.begin(), sums.end(), [&](const SumConstraint* sc) { return sc->countVariable == countVar; });
@@ -826,12 +872,13 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
   }
   const double maxCases = static_cast<double>(*cs.variables.find(countVar)->second.max);
 
-  // Per-case value of every sum-constrained variable is at most min(max, total).
+  // Step 2: Per-case value of every sum-constrained variable is at most min(max, total).
   complexity::Bindings capped = std::move(maxima);
   for (const SumConstraint* sc : sums) {
     capped[sc->variable] = std::min(capped[sc->variable], static_cast<double>(sc->maxTotal));
   }
 
+  // Step 3: Strip the test-case count variable factor from the cost expression if present.
   ExprPtr perCase;
   if (free.count(countVar) != 0) {
     perCase = stripCountFactor(expr, countVar);
@@ -861,16 +908,19 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
       return finish(complexity::evaluate(expr, capped), "pointwise-maxima-capped");
     }
   } else {
+    // When count variable is not in expression, cost is per test case.
     perCase = std::make_shared<const Expr>(expr);
     result.assumptions.push_back("cost treated as per test case because '" + sums.front()->variable +
                                  "' is constrained across test cases ('" + countVar + "')");
   }
 
+  // Evaluator closure for per-case cost under given bindings.
   auto evalPerCase = [&](const complexity::Bindings& b) {
     return monotone ? evalMonotoneWithConstraints(*perCase, b, ctx) : complexity::evaluate(*perCase, b);
   };
 
-  // Case 1: Single sum constraint on a superadditive per-case function.
+  // Step 4 (Case 1): Single sum constraint on a superadditive per-case function.
+  // Greedy packing: pack as many full-size cases as possible, plus one partial remainder case.
   if (sums.size() == 1 && monotone && isSuperadditiveIn(*perCase, sums.front()->variable)) {
     const SumConstraint& sc = *sums.front();
     const double total = static_cast<double>(sc.maxTotal);
@@ -892,6 +942,7 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
       }
       value += partial.value;
     }
+    // Check for unexploited product or linear constraints.
     for (size_t i = 0; i < cs.products.size(); ++i) {
       const auto& product = cs.products[i];
       const auto covered = std::count_if(product.variables.begin(), product.variables.end(),
@@ -915,8 +966,9 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
     return finish(complexity::EvalResult{complexity::EvalStatus::Ok, value, {}}, "sum-constraint-packing");
   }
 
-  // Case 2: Multiple sum constraints sharing one count variable on separable monotone terms.
+  // Step 5 (Case 2): Multiple sum constraints sharing one count variable on separable monotone terms.
   if (sums.size() > 1 && monotone) {
+    // Collect individual additive terms from perCase expression.
     std::vector<ExprPtr> terms;
     std::function<void(const ExprPtr&)> collectTerms = [&](const ExprPtr& e) {
       if (e->kind() == ExprKind::Add) {
@@ -929,22 +981,28 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
     };
     collectTerms(perCase);
 
+    // Verify whether each term references at most one sum-constrained variable.
+    std::map<std::string, const SumConstraint*> sumByVar;
+    for (const SumConstraint* sc : sums) {
+      sumByVar[sc->variable] = sc;
+    }
+
     bool allSeparable = true;
     for (const auto& term : terms) {
-      std::set<std::string> constrainedVars;
-      for (const auto& v : complexity::freeVariables(*term)) {
-        for (const SumConstraint* sc : sums) {
-          if (sc->variable == v) {
-            constrainedVars.insert(v);
-          }
+      const auto termFree = complexity::freeVariables(*term);
+      size_t countSumVars = 0;
+      for (const auto& v : termFree) {
+        if (sumByVar.count(v) != 0) {
+          ++countSumVars;
         }
       }
-      if (constrainedVars.size() > 1) {
+      if (countSumVars > 1) {
         allSeparable = false;
         break;
       }
     }
 
+    // When all additive terms are separable, pack each term according to its own bound.
     if (allSeparable) {
       double totalValue = 0.0;
       bool evalOk = true;
@@ -952,63 +1010,67 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
       bool anyPacked = false;
 
       for (const auto& term : terms) {
-        const SumConstraint* matchedSc = nullptr;
-        for (const auto& v : complexity::freeVariables(*term)) {
-          for (const SumConstraint* sc : sums) {
-            if (sc->variable == v) {
-              matchedSc = sc;
-              break;
-            }
-          }
-          if (matchedSc) {
+        const auto termFree = complexity::freeVariables(*term);
+        const SumConstraint* sc = nullptr;
+        for (const auto& v : termFree) {
+          if (sumByVar.count(v) != 0) {
+            sc = sumByVar[v];
             break;
           }
         }
 
-        if (matchedSc && isSuperadditiveIn(*term, matchedSc->variable)) {
-          const double total = static_cast<double>(matchedSc->maxTotal);
-          const double perCaseMax = capped[matchedSc->variable];
-          const double fullCases = perCaseMax > 0.0 ? std::min(maxCases, std::floor(total / perCaseMax)) : 0.0;
-          const double remainder = total - fullCases * perCaseMax;
-
-          auto evalTerm = [&](const complexity::Bindings& b) { return evalMonotoneWithConstraints(*term, b, ctx); };
-
-          complexity::EvalResult full = evalTerm(capped);
-          if (!full.ok()) {
+        if (!sc) {
+          // Term does not involve any sum-constrained variable; evaluate at capped bounds * maxCases.
+          auto r = evalMonotoneWithConstraints(*term, capped, ctx);
+          if (!r.ok()) {
             evalOk = false;
-            evalError = full.detail;
+            evalError = r.detail;
             break;
           }
-          double termValue = fullCases * full.value;
-          if (fullCases < maxCases && remainder > 0.0) {
-            complexity::Bindings rest = capped;
-            rest[matchedSc->variable] = remainder;
-            complexity::EvalResult partial = evalTerm(rest);
-            if (!partial.ok()) {
+          totalValue += maxCases * r.value;
+        } else {
+          const double total = static_cast<double>(sc->maxTotal);
+          const double perCaseMax = capped[sc->variable];
+          if (isSuperadditiveIn(*term, sc->variable)) {
+            // Pack superadditive term greedily.
+            anyPacked = true;
+            const double fullCases = perCaseMax > 0.0 ? std::min(maxCases, std::floor(total / perCaseMax)) : 0.0;
+            const double remainder = total - fullCases * perCaseMax;
+
+            auto full = evalMonotoneWithConstraints(*term, capped, ctx);
+            if (!full.ok()) {
               evalOk = false;
-              evalError = partial.detail;
+              evalError = full.detail;
               break;
             }
-            termValue += partial.value;
-          }
-          totalValue += termValue;
-          anyPacked = true;
-        } else {
-          double termCases = maxCases;
-          if (matchedSc) {
-            const auto& bound = cs.variables.find(matchedSc->variable)->second;
-            if (bound.min && *bound.min >= 1) {
-              termCases = std::min(
-                  termCases, std::floor(static_cast<double>(matchedSc->maxTotal) / static_cast<double>(*bound.min)));
+            double termVal = fullCases * full.value;
+            if (fullCases < maxCases && remainder > 0.0) {
+              complexity::Bindings rest = capped;
+              rest[sc->variable] = remainder;
+              auto partial = evalMonotoneWithConstraints(*term, rest, ctx);
+              if (!partial.ok()) {
+                evalOk = false;
+                evalError = partial.detail;
+                break;
+              }
+              termVal += partial.value;
             }
+            totalValue += termVal;
+          } else {
+            // Non-superadditive separable term: bound cases by total / min_bound.
+            double termCases = maxCases;
+            const auto& bound = cs.variables.find(sc->variable)->second;
+            if (bound.min && *bound.min >= 1) {
+              termCases = std::min(termCases, std::floor(total / static_cast<double>(*bound.min)));
+            }
+            auto r = evalMonotoneWithConstraints(*term, capped, ctx);
+            if (!r.ok()) {
+              evalOk = false;
+              evalError = r.detail;
+              break;
+            }
+            totalValue += termCases * r.value;
           }
-          complexity::EvalResult perTerm = evalMonotoneWithConstraints(*term, capped, ctx);
-          if (!perTerm.ok()) {
-            evalOk = false;
-            evalError = perTerm.detail;
-            break;
-          }
-          totalValue += termCases * perTerm.value;
         }
       }
 
@@ -1016,6 +1078,7 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
         return finish(complexity::EvalResult{complexity::EvalStatus::DomainError, 0.0, evalError}, "");
       }
 
+      // Check for unexploited product or linear constraints.
       for (size_t i = 0; i < cs.products.size(); ++i) {
         const auto& product = cs.products[i];
         const auto covered = std::count_if(product.variables.begin(), product.variables.end(),
@@ -1047,7 +1110,7 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
     }
   }
 
-  // Case 3: Sound fallback for monotone costs: (number of cases) x (per-case maximum).
+  // Step 6 (Case 3): Sound fallback for monotone costs: (number of cases) x (per-case maximum).
   double cases = maxCases;
   for (const SumConstraint* sc : sums) {
     const auto& bound = cs.variables.find(sc->variable)->second;
