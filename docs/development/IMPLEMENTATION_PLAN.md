@@ -31,7 +31,7 @@ flowchart TD
   BL104["BL-104 Extension scaffold"]:::done
   BL105["BL-105 CI workflows authored"]:::done
   BL106["BL-106 Publish repo, CI green"]:::done
-  BL107["BL-107 Branch protection + reporting"]:::todo
+  BL107["BL-107 Branch protection + reporting"]:::done
   BL108["BL-108 Bundle engine in .vsix"]:::done
 
   BL201["BL-201 Fixture coverage audit"]:::done
@@ -275,7 +275,7 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 
 ### BL-107: Enable branch protection, private vulnerability reporting and issue templates
 
-- **Status:** Not started
+- **Status:** Done. Active GitHub ruleset 'Protect main' (ID 27279054) enforces PR requirement, 8 required CI status checks, and non-fast-forward/deletion blocks. Private vulnerability reporting, security advisories, and Dependabot alerts are active. Issue templates for bugs, features, and documentation verified and operational.
 - **Priority:** P1
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-106
@@ -287,13 +287,13 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: repository settings and template fixes. Out of scope: CODEOWNERS for multiple maintainers.
 
 **Acceptance criteria.**
-- [ ] A direct push to `main` is rejected.
-- [ ] "Report a vulnerability" appears on the Security tab.
-- [ ] The three issue templates appear under "New issue".
+- [x] A direct push to `main` is rejected.
+- [x] "Report a vulnerability" appears on the Security tab.
+- [x] The three issue templates appear under "New issue".
 
 **Test cases.** Attempt a direct push. Open a test issue from each template and close it.
 
-**Definition of Done.** DoD, plus: settings recorded in an ADR or in a maintainer note.
+**Definition of Done.** DoD, plus: settings recorded in [docs/engineering/MAINTAINER_NOTES.md](../engineering/MAINTAINER_NOTES.md) and [docs/engineering/BRANCH_PROTECTION.md](../engineering/BRANCH_PROTECTION.md).
 
 ### BL-108: Bundle the engine binary into the .vsix (Linux)
 

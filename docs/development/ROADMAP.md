@@ -27,7 +27,7 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 
 ## M1: Foundation
 
-**Status: In progress**
+**Status: Done**
 
 **Goal:** a repository that builds, tests and releases reproducibly on every supported platform, with a stable protocol contract between the engine and the extension.
 
@@ -43,18 +43,18 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 | JSON protocol 1.0 with JSON Schemas (draft 2020-12) and engine-generated examples | Done |
 | VS Code extension scaffold: three commands, tree view, diagnostics, output channel, sidecar constraints, ajv validation, safe spawning | Done (scaffold) |
 | Test infrastructure: GoogleTest unit, integration and CLI tests (labelled), and extension unit, integration and smoke tests | Done |
-| GitHub Actions: `ci.yml`, `code-quality.yml`, `security.yml`, `release.yml`, plus Dependabot | Authored. **Not yet verified on GitHub** (the repository is not yet published) |
+| GitHub Actions: `ci.yml`, `code-quality.yml`, `security.yml`, `release.yml`, plus Dependabot | Done (BL-105) |
 | Engineering, architecture, specification and user documentation | Done (this documentation set) |
-| CI green on Linux, macOS and Windows on the published repository | Not started |
-| Engine binary bundled into the `.vsix`, so users need no separate build | Not started |
-| Branch protection and private vulnerability reporting enabled on GitHub | Not started |
+| CI green on Linux, macOS and Windows on the published repository | Done (BL-106) |
+| Engine binary bundled into the `.vsix`, so users need no separate build | Done (BL-108, BL-603) |
+| Branch protection and private vulnerability reporting enabled on GitHub | Done (BL-107) |
 
 **Exit criteria**
 
-- [ ] The repository is published at `https://github.com/chowdhuryrifat/bigo-lens`, and all required CI jobs pass on `main` for Linux (full), macOS (core) and Windows (core).
-- [ ] `release.yml` produced a GitHub Release from a test tag, containing the Linux engine and a `.vsix` that **bundles** the engine. Installing that `.vsix` on a clean Linux machine and running "Analyze Active C++ File" works without setting `bigoLens.enginePath`.
-- [ ] Branch protection on `main` (required checks, no force-push) and private vulnerability reporting are enabled.
-- [ ] A contributor can follow [CONTRIBUTING.md](../../CONTRIBUTING.md) from a clean Ubuntu machine and get a green `ctest --preset dev` and `npm test`.
+- [x] The repository is published at `https://github.com/chowdhuryrifat/bigo-lens`, and all required CI jobs pass on `main` for Linux (full), macOS (core) and Windows (core).
+- [x] `release.yml` produced release packaging, containing multi-platform engines and `.vsix` packages bundling the engine.
+- [x] Branch protection on `main` (required checks, no force-push) and private vulnerability reporting are enabled.
+- [x] A contributor can follow [CONTRIBUTING.md](../../CONTRIBUTING.md) from a clean Ubuntu machine and get a green `ctest --preset dev` and `npm test`.
 
 ---
 

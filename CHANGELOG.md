@@ -8,6 +8,13 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Branch protection, private vulnerability reporting, and issue templates (BL-107):
+  - Enabled active GitHub branch ruleset `Protect main` (ruleset ID `27279054`) on default branch `main`, enforcing pull requests before merging, 8 required CI status checks, conversation thread resolution, dismissal of stale reviews, and blocking deletion and non-fast-forward pushes.
+  - Enabled GitHub private vulnerability reporting and security advisories pipeline (`PUT /repos/.../private-vulnerability-reporting`).
+  - Enabled Dependabot security updates and vulnerability alerts (`PUT /repos/.../vulnerability-alerts`).
+  - Verified issue templates (`bug_report.yml`, `feature_request.yml`, `documentation.yml`) and configuration (`config.yml`).
+  - Documented ruleset configuration and live verification in `docs/engineering/BRANCH_PROTECTION.md` and `docs/engineering/MAINTAINER_NOTES.md`.
+
 - Per-platform `.vsix` packages, release signing & provenance, and marketplace publication strategy (BL-603, BL-604, BL-605):
   - Added ADR 0013 (`docs/architecture/DECISIONS/0013-marketplace-and-open-vsx-publication.md`) establishing distribution strategy targeting Visual Studio Marketplace and Open VSX under publisher `bigolens`, token isolation via GitHub Actions Environment `marketplace` with mandatory manual reviewer approvals, and sovereign GitHub Releases fallback.
   - Multi-platform packaging in `.github/workflows/release.yml` targeting `linux-x64`, `win32-x64`, `darwin-arm64`, and `darwin-x64`, bundling platform-specific engine binaries and generating standalone engine archives (`.tar.gz` and `.zip`).
