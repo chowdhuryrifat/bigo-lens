@@ -348,6 +348,23 @@ Rules:
 
 See [ADR records](../architecture/DECISIONS/) for the rationale.
 
+### 8.1 Deprecation policy ahead of 1.0
+
+As BigO Lens approaches its stable `1.0` product release (BL-606), the protocol contract adheres to the following formal deprecation policy:
+
+1. **Deprecation Notice Window**:
+   - No existing request or response field, enum variant, or capability key will be removed or altered in a breaking manner without prior deprecation in at least one published minor release (`1.x`).
+   - Deprecated fields remain valid, functional, and schema-supported for a minimum of one minor release cycle or six months, whichever is longer, prior to removal in a subsequent major release (`2.0`).
+2. **Client Warning Signals**:
+   - When a client transmits a deprecated request field, the engine processes the request normally and emits a diagnostic entry in the `diagnostics[]` array with:
+     - `severity`: `"warning"`
+     - `message`: Indicating the deprecated field, the target sunset version, and the recommended replacement field.
+     - `location`: `null` (or a JSON pointer identifying the field).
+3. **Deprecation Schedule & Stability Guarantees**:
+   - Closed sets (`status`, `bound_status`, `feasibilityStatus`, error `code`) are permanent contracts within major version 1.
+   - Response structures preserve backwards compatibility with all published 1.x clients.
+   - All fields currently in use across `analyze`, `capabilities`, and `benchmark` are fully specified and validated by `shared/schemas/request.schema.json` and `shared/schemas/response.schema.json`.
+
 ---
 
 ## 9. Validation at boundaries

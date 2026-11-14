@@ -675,7 +675,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         assert_eq!(resp["request_id"], "test-cap-1");
         assert_eq!(resp["schema_version"], "1.1");
 
@@ -722,7 +722,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         assert_eq!(resp["request_id"], "test-py-1");
 
         let results = &resp["results"];
@@ -767,7 +767,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let results = &resp["results"];
         let findings = results["findings"].as_array().unwrap();
         assert_eq!(findings.len(), 1);
@@ -798,7 +798,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let results = &resp["results"];
         let findings = results["findings"].as_array().unwrap();
         assert!(findings.iter().any(|f| f["category"] == "recursion"));
@@ -1020,7 +1020,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         assert_eq!(resp["schema_version"], "1.1");
         let results = &resp["results"];
 
@@ -1075,7 +1075,7 @@ mod tests {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let bench = &resp["results"]["benchmark"];
         assert_eq!(bench["samples"].as_array().unwrap().len(), 4);
         assert!(!bench["empirical_fit"]["rss"].as_f64().unwrap().is_nan());
@@ -1134,7 +1134,7 @@ int main() {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let bench = &resp["results"]["benchmark"];
         let fit = &bench["empirical_fit"];
         if fit["ambiguous"] != true {
@@ -1179,7 +1179,7 @@ int main() {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let bench = &resp["results"]["benchmark"];
         assert_eq!(bench["samples"].as_array().unwrap().len(), 4);
         assert!(!bench["empirical_fit"]["rss"].as_f64().unwrap().is_nan());
@@ -1230,7 +1230,7 @@ int main() {
         let resp_str = handle_request(&req.to_string());
         let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
 
-        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         let fit = &resp["results"]["benchmark"]["empirical_fit"];
         assert!(fit["ambiguous"].as_bool().unwrap() || fit["model"].is_string());
     }

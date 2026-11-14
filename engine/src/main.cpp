@@ -66,7 +66,8 @@ bigolens::parser::ClangFrontendOptions frontendOptions(const char* argv0) {
 int main(int argc, char** argv) {
   try {
     std::string requestFile;
-    for (int i = 1; i < argc; ++i) {
+    int i = 1;
+    while (i < argc) {
       const std::string_view arg = argv[i];
       if (arg == "--version") {
         std::cout << bigolens::kEngineName << ' ' << bigolens::kEngineVersion << " (protocol "
@@ -84,7 +85,8 @@ int main(int argc, char** argv) {
         return 0;
       }
       if (arg == "--request" && i + 1 < argc) {
-        requestFile = argv[++i];
+        requestFile = argv[i + 1];
+        i += 2;
         continue;
       }
       std::cerr << "bigolens-engine: unknown argument '" << arg << "'\n" << kUsage;

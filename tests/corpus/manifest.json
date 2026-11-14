@@ -1,0 +1,248 @@
+{
+  "version": "1.0",
+  "license": "Apache-2.0",
+  "description": "BigO Lens Validation Corpus catalog for accuracy and coverage benchmarking (BL-601)",
+  "cases": [
+    {
+      "id": "CORPUS-01",
+      "name": "Prefix Sums",
+      "file": "src/01_prefix_sums.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n)",
+        "is_unknown": false
+      },
+      "rationale": "Single increasing unit-step loop computing prefix sums in linear time."
+    },
+    {
+      "id": "CORPUS-02",
+      "name": "Two-Pointer Target Sum",
+      "file": "src/02_two_pointer_pair.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n)",
+        "is_unknown": false
+      },
+      "rationale": "Converging while loop where each path increments left or decrements right."
+    },
+    {
+      "id": "CORPUS-03",
+      "name": "Sliding Window",
+      "file": "src/03_sliding_window.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(k)",
+        "is_unknown": false
+      },
+      "rationale": "Sequential linear passes over fixed-size subarray windows."
+    },
+    {
+      "id": "CORPUS-04",
+      "name": "Matrix Multiplication",
+      "file": "src/04_matrix_multiplication.cpp",
+      "expected": {
+        "pattern": "nested-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(k m n)",
+        "is_unknown": false
+      },
+      "rationale": "Three-level nested for-loop over matrix dimensions n, k, and m."
+    },
+    {
+      "id": "CORPUS-05",
+      "name": "Grid Traversal",
+      "file": "src/05_grid_traversal.cpp",
+      "expected": {
+        "pattern": "nested-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(m n)",
+        "is_unknown": false
+      },
+      "rationale": "Standard 2D grid nested loops over rows and columns."
+    },
+    {
+      "id": "CORPUS-06",
+      "name": "Selection Sort",
+      "file": "src/06_selection_sort.cpp",
+      "expected": {
+        "pattern": "triangular-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n^2)",
+        "is_unknown": false
+      },
+      "rationale": "Dependent inner loop for j in (i+1, n), evaluated exactly via triangular summation."
+    },
+    {
+      "id": "CORPUS-07",
+      "name": "Bubble Sort",
+      "file": "src/07_bubble_sort.cpp",
+      "expected": {
+        "pattern": "nested-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n^2)",
+        "is_unknown": false
+      },
+      "rationale": "Two nested loops both bounded by n, yielding quadratic complexity."
+    },
+    {
+      "id": "CORPUS-08",
+      "name": "Iterative Binary Search",
+      "file": "src/08_binary_search_iterative.cpp",
+      "expected": {
+        "pattern": "data-dependent-loop",
+        "bound_status": "unknown",
+        "asymptotic": null,
+        "is_unknown": true
+      },
+      "rationale": "Iterative binary search updates indices based on array values; reported as Unknown without guessing."
+    },
+    {
+      "id": "CORPUS-09",
+      "name": "Recursive Binary Search",
+      "file": "src/09_binary_search_recursive.cpp",
+      "expected": {
+        "pattern": "multiple-direct-recursion",
+        "bound_status": "proven",
+        "asymptotic": "O(log n)",
+        "is_unknown": false
+      },
+      "rationale": "Recurrence T(n) = T(n/2) + O(1) resolved via Master Theorem Case 2."
+    },
+    {
+      "id": "CORPUS-10",
+      "name": "Merge Sort",
+      "file": "src/10_merge_sort.cpp",
+      "expected": {
+        "pattern": "multiple-direct-recursion",
+        "bound_status": "proven",
+        "asymptotic": "O(n log n)",
+        "is_unknown": false
+      },
+      "rationale": "Recurrence T(n) = 2T(n/2) + O(n) resolved via Master Theorem Case 2."
+    },
+    {
+      "id": "CORPUS-11",
+      "name": "Binary Exponentiation",
+      "file": "src/11_binary_exponentiation.cpp",
+      "expected": {
+        "pattern": "logarithmic-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(log exp)",
+        "is_unknown": false
+      },
+      "rationale": "Halving while-loop with exp /= 2 producing logarithmic trip count."
+    },
+    {
+      "id": "CORPUS-12",
+      "name": "Sieve of Eratosthenes",
+      "file": "src/12_sieve_of_eratosthenes.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n)",
+        "is_unknown": false
+      },
+      "rationale": "Initial sieve linear loop is proven; inner composite marking has dynamic stride."
+    },
+    {
+      "id": "CORPUS-13",
+      "name": "Standard Sort Algorithm",
+      "file": "src/13_std_sort_vector.cpp",
+      "expected": {
+        "pattern": "stl-algorithm",
+        "bound_status": "proven",
+        "asymptotic": "O(v.size() log v.size())",
+        "is_unknown": false
+      },
+      "rationale": "STL algorithm cost model applies O(N log N) for std::sort on vector."
+    },
+    {
+      "id": "CORPUS-14",
+      "name": "Set Insertion Loop",
+      "file": "src/14_set_insertion_loop.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n log n)",
+        "is_unknown": false
+      },
+      "rationale": "STL cost model adds O(log N) per insert operation inside a linear loop."
+    },
+    {
+      "id": "CORPUS-15",
+      "name": "2D Vector Grid DP",
+      "file": "src/15_nested_vectors_dp.cpp",
+      "expected": {
+        "pattern": "nested-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(m n)",
+        "is_unknown": false
+      },
+      "rationale": "Nested DP loops with sized 2D vector allocation."
+    },
+    {
+      "id": "CORPUS-16",
+      "name": "Collatz Conjecture Loop",
+      "file": "src/16_collatz_iteration.cpp",
+      "expected": {
+        "pattern": "data-dependent-loop",
+        "bound_status": "unknown",
+        "asymptotic": null,
+        "is_unknown": true
+      },
+      "rationale": "3n+1 sequence with data-dependent termination, truthfully reported as Unknown."
+    },
+    {
+      "id": "CORPUS-17",
+      "name": "Naive Fibonacci",
+      "file": "src/17_naive_fibonacci.cpp",
+      "expected": {
+        "pattern": "multiple-direct-recursion",
+        "bound_status": "unsupported",
+        "asymptotic": null,
+        "is_unknown": true
+      },
+      "rationale": "Multiple subtractive recursion T(n) = T(n-1) + T(n-2) + O(1), explicitly Unsupported."
+    },
+    {
+      "id": "CORPUS-18",
+      "name": "Sum Constrained Multitest",
+      "file": "src/18_sum_constrained_multitest.cpp",
+      "sidecar": "src/18_sum_constrained_multitest.bigolens.json",
+      "expected": {
+        "pattern": "test-case-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(n^2 t)",
+        "is_unknown": false
+      },
+      "rationale": "Test-case loop with sum constraints packed to yield proven superadditive bound."
+    },
+    {
+      "id": "CORPUS-19",
+      "name": "Counting Sort",
+      "file": "src/19_counting_sort.cpp",
+      "expected": {
+        "pattern": "linear-loop",
+        "bound_status": "proven",
+        "asymptotic": "O(k)",
+        "is_unknown": false
+      },
+      "rationale": "Sequential linear passes over key range and input size."
+    },
+    {
+      "id": "CORPUS-20",
+      "name": "Euclidean GCD Algorithm",
+      "file": "src/20_gcd_euclidean.cpp",
+      "expected": {
+        "pattern": "data-dependent-loop",
+        "bound_status": "unknown",
+        "asymptotic": null,
+        "is_unknown": true
+      },
+      "rationale": "Euclidean remainder loop without fixed bounds reported as Unknown."
+    }
+  ]
+}

@@ -36,6 +36,10 @@ Testing/
 .DS_Store
 Thumbs.db
 
+# Python caches
+__pycache__/
+*.pyc
+
 # Local environment and secrets
 .env
 .env.*
