@@ -309,9 +309,9 @@ Green nodes are done in the foundation. Red nodes are on the critical path.
 **Scope.** In scope: Linux x64. Out of scope: macOS and Windows packages (BL-603), and Marketplace publishing (BL-605).
 
 **Acceptance criteria.**
-- [ ] The `.vsix` from a release run contains `bin/bigolens-engine`, which is executable.
-- [ ] On a clean Ubuntu machine or container with only VS Code installed (plus any documented runtime packages), installing the `.vsix` and running "Analyze Active C++ File" on `tests/fixtures/cpp/01_linear_loop.cpp` produces a finding without setting `bigoLens.enginePath`.
-- [ ] The runtime dependencies are documented in [GETTING_STARTED.md](../user/GETTING_STARTED.md).
+- [x] The `.vsix` from a release run contains `bin/bigolens-engine`, which is executable.
+- [x] On a clean Ubuntu machine or container with only VS Code installed (plus any documented runtime packages), installing the `.vsix` and running "Analyze Active C++ File" on `tests/fixtures/cpp/01_linear_loop.cpp` produces a finding without setting `bigoLens.enginePath`.
+- [x] The runtime dependencies are documented in [GETTING_STARTED.md](../user/GETTING_STARTED.md).
 
 **Test cases.** A CI step that installs the built `.vsix` into the smoke-test VS Code and runs an analysis against the bundled engine.
 
