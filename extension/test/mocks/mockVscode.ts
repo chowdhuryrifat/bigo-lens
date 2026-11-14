@@ -175,6 +175,7 @@ export class MockStatusBarItem {
   public tooltip: unknown = '';
   public command?: string;
   public name?: string;
+  public accessibilityInformation?: { label: string; role?: string } | undefined;
   public isVisible = false;
   public isDisposed = false;
 
@@ -271,6 +272,7 @@ export class TreeItem {
   public description?: string;
   public tooltip?: unknown;
   public command?: unknown;
+  public accessibilityInformation?: { label: string; role?: string } | undefined;
 
   constructor(
     public label: string,

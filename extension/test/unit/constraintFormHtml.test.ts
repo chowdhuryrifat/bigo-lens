@@ -108,4 +108,40 @@ describe('constraintFormHtml - Rendering Form Sections and Controls', () => {
     assert.ok(html.includes('href="vscode-webview://media/constraintForm.css"'));
     assert.ok(html.includes('src="vscode-webview://media/constraintForm.js"'));
   });
+
+  it('includes proper ARIA labels, section landmarks, and table scopes (BL-508)', () => {
+    const state: ConstraintFormState = {
+      variables: [],
+      sumConstraints: [],
+      productConstraints: [],
+      linearConstraints: [],
+    };
+
+    const html = renderConstraintFormHtml({
+      cspSource: 'vscode-webview:',
+      displayPath: 'solution.cpp',
+      sidecarPath: 'solution.cpp.bigolens.json',
+      initialState: state,
+    });
+
+    assert.ok(html.includes('role="main"'));
+    assert.ok(html.includes('aria-labelledby="heading-variables"'));
+    assert.ok(html.includes('id="heading-variables"'));
+    assert.ok(html.includes('aria-labelledby="heading-relationships"'));
+    assert.ok(html.includes('id="heading-relationships"'));
+    assert.ok(html.includes('aria-labelledby="heading-sum"'));
+    assert.ok(html.includes('id="heading-sum"'));
+    assert.ok(html.includes('aria-labelledby="heading-product"'));
+    assert.ok(html.includes('id="heading-product"'));
+    assert.ok(html.includes('aria-labelledby="heading-linear"'));
+    assert.ok(html.includes('id="heading-linear"'));
+    assert.ok(html.includes('aria-labelledby="heading-limits"'));
+    assert.ok(html.includes('id="heading-limits"'));
+    assert.ok(html.includes('role="region" aria-label="Detected unconstrained variables"'));
+    assert.ok(html.includes('role="alert" aria-live="polite"'));
+    assert.ok(html.includes('<th style="width: 25%;" scope="col">Variable Name</th>'));
+    assert.ok(html.includes('<th style="width: 30%;" scope="col">Variable (n)</th>'));
+    assert.ok(html.includes('<th style="width: 50%;" scope="col">Variables (e.g. n, m)</th>'));
+    assert.ok(html.includes('<th style="width: 50%;" scope="col">Coefficients (e.g. n: 1, m: 2)</th>'));
+  });
 });

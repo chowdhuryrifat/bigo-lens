@@ -47,6 +47,9 @@ export class ResultsTreeProvider implements vscode.TreeDataProvider<Node> {
       case 'section': {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.iconPath = new vscode.ThemeIcon(node.icon);
+        item.accessibilityInformation = {
+          label: `Section: ${node.label}`,
+        };
         return item;
       }
       case 'finding': {
@@ -58,6 +61,9 @@ export class ResultsTreeProvider implements vscode.TreeDataProvider<Node> {
         item.description = summarizeFinding(f);
         item.tooltip = new vscode.MarkdownString(findingTooltip(f));
         item.iconPath = new vscode.ThemeIcon(iconFor(f));
+        item.accessibilityInformation = {
+          label: `${f.id} ${f.function ? `${f.function} ` : ''}line ${f.location.line}, ${summarizeFinding(f)}, bound status ${f.bound_status}, confidence ${f.confidence}`,
+        };
         const line = Math.max(0, f.location.line - 1);
         const column = Math.max(0, f.location.column - 1);
         item.command = {
@@ -75,6 +81,9 @@ export class ResultsTreeProvider implements vscode.TreeDataProvider<Node> {
         if (node.tooltip !== undefined) {
           item.tooltip = node.tooltip;
         }
+        item.accessibilityInformation = {
+          label: `${node.label}${node.description ? `: ${node.description}` : ''}`,
+        };
         return item;
       }
     }

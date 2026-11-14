@@ -392,6 +392,11 @@ body.report-body {
   background: var(--btn-hover);
 }
 
+.btn-navigate:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
 .finding-desc {
   font-size: 0.9rem;
   margin: 0.25rem 0 0.75rem 0;
@@ -646,8 +651,8 @@ body.report-body {
 }
 
 .action-btn:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder, #007fd4);
-  outline-offset: 1px;
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
 }
 
 /* Benchmark Section */
@@ -816,4 +821,115 @@ body.report-body {
   fill: var(--fg-color);
   font-size: 10px;
   font-family: inherit;
+}
+
+/* Accessibility & High Contrast Modes (BL-508) */
+:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+body.vscode-high-contrast,
+body.vscode-high-contrast-light,
+@media (forced-colors: active) {
+  :root {
+    --border-color: var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .report-header,
+  .summary-bar,
+  .finding-card,
+  .metric-card,
+  .feasibility-card,
+  .benchmark-card,
+  .chart-container,
+  .chart-svg-container,
+  .benchmark-chart-container,
+  .alert-box,
+  .report-table,
+  .report-table th,
+  .report-table td,
+  .finding-table th,
+  .finding-table td {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .btn-navigate,
+  .action-btn {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .badge,
+  .engine-badge,
+  .asymptotic-tag,
+  .provenance-tag,
+  .category-badge {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff);
+  }
+
+  /* Status not conveyed by colour alone: distinctive borders in high contrast */
+  .feasibility-likely_safe,
+  .feasibility-pass {
+    border: 2px solid var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .feasibility-borderline,
+  .feasibility-warn {
+    border: 2px dashed var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .feasibility-likely_exceeded,
+  .feasibility-fail {
+    border: 3px double var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .feasibility-unknown {
+    border: 2px dotted var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .card-proven {
+    border-left: 4px solid var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .card-estimated {
+    border-left: 4px dashed var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .card-unknown {
+    border-left: 4px dotted var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .card-unsupported {
+    border-left: 4px double var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .alert-box.alert-critical {
+    border: 3px double var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .alert-box.alert-warning {
+    border: 2px dashed var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  .alert-box.alert-info {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff) !important;
+  }
+
+  /* SVG elements high-contrast lines and texts */
+  .chart-axis,
+  .chart-axis-line {
+    stroke: var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .chart-axis-grid,
+  .chart-grid-line {
+    stroke: var(--vscode-contrastBorder, #ffffff);
+    stroke-dasharray: 2, 2;
+  }
+
+  .chart-tick-label,
+  .chart-axis-header,
+  .chart-legend-text {
+    fill: var(--vscode-contrastBorder, #ffffff);
+  }
 }

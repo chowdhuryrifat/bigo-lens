@@ -8,6 +8,16 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Accessibility review across tree view, webview report, constraint form, and status bar (BL-508). Completes Milestone M5 deliverables:
+  - Screen-reader accessibility: Populates `accessibilityInformation` on all tree items in `ResultsTreeProvider` (sections, findings with full context including ID, line, bound status, confidence, and summary, and detail nodes), and on the status bar item (`StatusBarManager`) with complete analysis summary text.
+  - ARIA landmarks and roles: Implements semantic ARIA attributes throughout webviews, including `role="main"`, `role="region"` with `aria-label` or `aria-labelledby` for summary bar, feasibility cards, memory section, benchmark section, findings section, and detected variables quick-add box.
+  - Table accessibility: Equips all data tables in report and constraint form with proper `<th scope="col">` and `<th scope="row">` headers for assistive technology.
+  - Visual charts: Provides SVG `<title>`, `<desc>`, `role="img"`, and `aria-label` descriptions for both the workload comparison chart and the empirical benchmark runtime-range chart.
+  - Keyboard navigation: Ensures every interactive element (navigation buttons, action buttons, table delete buttons, inputs, and quick-add chips) is keyboard-focusable with prominent `:focus-visible` styling (`outline: 2px solid var(--vscode-focusBorder)`).
+  - High-contrast mode support: Implements high-contrast stylesheet rules targeting `.vscode-high-contrast`, `.vscode-high-contrast-light`, and `@media (forced-colors: active)` with distinct borders (`--vscode-contrastBorder`).
+  - Status not conveyed by colour alone: Uses distinctive border shapes (solid for pass/proven, dashed for warn/estimated, double for fail/unsupported/critical alert, dotted for unknown) alongside textual labels, icons, and status badges so that analysis states are clear in monochrome and high-contrast themes.
+  - Unit test suites covering ARIA landmark generation, table scopes, status bar accessibility labels, and tree item accessibility information.
+
 - Benchmark controls in the UI (BL-507). Adds user-initiated `bigoLens.runBenchmark` command and empirical runtime-range webview controls. Features:
   - Explicit modal confirmation dialog stating the platform's honest isolation level (e.g. Linux namespaces & seccomp where available, otherwise transparently labeled not sandboxed with resource limits only) prior to executing user code (`THREAT_MODEL.md §4.2`, `BENCHMARK_SPECIFICATION.md §11`).
   - Strict Workspace Trust enforcement: benchmarking is blocked immediately in untrusted workspaces (`!vscode.workspace.isTrusted`).

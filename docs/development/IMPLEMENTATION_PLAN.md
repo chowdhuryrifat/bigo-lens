@@ -66,7 +66,7 @@ flowchart TD
   BL505["BL-505 Re-analyze on save"]:::done
   BL506["BL-506 Workspace Trust"]:::done
   BL507["BL-507 Benchmark controls"]:::done
-  BL508["BL-508 Accessibility"]:::todo
+  BL508["BL-508 Accessibility"]:::done
 
   BL601["BL-601 Validation corpus"]:::todo
   BL602["BL-602 Clang frontend on macOS/Windows"]:::todo
@@ -961,7 +961,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-508: Accessibility review
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P2
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-503
@@ -973,9 +973,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the tree view, the report, the form and the status bar.
 
 **Acceptance criteria.**
-- [ ] Every action can be reached by keyboard.
-- [ ] Screen-reader labels are present.
-- [ ] High-contrast themes render correctly.
+- [x] Every action can be reached by keyboard.
+- [x] Screen-reader labels are present.
+- [x] High-contrast themes render correctly.
 
 **Test cases.** A manual checklist recorded in the pull request, plus automated checks for ARIA attributes in generated HTML.
 

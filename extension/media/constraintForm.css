@@ -394,3 +394,66 @@ body.constraint-form-body {
   margin-bottom: 2rem;
   flex-wrap: wrap;
 }
+
+/* Accessibility & High Contrast Modes (BL-508) */
+.btn:focus-visible,
+.chip-btn:focus-visible,
+.table-input:focus-visible,
+.form-input:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
+body.vscode-high-contrast,
+body.vscode-high-contrast-light,
+@media (forced-colors: active) {
+  :root {
+    --border-color: var(--vscode-contrastBorder, #ffffff);
+    --input-border: var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .form-header,
+  .form-section,
+  .table-container,
+  .form-table th,
+  .form-table td,
+  .table-input,
+  .form-input,
+  .btn,
+  .chip-btn,
+  .badge,
+  .validation-banner,
+  .detected-quickadd {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .btn-primary {
+    border: 2px solid var(--vscode-contrastBorder, #ffffff);
+  }
+
+  /* Status not conveyed by colour alone: distinctive borders in high contrast */
+  .badge-used {
+    border: 1px solid var(--vscode-contrastBorder, #ffffff);
+    border-style: solid;
+  }
+
+  .badge-validated {
+    border: 1px dashed var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .badge-detected {
+    border: 1px dotted var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .chip-missing {
+    border: 2px dashed var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .validation-banner.banner-error {
+    border: 2px double var(--vscode-contrastBorder, #ffffff);
+  }
+
+  .validation-banner.banner-success {
+    border: 2px solid var(--vscode-contrastBorder, #ffffff);
+  }
+}
