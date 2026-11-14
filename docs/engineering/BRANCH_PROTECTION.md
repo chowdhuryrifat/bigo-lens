@@ -73,3 +73,34 @@ Repository administrators configure the ruleset under **Settings -> Rules -> Rul
     - Require branches to be up to date before merging: `true`
     - Status checks: listed above in §1.2
   - Require linear history: `true`
+
+---
+
+## 4. Live Verification and Audit Record (BL-107)
+
+The repository ruleset and security configuration was audited and confirmed active on GitHub:
+
+- **Ruleset ID**: `27279054` (`Protect main`)
+- **Target Branch**: Default branch (`~DEFAULT_BRANCH` = `main`)
+- **Enforcement Status**: `Active`
+- **Active Rules**:
+  1. `deletion`: Prevents accidental or unauthorized deletion of `main`.
+  2. `non_fast_forward`: Disallows force-pushing over history.
+  3. `pull_request`: Requires a pull request prior to merge, dismisses stale reviews on push, requires review thread resolution, and blocks all direct pushes to `main`.
+  4. `required_status_checks`: Enforces strict branch-up-to-date checks against CI status checks (`strict_required_status_checks_policy: true`).
+- **Direct Push Rejection Verification**:
+  Attempting a direct push to `main` produces:
+  ```text
+  remote: error: GH013: Repository rule violations found for refs/heads/main.
+  remote: - Changes must be made through a pull request.
+  remote: - 8 of 8 required status checks are expected.
+  To https://github.com/chowdhuryrifat/bigo-lens.git
+   ! [remote rejected] main -> main (push declined due to repository rule violations)
+  ```
+- **Private Vulnerability Reporting**:
+  Active on the repository via GitHub Security API (`PUT /repos/chowdhuryrifat/bigo-lens/private-vulnerability-reporting`), exposing "Report a vulnerability" on the Security tab.
+- **Vulnerability Alerts**:
+  Active (`PUT /repos/chowdhuryrifat/bigo-lens/vulnerability-alerts`).
+- **Issue Templates**:
+  All three forms (`bug_report.yml`, `feature_request.yml`, `documentation.yml`) plus `config.yml` confirmed operational in `.github/ISSUE_TEMPLATE/` (verified via test issues #34, #35, #36).
+
