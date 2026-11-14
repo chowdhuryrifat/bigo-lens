@@ -702,8 +702,9 @@ bool isSuperadditiveIn(const Expr& expr, const std::string& variable) {
 /// Evaluates workload when no sum constraints are active, applying linear and product
 /// constraints if the expression is monotone, or falling back to pointwise evaluation.
 WorkloadResult evaluateWorkloadWithoutSums(const Expr& expr, const ConstraintSet& cs, const std::set<std::string>& free,
-                                           complexity::Bindings maxima, complexity::Bindings minima, bool monotone,
-                                           BoundStatus status, ConstraintContext& ctx, WorkloadResult result) {
+                                           complexity::Bindings maxima, const complexity::Bindings& minima,
+                                           bool monotone, BoundStatus status, ConstraintContext& ctx,
+                                           WorkloadResult result) {
   auto finish = [&](const complexity::EvalResult& eval, std::string method) {
     if (!eval.ok()) {
       result.status = BoundStatus::Unknown;
@@ -826,7 +827,7 @@ WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& c
   const double maxCases = static_cast<double>(*cs.variables.find(countVar)->second.max);
 
   // Per-case value of every sum-constrained variable is at most min(max, total).
-  complexity::Bindings capped = maxima;
+  complexity::Bindings capped = std::move(maxima);
   for (const SumConstraint* sc : sums) {
     capped[sc->variable] = std::min(capped[sc->variable], static_cast<double>(sc->maxTotal));
   }
@@ -1140,7 +1141,7 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
   ConstraintContext ctx(cs.products, cs.linear, minima);
 
   if (sums.empty()) {
-    return evaluateWorkloadWithoutSums(expr, cs, free, std::move(maxima), std::move(minima), monotone, status, ctx,
+    return evaluateWorkloadWithoutSums(expr, cs, free, std::move(maxima), minima, monotone, status, ctx,
                                        std::move(result));
   }
 
