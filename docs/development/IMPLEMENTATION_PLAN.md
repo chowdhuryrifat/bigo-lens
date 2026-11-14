@@ -12,10 +12,10 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-301: Use product constraints to tighten workloads](#bl-301-use-product-constraints-to-tighten-workloads).**
+> **[BL-605: Marketplace and Open VSX publication decision](#bl-605-marketplace-and-open-vsx-publication-decision).**
 >
-> M2 (Analysis: loop forms, recursion and storage) is complete! BL-207 synchronized M2 capabilities, specifications, and example responses.
-> BL-301 uses `product_constraints` (e.g. `n·m ≤ 10^6`) to tighten workloads for monotone expressions.
+> M1 through M5, as well as validation corpus scoring (BL-601) and protocol stability/deprecation review (BL-606), are complete!
+> BL-605 establishes the publication policy, publisher credentials scoping, and release distribution strategy ahead of packaging.
 
 ## Dependency graph
 
@@ -59,7 +59,7 @@ flowchart TD
   BL407["BL-407 benchmark action + time feasibility"]:::done
   BL408["BL-408 Differential tests"]:::done
 
-  BL501["BL-501 Constraint form UI"]:::todo
+  BL501["BL-501 Constraint form UI"]:::done
   BL502["BL-502 Webview + CSP"]:::done
   BL503["BL-503 Explanations + charts"]:::done
   BL504["BL-504 Status bar"]:::done
@@ -68,12 +68,12 @@ flowchart TD
   BL507["BL-507 Benchmark controls"]:::done
   BL508["BL-508 Accessibility"]:::done
 
-  BL601["BL-601 Validation corpus"]:::todo
+  BL601["BL-601 Validation corpus"]:::done
   BL602["BL-602 Clang frontend on macOS/Windows"]:::todo
   BL603["BL-603 Per-platform .vsix"]:::todo
   BL604["BL-604 Signing + provenance"]:::todo
   BL605["BL-605 Marketplace decision"]:::todo
-  BL606["BL-606 Protocol stability review"]:::todo
+  BL606["BL-606 Protocol stability review"]:::done
   BL607["BL-607 Parse-time reduction"]:::todo
 
   BL101 --> BL105
@@ -777,10 +777,10 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the protocol, the engine wiring, and capabilities. Out of scope: UI (BL-507).
 
 **Acceptance criteria.**
-- [ ] The response validates against the updated schema.
-- [ ] Ambiguous fits give a wide or Unknown range, never a guessed one.
-- [ ] Time feasibility uses the policy in [FEASIBILITY_MODEL.md](../specifications/FEASIBILITY_MODEL.md).
-- [ ] The `capabilities.features.benchmark` value is updated.
+- [x] The response validates against the updated schema.
+- [x] Ambiguous fits give a wide or Unknown range, never a guessed one.
+- [x] Time feasibility uses the policy in [FEASIBILITY_MODEL.md](../specifications/FEASIBILITY_MODEL.md).
+- [x] The `capabilities.features.benchmark` value is updated.
 
 **Test cases.** Protocol tests, end-to-end tests on fixtures 01, 03 and 05 (growth class only, no timing thresholds), and an ambiguous-fit case.
 
@@ -987,7 +987,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-601: Validation corpus and scoring
 
-- **Status:** Not started
+- **Status:** Done. Curated corpus under `tests/corpus/` (20 self-contained representative solutions across algorithms, data structures, and unprovable near-misses), machine-readable `manifest.json`, scoring harness `scripts/test/score-corpus.py`, unit test suite `scripts/test/test_score_corpus.py`, and automated CI execution with artifact generation.
 - **Priority:** P1
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-503
@@ -999,9 +999,9 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: the corpus, the script and the report. Out of scope: solutions scraped from online judges, which is a platform-independence non-goal.
 
 **Acceptance criteria.**
-- [ ] The corpus licence is documented.
-- [ ] The report is generated in CI.
-- [ ] Any published accuracy number links to the run that produced it.
+- [x] The corpus licence is documented.
+- [x] The report is generated in CI.
+- [x] Any published accuracy number links to the run that produced it.
 
 **Test cases.** A unit test for the scoring script on a tiny synthetic corpus.
 
@@ -1091,7 +1091,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-606: Protocol stability review and deprecation policy
 
-- **Status:** Not started
+- **Status:** Done. Protocol fields audited and confirmed complete across `analyze`, `capabilities`, and `benchmark`. Formal deprecation policy published in `docs/specifications/JSON_PROTOCOL.md §8.1` ahead of 1.0 release, and all schema examples validated.
 - **Priority:** P2
 - **Estimated complexity:** S (relative)
 - **Dependencies:** BL-601
@@ -1103,8 +1103,8 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: documentation and any minor clean-ups.
 
 **Acceptance criteria.**
-- [ ] The policy is published.
-- [ ] No field remains undocumented.
+- [x] The policy is published.
+- [x] No field remains undocumented.
 
 **Test cases.** Schema validation of all examples.
 

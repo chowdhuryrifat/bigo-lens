@@ -67,6 +67,24 @@ jobs:
         run: ctest --preset ci
       - name: Engine smoke check
         run: ./build/ci/engine/bigolens-engine --request shared/examples/capabilities.request.json
+      - name: Validation corpus unit test
+        run: python3 -m unittest scripts/test/test_score_corpus.py
+      - name: Score validation corpus
+        run: >-
+          python3 scripts/test/score-corpus.py
+          --engine ./build/ci/engine/bigolens-engine
+          --output target/corpus-results.json
+          --markdown target/corpus-report.md
+          --fail-on-regression
+      - name: Upload validation corpus results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: validation-corpus-results
+          path: |
+            target/corpus-results.json
+            target/corpus-report.md
+          if-no-files-found: ignore
       - name: Upload engine for the extension job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

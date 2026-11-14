@@ -8,6 +8,21 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Validation corpus and automated scoring harness (BL-601):
+  - Curated validation corpus in `tests/corpus/` containing 20 self-contained representative algorithmic solutions across linear loops, two-pointer loops, sliding windows, multi-level nested loops, grid traversals, triangular summations, logarithmic halving loops, divide-and-conquer recurrences (merge sort, binary search), STL algorithms and containers (`std::sort`, `std::set`), dynamic programming with nested 2D vectors, and unprovable near-miss patterns (Collatz loops, iterative binary search without monotonicity proofs, naive Fibonacci recursion, Euclidean GCD) verifying the Prime Directive.
+  - Machine-readable catalog `tests/corpus/manifest.json` with ground-truth asymptotic classes, bound statuses, and mathematical rationales.
+  - Automated scoring harness in `scripts/test/score-corpus.py` calculating precision, honest unknown/unsupported percentages, and per-pattern metrics, generating structured JSON artifacts and formatted Markdown summaries.
+  - Unit test suite in `scripts/test/test_score_corpus.py` validating metrics calculation, finding extraction, Markdown generation, and synthetic evaluations.
+  - Integrated into CI workflow (`ci.yml`) and `scripts/test/run-all-tests.sh` with automated artifact upload.
+
+- Protocol stability review and formal deprecation policy ahead of 1.0 (BL-606):
+  - Formulated and published deprecation lifecycle and client warning policy in `docs/specifications/JSON_PROTOCOL.md §8.1`.
+  - Audited all protocol fields across `analyze`, `capabilities`, and `benchmark` actions, and verified 100% compliance with `shared/schemas/`.
+
+### Changed
+
+- Engine CLI argument parser (`engine/src/main.cpp`): refactored command-line loop from modifying `for` counter inside body to a clean `while` loop, eliminating static analysis loop-counter modification warnings.
+
 - Accessibility review across tree view, webview report, constraint form, and status bar (BL-508). Completes Milestone M5 deliverables:
   - Screen-reader accessibility: Populates `accessibilityInformation` on all tree items in `ResultsTreeProvider` (sections, findings with full context including ID, line, bound status, confidence, and summary, and detail nodes), and on the status bar item (`StatusBarManager`) with complete analysis summary text.
   - ARIA landmarks and roles: Implements semantic ARIA attributes throughout webviews, including `role="main"`, `role="region"` with `aria-label` or `aria-labelledby` for summary bar, feasibility cards, memory section, benchmark section, findings section, and detected variables quick-add box.
