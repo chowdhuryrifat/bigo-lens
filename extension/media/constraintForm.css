@@ -1,0 +1,396 @@
+/* BigO Lens Constraint Form Stylesheet */
+:root {
+  --font-family: var(
+    --vscode-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif
+  );
+  --font-size: var(--vscode-font-size, 13px);
+  --bg-color: var(--vscode-editor-background, #1e1e1e);
+  --fg-color: var(--vscode-editor-foreground, #d4d4d4);
+  --card-bg: var(--vscode-editorWidget-background, #252526);
+  --border-color: var(--vscode-widget-border, #3c3c3c);
+  --input-bg: var(--vscode-input-background, #3c3c3c);
+  --input-fg: var(--vscode-input-foreground, #cccccc);
+  --input-border: var(--vscode-input-border, #3c3c3c);
+  --btn-bg: var(--vscode-button-background, #0e639c);
+  --btn-fg: var(--vscode-button-foreground, #ffffff);
+  --btn-hover: var(--vscode-button-hoverBackground, #1177bb);
+  --btn-sec-bg: var(--vscode-button-secondaryBackground, #3a3d41);
+  --btn-sec-fg: var(--vscode-button-secondaryForeground, #ffffff);
+  --btn-sec-hover: var(--vscode-button-secondaryHoverBackground, #45494e);
+  --btn-danger-bg: #a12626;
+  --btn-danger-hover: #c43232;
+  --badge-bg: var(--vscode-badge-background, #4d4d4d);
+  --badge-fg: var(--vscode-badge-foreground, #ffffff);
+  --accent-blue: var(--vscode-textLink-foreground, #3794ff);
+  --accent-green: var(--vscode-testing-iconPassed, #4caf50);
+  --accent-amber: var(--vscode-editorWarning-foreground, #cca700);
+  --accent-red: var(--vscode-editorError-foreground, #f14c4c);
+}
+
+body.constraint-form-body {
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  color: var(--fg-color);
+  background-color: var(--bg-color);
+  margin: 0;
+  padding: 1.5rem;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.form-header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.form-header h1 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.file-path {
+  font-family: monospace;
+  font-size: 1.1rem;
+  color: var(--accent-blue);
+}
+
+.sidecar-info {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.sidecar-info code {
+  font-family: monospace;
+  background-color: var(--card-bg);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+/* Validation banner */
+.validation-banner {
+  padding: 0.8rem 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+.validation-banner.banner-error {
+  background-color: rgba(241, 76, 76, 0.15);
+  border: 1px solid var(--accent-red);
+  color: var(--accent-red);
+}
+
+.validation-banner.banner-success {
+  background-color: rgba(76, 175, 80, 0.15);
+  border: 1px solid var(--accent-green);
+  color: var(--accent-green);
+}
+
+.validation-banner ul {
+  margin: 0.4rem 0 0 1.2rem;
+  padding: 0;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Form sections */
+.form-section {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.section-header h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.section-desc {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0 0 1rem 0;
+}
+
+.section-desc code {
+  font-family: monospace;
+}
+
+/* Quickadd detected variables chips */
+.detected-quickadd {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background-color: rgba(55, 148, 255, 0.08);
+  border: 1px dashed var(--accent-blue);
+  border-radius: 4px;
+  padding: 0.5rem 0.8rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.quickadd-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.quickadd-chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.chip-btn {
+  background-color: var(--btn-sec-bg);
+  color: var(--btn-sec-fg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: background-color 0.15s ease;
+}
+
+.chip-btn:hover {
+  background-color: var(--btn-sec-hover);
+  border-color: var(--accent-blue);
+}
+
+.chip-missing {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+}
+
+/* Tables */
+.table-container {
+  overflow-x: auto;
+}
+
+.form-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.form-table th,
+.form-table td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.form-table th {
+  font-weight: 600;
+  color: var(--fg-color);
+  opacity: 0.9;
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.form-table tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.table-input {
+  width: 100%;
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--input-border);
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+.table-input:focus {
+  outline: 1px solid var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+/* Badges */
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-used {
+  background-color: rgba(76, 175, 80, 0.2);
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green);
+}
+
+.badge-validated {
+  background-color: rgba(55, 148, 255, 0.15);
+  color: var(--accent-blue);
+  border: 1px solid var(--accent-blue);
+}
+
+.badge-detected {
+  background-color: rgba(204, 167, 0, 0.15);
+  color: var(--accent-amber);
+  border: 1px solid var(--accent-amber);
+  font-family: monospace;
+}
+
+/* Subsections */
+.subsection {
+  margin-top: 1.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.subsection-header {
+  margin-bottom: 0.5rem;
+}
+
+.subsection-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Limits grid */
+.limits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.form-input {
+  background-color: var(--input-bg);
+  color: var(--input-fg);
+  border: 1px solid var(--input-border);
+  border-radius: 3px;
+  padding: 0.45rem 0.6rem;
+  font-family: var(--font-family);
+  font-size: 0.9rem;
+}
+
+.form-input:focus {
+  outline: 1px solid var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+/* Action Buttons */
+.btn {
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: background-color 0.15s ease;
+}
+
+.btn-primary {
+  background-color: var(--btn-bg);
+  color: var(--btn-fg);
+}
+
+.btn-primary:hover {
+  background-color: var(--btn-hover);
+}
+
+.btn-accent {
+  background-color: #238636;
+}
+
+.btn-accent:hover {
+  background-color: #2ea043;
+}
+
+.btn-secondary {
+  background-color: var(--btn-sec-bg);
+  color: var(--btn-sec-fg);
+}
+
+.btn-secondary:hover {
+  background-color: var(--btn-sec-hover);
+}
+
+.btn-danger {
+  background-color: var(--btn-danger-bg);
+  color: #ffffff;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.btn-danger:hover {
+  background-color: var(--btn-danger-hover);
+}
+
+.btn-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.form-actions-bar {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}

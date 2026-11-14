@@ -53,8 +53,9 @@ These are read by the **engine** process, which inherits VS Code's environment:
 ### 2.1 Location and lifecycle
 
 - For a source file `solution.cpp`, the constraints file is **`solution.cpp.bigolens.json`** in the same directory.
-- **BigO Lens: Edit Constraints for Active File** creates it from a template if it does not exist (it never overwrites an existing file), then opens it.
-- **BigO Lens: Analyze Active C++ File** reads it if present. If it is **missing**, the analysis runs without constraints: expressions and O() bounds are still reported, but workloads are `unknown` and list their `missing_bounds`. If it is **invalid**, the analysis stops, and the errors are printed in the **BigO Lens** output channel.
+- **BigO Lens: Configure Constraints (Form)** opens an interactive form UI to visually edit variable bounds, relationships (sum, product, linear), and execution limits. It includes detected-in-source chips for unconstrained variables, inline validation, and direct "Save to Sidecar" and "Save & Analyze" buttons.
+- **BigO Lens: Edit Constraints for Active File** creates the file from a template if it does not exist (it never overwrites an existing file), then opens the raw JSON sidecar.
+- **BigO Lens: Analyze Active File** reads it if present. If it is **missing**, the analysis runs without constraints: expressions and O() bounds are still reported, but workloads are `unknown` and list their `missing_bounds`. If it is **invalid**, the analysis stops, and the errors are printed in the **BigO Lens** output channel.
 - The file must be at most 256 KiB. It is validated against the `constraints` definition in [`shared/schemas/request.schema.json`](../../shared/schemas/request.schema.json) before use, and validated again by the engine.
 - Constraints for unsaved (untitled) editors are not supported.
 
@@ -143,4 +144,4 @@ Container-size bound, for `for (auto x : v)` or `for (i < v.size())`:
 
 ## 3. Settings that do not exist yet
 
-The following are **planned** and do not work today: analysis on save, a constraint form UI, a webview report, and benchmark settings. See [ROADMAP.md](../development/ROADMAP.md).
+The following are **planned** and do not work today: benchmark controls and problem statement extraction. Analysis on save, constraint form UI, and webview reports are implemented in Milestone M5. See [ROADMAP.md](../development/ROADMAP.md).

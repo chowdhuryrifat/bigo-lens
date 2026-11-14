@@ -275,6 +275,9 @@ export const window = {
     });
     return Promise.resolve(editor);
   },
+  showInformationMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
+  showWarningMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
+  showErrorMessage: (): Promise<string | undefined> => Promise.resolve(undefined),
 };
 
 export const workspace = {

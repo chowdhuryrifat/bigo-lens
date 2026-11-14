@@ -63,6 +63,12 @@
         "icon": "$(settings-gear)"
       },
       {
+        "command": "bigoLens.configureConstraints",
+        "title": "Configure Constraints (Form)",
+        "category": "BigO Lens",
+        "icon": "$(edit)"
+      },
+      {
         "command": "bigoLens.openReport",
         "title": "Open Report",
         "category": "BigO Lens",
@@ -94,13 +100,18 @@
     "viewsWelcome": [
       {
         "view": "bigoLens.results",
-        "contents": "Open a Python or C++ file and run an analysis.\n[Analyze Active File](command:bigoLens.analyzeActiveFile)\n[Edit Constraints](command:bigoLens.editConstraints)\n[Open Report](command:bigoLens.openReport)"
+        "contents": "Open a Python or C++ file and run an analysis.\n[Analyze Active File](command:bigoLens.analyzeActiveFile)\n[Configure Constraints](command:bigoLens.configureConstraints)\n[Edit Raw Constraints](command:bigoLens.editConstraints)\n[Open Report](command:bigoLens.openReport)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "bigoLens.analyzeActiveFile",
+          "when": "view == bigoLens.results",
+          "group": "navigation"
+        },
+        {
+          "command": "bigoLens.configureConstraints",
           "when": "view == bigoLens.results",
           "group": "navigation"
         },
@@ -118,6 +129,10 @@
       "commandPalette": [
         {
           "command": "bigoLens.analyzeActiveFile",
+          "when": "editorLangId == cpp || editorLangId == python"
+        },
+        {
+          "command": "bigoLens.configureConstraints",
           "when": "editorLangId == cpp || editorLangId == python"
         },
         {

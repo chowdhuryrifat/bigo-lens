@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { analyzeActiveFile } from './commands/analyzeActiveFile';
+import { configureConstraints } from './commands/configureConstraints';
 import { editConstraints } from './commands/editConstraints';
 import { openReport } from './commands/openReport';
 import { showCapabilities } from './commands/showCapabilities';
@@ -17,6 +18,7 @@ import { SaveAnalysisCoordinator } from './services/saveAnalysis';
 export const COMMANDS = {
   analyzeActiveFile: 'bigoLens.analyzeActiveFile',
   editConstraints: 'bigoLens.editConstraints',
+  configureConstraints: 'bigoLens.configureConstraints',
   openReport: 'bigoLens.openReport',
   showCapabilities: 'bigoLens.showCapabilities',
 } as const;
@@ -72,6 +74,20 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
     ),
     vscode.commands.registerCommand(COMMANDS.editConstraints, () => editConstraints()),
+    vscode.commands.registerCommand(COMMANDS.configureConstraints, () =>
+      configureConstraints({
+        ...services,
+        extensionUri: context.extensionUri,
+        snapshotProvider: () => lastSnapshot,
+        onAnalyze: () =>
+          analyzeActiveFile({
+            ...services,
+            tree,
+            diagnostics,
+            onResults: handleResults,
+          }),
+      }),
+    ),
     vscode.commands.registerCommand(COMMANDS.openReport, () => {
       openReport(context.extensionUri, () => lastSnapshot);
     }),
