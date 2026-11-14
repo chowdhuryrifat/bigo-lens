@@ -1,7 +1,7 @@
-//! Process runner with timeouts, resource limits (rlimits), process groups,
-//! and peak-RSS measurement.
+//! Process runner with timeouts, resource limits (rlimits / Windows Job Objects),
+//! process groups, and peak-RSS measurement.
 //!
-//! Follows ADR 0014 and BL-404.
+//! Follows ADR 0014, BL-404, and BL-406.
 
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -416,13 +416,681 @@ pub fn execute_single_run(
     }
 }
 
-/// Fallback runner execution for non-Unix operating systems.
-#[cfg(not(unix))]
+/// Prepares Job Object limit flags and accounting configuration from `RunnerLimits`.
+pub fn build_job_limits_config(limits: &RunnerLimits) -> (u32, i64, usize, Option<u32>) {
+    let mut flags = win32_constants::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | win32_constants::JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
+
+    let cpu_100ns = if limits.cpu_timeout > Duration::ZERO {
+        flags |= win32_constants::JOB_OBJECT_LIMIT_JOB_TIME;
+        (limits.cpu_timeout.as_nanos() / 100) as i64
+    } else {
+        0
+    };
+
+    let max_mem = if limits.max_memory_bytes > 0 {
+        flags |= win32_constants::JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            | win32_constants::JOB_OBJECT_LIMIT_JOB_MEMORY;
+        limits.max_memory_bytes as usize
+    } else {
+        0
+    };
+
+    let max_nproc = if let Some(nproc) = limits.max_nproc {
+        flags |= win32_constants::JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+        Some(nproc as u32)
+    } else {
+        None
+    };
+
+    (flags, cpu_100ns, max_mem, max_nproc)
+}
+
+/// Constants for Windows Job Objects, process status codes, and synchronization.
+#[allow(
+    non_snake_case,
+    non_camel_case_types,
+    non_upper_case_globals,
+    dead_code
+)]
+pub mod win32_constants {
+    pub const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
+    pub const JOB_OBJECT_LIMIT_JOB_TIME: u32 = 0x0000_0004;
+    pub const JOB_OBJECT_LIMIT_ACTIVE_PROCESS: u32 = 0x0000_0008;
+    pub const JOB_OBJECT_LIMIT_PROCESS_MEMORY: u32 = 0x0000_0100;
+    pub const JOB_OBJECT_LIMIT_JOB_MEMORY: u32 = 0x0000_0200;
+    pub const JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION: u32 = 0x0000_0400;
+    pub const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+
+    pub const JobObjectBasicAccountingInformation: u32 = 1;
+    pub const JobObjectExtendedLimitInformation: u32 = 9;
+
+    pub const WAIT_OBJECT_0: u32 = 0x0000_0000;
+    pub const WAIT_TIMEOUT: u32 = 0x0000_0102;
+    pub const WAIT_FAILED: u32 = 0xFFFF_FFFF;
+
+    pub const TH32CS_SNAPTHREAD: u32 = 0x0000_0004;
+    pub const THREAD_SUSPEND_RESUME: u32 = 0x0002;
+
+    pub const STATUS_SUCCESS: u32 = 0x0000_0000;
+    pub const STATUS_JOB_OBJECT_LIMIT_REACHED: u32 = 0xC000_0412;
+    pub const STATUS_NO_MEMORY: u32 = 0xC000_0017;
+    pub const STATUS_COMMITMENT_LIMIT: u32 = 0xC000_0128;
+    pub const STATUS_ACCESS_VIOLATION: u32 = 0xC000_0005;
+    pub const STATUS_STACK_OVERFLOW: u32 = 0xC000_00FD;
+    pub const STATUS_ILLEGAL_INSTRUCTION: u32 = 0xC000_001D;
+    pub const STATUS_FLOAT_DIVIDE_BY_ZERO: u32 = 0xC000_008E;
+    pub const STATUS_INTEGER_DIVIDE_BY_ZERO: u32 = 0xC000_0094;
+    pub const STATUS_CONTROL_C_EXIT: u32 = 0xC000_013A;
+    pub const STATUS_DLL_NOT_FOUND: u32 = 0xC000_0135;
+    pub const STATUS_ENTRYPOINT_NOT_FOUND: u32 = 0xC000_0139;
+}
+
+pub use win32_constants::*;
+
+/// Map a Windows process exit code, stderr output, timeout condition, and CPU time
+/// to a normalized `BenchmarkRunStatus`.
+pub fn map_windows_exit_status(
+    raw_exit_code: u32,
+    stderr_str: &str,
+    timed_out: bool,
+    cpu_time: Duration,
+    limits: &RunnerLimits,
+) -> BenchmarkRunStatus {
+    if timed_out {
+        return BenchmarkRunStatus::Timeout;
+    }
+
+    if limits.cpu_timeout > Duration::ZERO && cpu_time >= limits.cpu_timeout {
+        return BenchmarkRunStatus::Timeout;
+    }
+
+    if stderr_str.contains("bad_alloc")
+        || stderr_str.contains("out of memory")
+        || stderr_str.contains("std::bad_alloc")
+    {
+        return BenchmarkRunStatus::MemoryLimitExceeded;
+    }
+
+    if raw_exit_code == win32_constants::STATUS_JOB_OBJECT_LIMIT_REACHED {
+        if limits.cpu_timeout > Duration::ZERO && cpu_time >= limits.cpu_timeout {
+            return BenchmarkRunStatus::Timeout;
+        }
+        return BenchmarkRunStatus::MemoryLimitExceeded;
+    }
+
+    if raw_exit_code == win32_constants::STATUS_NO_MEMORY
+        || raw_exit_code == win32_constants::STATUS_COMMITMENT_LIMIT
+    {
+        return BenchmarkRunStatus::MemoryLimitExceeded;
+    }
+
+    if raw_exit_code == win32_constants::STATUS_SUCCESS {
+        return BenchmarkRunStatus::Success;
+    }
+
+    match raw_exit_code {
+        win32_constants::STATUS_ACCESS_VIOLATION => {
+            BenchmarkRunStatus::Crash("access violation (0xC0000005)".to_string())
+        }
+        win32_constants::STATUS_STACK_OVERFLOW => {
+            BenchmarkRunStatus::Crash("stack overflow (0xC00000FD)".to_string())
+        }
+        win32_constants::STATUS_ILLEGAL_INSTRUCTION => {
+            BenchmarkRunStatus::Crash("illegal instruction (0xC000001D)".to_string())
+        }
+        win32_constants::STATUS_FLOAT_DIVIDE_BY_ZERO
+        | win32_constants::STATUS_INTEGER_DIVIDE_BY_ZERO => {
+            BenchmarkRunStatus::Crash("divide by zero (0xC0000094)".to_string())
+        }
+        win32_constants::STATUS_CONTROL_C_EXIT => {
+            BenchmarkRunStatus::Crash("terminated by user/control-c (0xC000013A)".to_string())
+        }
+        win32_constants::STATUS_DLL_NOT_FOUND => BenchmarkRunStatus::Error(
+            "dynamic-link library (DLL) not found (0xC0000135)".to_string(),
+        ),
+        win32_constants::STATUS_ENTRYPOINT_NOT_FOUND => {
+            BenchmarkRunStatus::Error("entrypoint not found (0xC0000139)".to_string())
+        }
+        code if (code & 0xC000_0000) == 0xC000_0000 => {
+            BenchmarkRunStatus::Crash(format!("fatal exception 0x{:08X}", code))
+        }
+        code => BenchmarkRunStatus::Crash(format!("exit code {}", code)),
+    }
+}
+
+#[cfg(windows)]
+#[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+pub mod win32 {
+    use super::*;
+    use std::ffi::c_void;
+    use std::io;
+
+    pub type HANDLE = *mut c_void;
+    pub type BOOL = i32;
+    pub type DWORD = u32;
+    pub type ULONG_PTR = usize;
+    pub type LARGE_INTEGER = i64;
+
+    pub const FALSE: BOOL = 0;
+    pub const NULL_HANDLE: HANDLE = std::ptr::null_mut();
+    pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct IO_COUNTERS {
+        pub ReadOperationCount: u64,
+        pub WriteOperationCount: u64,
+        pub OtherOperationCount: u64,
+        pub ReadTransferCount: u64,
+        pub WriteTransferCount: u64,
+        pub OtherTransferCount: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        pub PerProcessUserTimeLimit: LARGE_INTEGER,
+        pub PerJobUserTimeLimit: LARGE_INTEGER,
+        pub LimitFlags: DWORD,
+        pub MinimumWorkingSetSize: ULONG_PTR,
+        pub MaximumWorkingSetSize: ULONG_PTR,
+        pub ActiveProcessLimit: DWORD,
+        pub Affinity: ULONG_PTR,
+        pub PriorityClass: DWORD,
+        pub SchedulingClass: DWORD,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        pub BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        pub IoInfo: IO_COUNTERS,
+        pub ProcessMemoryLimit: ULONG_PTR,
+        pub JobMemoryLimit: ULONG_PTR,
+        pub PeakProcessMemoryLimit: ULONG_PTR,
+        pub PeakJobMemoryLimit: ULONG_PTR,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
+        pub TotalUserTime: LARGE_INTEGER,
+        pub TotalKernelTime: LARGE_INTEGER,
+        pub ThisPeriodTotalUserTime: LARGE_INTEGER,
+        pub ThisPeriodTotalKernelTime: LARGE_INTEGER,
+        pub TotalPageFaultCount: DWORD,
+        pub TotalProcesses: DWORD,
+        pub ActiveProcesses: DWORD,
+        pub TotalTerminatedProcesses: DWORD,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct PROCESS_MEMORY_COUNTERS {
+        pub cb: DWORD,
+        pub PageFaultCount: DWORD,
+        pub PeakWorkingSetSize: ULONG_PTR,
+        pub WorkingSetSize: ULONG_PTR,
+        pub QuotaPeakPagedPoolUsage: ULONG_PTR,
+        pub QuotaPagedPoolUsage: ULONG_PTR,
+        pub QuotaPeakNonPagedPoolUsage: ULONG_PTR,
+        pub QuotaNonPagedPoolUsage: ULONG_PTR,
+        pub PagefileUsage: ULONG_PTR,
+        pub PeakPagefileUsage: ULONG_PTR,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct THREADENTRY32 {
+        pub dwSize: DWORD,
+        pub cntUsage: DWORD,
+        pub th32ThreadID: DWORD,
+        pub th32OwnerProcessID: DWORD,
+        pub tpBasePri: i32,
+        pub tpDeltaPri: i32,
+        pub dwFlags: DWORD,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct FILETIME {
+        pub dwLowDateTime: DWORD,
+        pub dwHighDateTime: DWORD,
+    }
+
+    extern "system" {
+        pub fn CreateJobObjectW(lpJobAttributes: *mut c_void, lpName: *const u16) -> HANDLE;
+        pub fn SetInformationJobObject(
+            hJob: HANDLE,
+            JobObjectInformationClass: u32,
+            lpJobObjectInformation: *const c_void,
+            cbJobObjectInformationLength: u32,
+        ) -> BOOL;
+        pub fn QueryInformationJobObject(
+            hJob: HANDLE,
+            JobObjectInformationClass: u32,
+            lpJobObjectInformation: *mut c_void,
+            cbJobObjectInformationLength: u32,
+            lpReturnLength: *mut u32,
+        ) -> BOOL;
+        pub fn AssignProcessToJobObject(hJob: HANDLE, hProcess: HANDLE) -> BOOL;
+        pub fn TerminateJobObject(hJob: HANDLE, uExitCode: u32) -> BOOL;
+        pub fn CloseHandle(hObject: HANDLE) -> BOOL;
+        pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+        pub fn GetExitCodeProcess(hProcess: HANDLE, lpExitCode: *mut DWORD) -> BOOL;
+        pub fn GetProcessTimes(
+            hProcess: HANDLE,
+            lpCreationTime: *mut FILETIME,
+            lpExitTime: *mut FILETIME,
+            lpKernelTime: *mut FILETIME,
+            lpUserTime: *mut FILETIME,
+        ) -> BOOL;
+        pub fn CreateToolhelp32Snapshot(dwFlags: DWORD, th32ProcessID: DWORD) -> HANDLE;
+        pub fn Thread32First(hSnapshot: HANDLE, lpte: *mut THREADENTRY32) -> BOOL;
+        pub fn Thread32Next(hSnapshot: HANDLE, lpte: *mut THREADENTRY32) -> BOOL;
+        pub fn OpenThread(
+            dwDesiredAccess: DWORD,
+            bInheritHandle: BOOL,
+            dwThreadId: DWORD,
+        ) -> HANDLE;
+        pub fn ResumeThread(hThread: HANDLE) -> DWORD;
+        pub fn GetProcessMemoryInfo(
+            Process: HANDLE,
+            ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
+            cb: DWORD,
+        ) -> BOOL;
+    }
+
+    /// RAII drop guard for a Win32 Job Object handle.
+    pub struct JobHandle {
+        pub(crate) handle: HANDLE,
+    }
+
+    impl JobHandle {
+        pub fn create() -> io::Result<Self> {
+            // SAFETY: Calling CreateJobObjectW with null attributes creates an anonymous Job Object.
+            let handle = unsafe { CreateJobObjectW(std::ptr::null_mut(), std::ptr::null()) };
+            if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(Self { handle })
+        }
+
+        #[inline]
+        pub fn raw(&self) -> HANDLE {
+            self.handle
+        }
+    }
+
+    impl Drop for JobHandle {
+        fn drop(&mut self) {
+            if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
+                // SAFETY: self.handle is a valid, owned Win32 Job Object handle.
+                unsafe {
+                    CloseHandle(self.handle);
+                }
+                self.handle = NULL_HANDLE;
+            }
+        }
+    }
+
+    /// Resumes all threads belonging to the target process ID.
+    pub fn resume_process_threads(pid: u32) -> io::Result<()> {
+        // SAFETY: Snapshot of all threads in the system.
+        let snapshot = unsafe { CreateToolhelp32Snapshot(win32_constants::TH32CS_SNAPTHREAD, 0) };
+        if snapshot.is_null() || snapshot == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+
+        struct SnapshotGuard(HANDLE);
+        impl Drop for SnapshotGuard {
+            fn drop(&mut self) {
+                // SAFETY: Closing snapshot handle.
+                unsafe {
+                    CloseHandle(self.0);
+                }
+            }
+        }
+        let _guard = SnapshotGuard(snapshot);
+
+        let mut entry: THREADENTRY32 = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<THREADENTRY32>() as DWORD;
+
+        // SAFETY: snapshot is valid and entry.dwSize is initialized.
+        if unsafe { Thread32First(snapshot, &mut entry) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let mut resumed_any = false;
+        loop {
+            if entry.th32OwnerProcessID == pid {
+                // SAFETY: Opening thread with THREAD_SUSPEND_RESUME permissions.
+                let h_thread = unsafe {
+                    OpenThread(
+                        win32_constants::THREAD_SUSPEND_RESUME,
+                        FALSE,
+                        entry.th32ThreadID,
+                    )
+                };
+                if !h_thread.is_null() && h_thread != INVALID_HANDLE_VALUE {
+                    // SAFETY: Calling ResumeThread on a valid thread handle.
+                    let prev = unsafe { ResumeThread(h_thread) };
+                    // SAFETY: Closing thread handle.
+                    unsafe {
+                        CloseHandle(h_thread);
+                    }
+                    if prev != DWORD::MAX {
+                        resumed_any = true;
+                    }
+                }
+            }
+
+            entry.dwSize = std::mem::size_of::<THREADENTRY32>() as DWORD;
+            // SAFETY: Advancing to next thread in snapshot.
+            if unsafe { Thread32Next(snapshot, &mut entry) } == 0 {
+                break;
+            }
+        }
+
+        if resumed_any {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no threads found to resume",
+            ))
+        }
+    }
+}
+
+/// Execute a single run of the given binary with Windows Job Objects resource limits and stdin input.
+#[cfg(windows)]
+pub fn execute_single_run(
+    executable: &Path,
+    input: &[u8],
+    limits: &RunnerLimits,
+) -> SingleRunResult {
+    use std::os::windows::io::AsRawHandle;
+    use std::os::windows::process::CommandExt;
+    use win32::*;
+
+    let mut cmd = Command::new(executable);
+    if let Some(parent) = executable.parent() {
+        cmd.current_dir(parent);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // 1. Configure child process to start in a suspended state
+    cmd.creation_flags(win32_constants::CREATE_SUSPENDED);
+
+    // 2. Create Win32 Job Object with RAII drop guard
+    let job = match JobHandle::create() {
+        Ok(j) => j,
+        Err(e) => {
+            return SingleRunResult {
+                status: BenchmarkRunStatus::Error(format!("CreateJobObjectW failed: {}", e)),
+                wall_time: Duration::ZERO,
+                cpu_time: Duration::ZERO,
+                peak_rss_bytes: 0,
+                stdout: Vec::new(),
+                stderr: String::new(),
+            };
+        }
+    };
+
+    // 3. Set extended limits on the Job Object
+    let (limit_flags, cpu_100ns, max_mem, max_nproc) = build_job_limits_config(limits);
+    let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    info.BasicLimitInformation.LimitFlags = limit_flags;
+    info.BasicLimitInformation.PerJobUserTimeLimit = cpu_100ns;
+    info.ProcessMemoryLimit = max_mem;
+    info.JobMemoryLimit = max_mem;
+    if let Some(nproc) = max_nproc {
+        info.BasicLimitInformation.ActiveProcessLimit = nproc;
+    }
+
+    // SAFETY: job.raw() is a valid handle and info has correct size and layout.
+    let set_info_ok = unsafe {
+        SetInformationJobObject(
+            job.raw(),
+            win32_constants::JobObjectExtendedLimitInformation,
+            &info as *const _ as *const std::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+    };
+
+    if set_info_ok == 0 {
+        let err = std::io::Error::last_os_error();
+        return SingleRunResult {
+            status: BenchmarkRunStatus::Error(format!("SetInformationJobObject failed: {}", err)),
+            wall_time: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            peak_rss_bytes: 0,
+            stdout: Vec::new(),
+            stderr: String::new(),
+        };
+    }
+
+    // 4. Spawn child suspended
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return SingleRunResult {
+                status: BenchmarkRunStatus::Error(format!("spawn failed: {}", e)),
+                wall_time: Duration::ZERO,
+                cpu_time: Duration::ZERO,
+                peak_rss_bytes: 0,
+                stdout: Vec::new(),
+                stderr: String::new(),
+            };
+        }
+    };
+
+    let pid = child.id();
+    let h_process = child.as_raw_handle() as HANDLE;
+
+    // 5. Assign child process to Job Object
+    // SAFETY: job.raw() and h_process are valid handles.
+    let assign_ok = unsafe { AssignProcessToJobObject(job.raw(), h_process) };
+    if assign_ok == 0 {
+        let err = std::io::Error::last_os_error();
+        let _ = child.kill();
+        return SingleRunResult {
+            status: BenchmarkRunStatus::Error(format!("AssignProcessToJobObject failed: {}", err)),
+            wall_time: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            peak_rss_bytes: 0,
+            stdout: Vec::new(),
+            stderr: String::new(),
+        };
+    }
+
+    // 6. Resume child process thread
+    if let Err(e) = resume_process_threads(pid) {
+        let _ = child.kill();
+        return SingleRunResult {
+            status: BenchmarkRunStatus::Error(format!("ResumeThread failed: {}", e)),
+            wall_time: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            peak_rss_bytes: 0,
+            stdout: Vec::new(),
+            stderr: String::new(),
+        };
+    }
+
+    // 7. Asynchronously write stdin to prevent pipe deadlock
+    if let Some(mut stdin) = child.stdin.take() {
+        let input_vec = input.to_vec();
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input_vec);
+        });
+    }
+
+    // 8. Asynchronously read stdout up to byte limit
+    let stdout_pipe = child.stdout.take();
+    let stdout_cap = limits.max_output_bytes;
+    let stdout_thread = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stdout_pipe {
+            let mut chunk = [0u8; 8192];
+            while let Ok(n) = stream.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if buf.len() + n > stdout_cap as usize {
+                    let rem = (stdout_cap as usize).saturating_sub(buf.len());
+                    buf.extend_from_slice(&chunk[..rem]);
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+        buf
+    });
+
+    // 9. Asynchronously read stderr up to 64 KiB
+    let stderr_pipe = child.stderr.take();
+    let stderr_thread = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(stream) = stderr_pipe {
+            let mut handle = stream.take(65536);
+            let _ = handle.read_to_string(&mut buf);
+        }
+        buf
+    });
+
+    // 10. Wait for process with wall-clock timeout
+    let start = Instant::now();
+    let timeout_ms = limits
+        .wall_timeout
+        .as_millis()
+        .min(win32_constants::WAIT_FAILED as u128) as u32;
+
+    // SAFETY: h_process is a valid handle to the child process.
+    let wait_res = unsafe { WaitForSingleObject(h_process, timeout_ms) };
+    let mut timed_out = false;
+
+    if wait_res == win32_constants::WAIT_TIMEOUT {
+        timed_out = true;
+        // Terminate the entire job object immediately
+        // SAFETY: job.raw() is a valid handle.
+        unsafe {
+            TerminateJobObject(job.raw(), win32_constants::STATUS_JOB_OBJECT_LIMIT_REACHED);
+            WaitForSingleObject(h_process, 1000);
+        }
+    }
+
+    let elapsed = start.elapsed();
+
+    // Collect child pipes output
+    let stdout_bytes = stdout_thread.join().unwrap_or_default();
+    let stderr_str = stderr_thread.join().unwrap_or_default();
+
+    // 11. Query CPU time and peak RSS
+    let mut raw_exit_code: u32 = 0;
+    // SAFETY: h_process is valid and raw_exit_code is a valid pointer.
+    unsafe {
+        GetExitCodeProcess(h_process, &mut raw_exit_code);
+    }
+
+    let mut accounting: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+    let mut ret_len: u32 = 0;
+    // SAFETY: job.raw() is valid and accounting pointer is valid.
+    let query_acc_ok = unsafe {
+        QueryInformationJobObject(
+            job.raw(),
+            win32_constants::JobObjectBasicAccountingInformation,
+            &mut accounting as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            &mut ret_len,
+        )
+    };
+
+    let cpu_time = if query_acc_ok != 0 {
+        let total_100ns = accounting
+            .TotalUserTime
+            .saturating_add(accounting.TotalKernelTime);
+        if total_100ns > 0 {
+            Duration::from_nanos((total_100ns as u64).saturating_mul(100))
+        } else {
+            Duration::ZERO
+        }
+    } else {
+        let mut creation: FILETIME = unsafe { std::mem::zeroed() };
+        let mut exit: FILETIME = unsafe { std::mem::zeroed() };
+        let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+        let mut user: FILETIME = unsafe { std::mem::zeroed() };
+        // SAFETY: h_process is valid.
+        if unsafe { GetProcessTimes(h_process, &mut creation, &mut exit, &mut kernel, &mut user) }
+            != 0
+        {
+            let user_100ns = ((user.dwHighDateTime as u64) << 32) | (user.dwLowDateTime as u64);
+            let kernel_100ns =
+                ((kernel.dwHighDateTime as u64) << 32) | (kernel.dwLowDateTime as u64);
+            Duration::from_nanos(user_100ns.saturating_add(kernel_100ns).saturating_mul(100))
+        } else {
+            Duration::ZERO
+        }
+    };
+
+    let mut ext_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: job.raw() is valid and ext_info pointer is valid.
+    let query_ext_ok = unsafe {
+        QueryInformationJobObject(
+            job.raw(),
+            win32_constants::JobObjectExtendedLimitInformation,
+            &mut ext_info as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            &mut ret_len,
+        )
+    };
+
+    let mut peak_rss_bytes = if query_ext_ok != 0 {
+        ext_info
+            .PeakProcessMemoryLimit
+            .max(ext_info.PeakJobMemoryLimit) as u64
+    } else {
+        0
+    };
+
+    if peak_rss_bytes == 0 {
+        let mut pmc: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+        pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        // SAFETY: h_process is valid.
+        if unsafe { GetProcessMemoryInfo(h_process, &mut pmc, pmc.cb) } != 0 {
+            peak_rss_bytes = pmc.PeakWorkingSetSize as u64;
+        }
+    }
+
+    // 12. Map execution status
+    let status = map_windows_exit_status(raw_exit_code, &stderr_str, timed_out, cpu_time, limits);
+
+    SingleRunResult {
+        status,
+        wall_time: elapsed,
+        cpu_time,
+        peak_rss_bytes,
+        stdout: stdout_bytes,
+        stderr: stderr_str,
+    }
+}
+
+/// Fallback runner execution for operating systems without native runner support.
+#[cfg(not(any(unix, windows)))]
 pub fn execute_single_run(
     _executable: &Path,
     _input: &[u8],
     _limits: &RunnerLimits,
 ) -> SingleRunResult {
+    fallback_unsupported_run()
+}
+
+#[allow(dead_code)]
+pub(crate) fn fallback_unsupported_run() -> SingleRunResult {
     SingleRunResult {
         status: BenchmarkRunStatus::Error("runner not implemented for target OS".to_string()),
         wall_time: Duration::ZERO,
@@ -441,7 +1109,13 @@ pub fn run_benchmark_series(
     warmup: usize,
     repetitions: usize,
 ) -> BenchmarkSampleResult {
+    #[cfg(target_os = "linux")]
     let isolation_available = crate::isolation::is_linux_isolation_available();
+    #[cfg(windows)]
+    let isolation_available = true;
+    #[cfg(not(any(target_os = "linux", windows)))]
+    let isolation_available = false;
+
     let is_isolated = limits.isolate && isolation_available;
 
     if limits.isolate && !isolation_available && !limits.allow_unsandboxed {
@@ -460,6 +1134,7 @@ pub fn run_benchmark_series(
         };
     }
 
+    #[cfg(target_os = "linux")]
     let (isolation_level, warnings) = if is_isolated {
         ("linux-namespaces-seccomp", Vec::new())
     } else {
@@ -468,6 +1143,22 @@ pub fn run_benchmark_series(
             vec!["not sandboxed: running with process resource limits only".to_string()],
         )
     };
+
+    #[cfg(windows)]
+    let (isolation_level, warnings) = if is_isolated {
+        ("windows-job-objects", Vec::new())
+    } else {
+        (
+            "process-limits-only",
+            vec!["not sandboxed: running with process resource limits only".to_string()],
+        )
+    };
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    let (isolation_level, warnings) = (
+        "process-limits-only",
+        vec!["not sandboxed: running with process resource limits only".to_string()],
+    );
 
     // Warm-up runs (unmeasured)
     for _ in 0..warmup {
@@ -1150,5 +1841,306 @@ int main() {
         }
 
         let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    fn test_windows_job_limits_config_defaults() {
+        let limits = RunnerLimits::default();
+        let (flags, cpu_100ns, max_mem, max_nproc) = build_job_limits_config(&limits);
+
+        // Required flags: kill on close, die on unhandled exception, job time, process memory, job memory
+        assert_eq!(
+            flags & win32_constants::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            win32_constants::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        );
+        assert_eq!(
+            flags & win32_constants::JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+            win32_constants::JOB_OBJECT_LIMIT_PROCESS_MEMORY
+        );
+        assert_eq!(
+            flags & win32_constants::JOB_OBJECT_LIMIT_JOB_MEMORY,
+            win32_constants::JOB_OBJECT_LIMIT_JOB_MEMORY
+        );
+        assert_eq!(
+            flags & win32_constants::JOB_OBJECT_LIMIT_JOB_TIME,
+            win32_constants::JOB_OBJECT_LIMIT_JOB_TIME
+        );
+        assert_eq!(flags & win32_constants::JOB_OBJECT_LIMIT_ACTIVE_PROCESS, 0);
+
+        // 1000ms = 1s = 10_000_000 in 100ns units
+        assert_eq!(cpu_100ns, 10_000_000);
+        // Default 256 MiB
+        assert_eq!(max_mem, 256 * 1024 * 1024);
+        assert_eq!(max_nproc, None);
+    }
+
+    #[test]
+    fn test_windows_job_limits_config_custom_limits() {
+        let limits = RunnerLimits {
+            wall_timeout: Duration::from_millis(500),
+            cpu_timeout: Duration::from_millis(250),
+            max_memory_bytes: 64 * 1024 * 1024,
+            max_nproc: Some(3),
+            ..Default::default()
+        };
+        let (flags, cpu_100ns, max_mem, max_nproc) = build_job_limits_config(&limits);
+
+        assert_eq!(
+            flags & win32_constants::JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+            win32_constants::JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+        );
+        assert_eq!(cpu_100ns, 2_500_000);
+        assert_eq!(max_mem, 64 * 1024 * 1024);
+        assert_eq!(max_nproc, Some(3));
+    }
+
+    #[test]
+    fn test_windows_job_limits_config_zero_limits() {
+        let limits = RunnerLimits {
+            cpu_timeout: Duration::ZERO,
+            max_memory_bytes: 0,
+            max_nproc: None,
+            ..Default::default()
+        };
+        let (flags, cpu_100ns, max_mem, max_nproc) = build_job_limits_config(&limits);
+
+        assert_eq!(flags & win32_constants::JOB_OBJECT_LIMIT_JOB_TIME, 0);
+        assert_eq!(flags & win32_constants::JOB_OBJECT_LIMIT_PROCESS_MEMORY, 0);
+        assert_eq!(flags & win32_constants::JOB_OBJECT_LIMIT_ACTIVE_PROCESS, 0);
+        assert_eq!(cpu_100ns, 0);
+        assert_eq!(max_mem, 0);
+        assert_eq!(max_nproc, None);
+    }
+
+    #[test]
+    fn test_windows_status_mapping_success() {
+        let limits = RunnerLimits::default();
+        let status = map_windows_exit_status(
+            win32_constants::STATUS_SUCCESS,
+            "",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(status, BenchmarkRunStatus::Success);
+    }
+
+    #[test]
+    fn test_windows_status_mapping_timeout_conditions() {
+        let limits = RunnerLimits {
+            cpu_timeout: Duration::from_millis(500),
+            ..Default::default()
+        };
+
+        // Wall-clock timeout flag
+        let s1 = map_windows_exit_status(
+            win32_constants::STATUS_SUCCESS,
+            "",
+            true,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s1, BenchmarkRunStatus::Timeout);
+
+        // CPU timeout reached
+        let s2 = map_windows_exit_status(
+            win32_constants::STATUS_SUCCESS,
+            "",
+            false,
+            Duration::from_millis(600),
+            &limits,
+        );
+        assert_eq!(s2, BenchmarkRunStatus::Timeout);
+
+        // Job Object limit reached with CPU time exceeding limit
+        let s3 = map_windows_exit_status(
+            win32_constants::STATUS_JOB_OBJECT_LIMIT_REACHED,
+            "",
+            false,
+            Duration::from_millis(500),
+            &limits,
+        );
+        assert_eq!(s3, BenchmarkRunStatus::Timeout);
+    }
+
+    #[test]
+    fn test_windows_status_mapping_memory_exhaustion() {
+        let limits = RunnerLimits {
+            cpu_timeout: Duration::from_millis(5000),
+            ..Default::default()
+        };
+
+        // Job object limit reached (memory limit)
+        let s1 = map_windows_exit_status(
+            win32_constants::STATUS_JOB_OBJECT_LIMIT_REACHED,
+            "",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s1, BenchmarkRunStatus::MemoryLimitExceeded);
+
+        // STATUS_NO_MEMORY (0xC0000017)
+        let s2 = map_windows_exit_status(
+            win32_constants::STATUS_NO_MEMORY,
+            "",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s2, BenchmarkRunStatus::MemoryLimitExceeded);
+
+        // STATUS_COMMITMENT_LIMIT (0xC0000128)
+        let s3 = map_windows_exit_status(
+            win32_constants::STATUS_COMMITMENT_LIMIT,
+            "",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s3, BenchmarkRunStatus::MemoryLimitExceeded);
+
+        // Non-zero exit with std::bad_alloc in stderr
+        let s4 = map_windows_exit_status(
+            1,
+            "terminate called after throwing an instance of 'std::bad_alloc'",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s4, BenchmarkRunStatus::MemoryLimitExceeded);
+
+        // Non-zero exit with out of memory in stderr
+        let s5 = map_windows_exit_status(
+            1,
+            "fatal error: out of memory allocating 100MB",
+            false,
+            Duration::from_millis(100),
+            &limits,
+        );
+        assert_eq!(s5, BenchmarkRunStatus::MemoryLimitExceeded);
+    }
+
+    #[test]
+    fn test_windows_status_mapping_fatal_exceptions() {
+        let limits = RunnerLimits::default();
+
+        let s_av = map_windows_exit_status(
+            win32_constants::STATUS_ACCESS_VIOLATION,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_av,
+            BenchmarkRunStatus::Crash("access violation (0xC0000005)".to_string())
+        );
+
+        let s_so = map_windows_exit_status(
+            win32_constants::STATUS_STACK_OVERFLOW,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_so,
+            BenchmarkRunStatus::Crash("stack overflow (0xC00000FD)".to_string())
+        );
+
+        let s_ii = map_windows_exit_status(
+            win32_constants::STATUS_ILLEGAL_INSTRUCTION,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_ii,
+            BenchmarkRunStatus::Crash("illegal instruction (0xC000001D)".to_string())
+        );
+
+        let s_dz = map_windows_exit_status(
+            win32_constants::STATUS_INTEGER_DIVIDE_BY_ZERO,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_dz,
+            BenchmarkRunStatus::Crash("divide by zero (0xC0000094)".to_string())
+        );
+
+        let s_ctrlc = map_windows_exit_status(
+            win32_constants::STATUS_CONTROL_C_EXIT,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_ctrlc,
+            BenchmarkRunStatus::Crash("terminated by user/control-c (0xC000013A)".to_string())
+        );
+
+        let s_generic_nt = map_windows_exit_status(0xC000_0001, "", false, Duration::ZERO, &limits);
+        assert_eq!(
+            s_generic_nt,
+            BenchmarkRunStatus::Crash("fatal exception 0xC0000001".to_string())
+        );
+    }
+
+    #[test]
+    fn test_windows_status_mapping_dll_and_entrypoint_errors() {
+        let limits = RunnerLimits::default();
+
+        let s_dll = map_windows_exit_status(
+            win32_constants::STATUS_DLL_NOT_FOUND,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_dll,
+            BenchmarkRunStatus::Error(
+                "dynamic-link library (DLL) not found (0xC0000135)".to_string()
+            )
+        );
+
+        let s_entry = map_windows_exit_status(
+            win32_constants::STATUS_ENTRYPOINT_NOT_FOUND,
+            "",
+            false,
+            Duration::ZERO,
+            &limits,
+        );
+        assert_eq!(
+            s_entry,
+            BenchmarkRunStatus::Error("entrypoint not found (0xC0000139)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_windows_status_mapping_custom_exit_code() {
+        let limits = RunnerLimits::default();
+        let s = map_windows_exit_status(42, "", false, Duration::ZERO, &limits);
+        assert_eq!(s, BenchmarkRunStatus::Crash("exit code 42".to_string()));
+    }
+
+    #[test]
+    fn test_mock_fallback_runner_unsupported_os() {
+        let res = fallback_unsupported_run();
+        assert_eq!(
+            res.status,
+            BenchmarkRunStatus::Error("runner not implemented for target OS".to_string())
+        );
+        assert_eq!(res.wall_time, Duration::ZERO);
+        assert_eq!(res.cpu_time, Duration::ZERO);
+        assert_eq!(res.peak_rss_bytes, 0);
+        assert!(res.stdout.is_empty());
+        assert!(res.stderr.is_empty());
     }
 }
