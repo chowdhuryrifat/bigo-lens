@@ -38,6 +38,16 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   - Formulated and published deprecation lifecycle and client warning policy in `docs/specifications/JSON_PROTOCOL.md §8.1`.
   - Audited all protocol fields across `analyze`, `capabilities`, and `benchmark` actions, and verified 100% compliance with `shared/schemas/`.
 
+### Fixed
+
+- CodeQL code scanning alerts remediation:
+  - Excluded third-party dependencies (`build/`, `**/_deps/**`, `tests/`, `node_modules/`) from CodeQL scanning via `.github/codeql/codeql-config.yml` and installed `nlohmann-json3-dev` on CI runners.
+  - Sanitized CLI file input path in `engine/src/main.cpp` using `std::filesystem::canonical` and `is_regular_file` validation, addressing `cpp/path-injection`.
+  - Replaced direct floating point equality comparisons with epsilon thresholds in `engine/src/complexity/expression.cpp`, `engine/src/complexity/evaluator.cpp`, `engine/src/complexity/asymptotic.cpp`, and `engine/src/api/protocol.cpp`, addressing `cpp/equality-on-floats`.
+  - Replaced structured binding iteration over JSON proxy types with iterator pairs in `engine/src/api/protocol.cpp` and `engine/src/complexity/asymptotic.cpp`, resolving CodeQL static call graph warnings (`cpp/unused-static-function`).
+  - Refactored `evalMonotoneWithConstraints` and `evaluateWorkload` in `engine/src/constraints/workload.cpp` into modular helper functions (`evalAddWithConstraints`, `evalMultiplyWithConstraints`, `evaluateWorkloadWithoutSums`, `evaluateWorkloadWithSums`), resolving `cpp/long-switch` and `cpp/poorly-documented-function`.
+  - Added comprehensive function-level documentation comments to `RequestHandler::handleParsed` and `parseRequest` in `engine/src/api/request_handler.cpp` and `engine/src/api/protocol.cpp`.
+
 ### Changed
 
 - Engine CLI argument parser (`engine/src/main.cpp`): refactored command-line loop from modifying `for` counter inside body to a clean `while` loop, eliminating static analysis loop-counter modification warnings.
@@ -184,6 +194,16 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   `n·m·sizeof(T) + n·sizeof(vector<T>)` using Clang type layout, and sized `std::string` constructions (`std::string s(n, 'c')`)
   reporting symbolic bytes `n`. Both emit `Estimated` bounds with explicit exclusions for allocator overhead and container
   bookkeeping. Triggers `high_risk` memory feasibility when evaluations exceed configured memory limits.
+
+### Fixed
+
+- CodeQL code scanning alerts remediation:
+  - Excluded third-party dependencies (`build/`, `**/_deps/**`, `tests/`, `node_modules/`) from CodeQL scanning via `.github/codeql/codeql-config.yml` and installed `nlohmann-json3-dev` on CI runners.
+  - Sanitized CLI file input path in `engine/src/main.cpp` using `std::filesystem::canonical` and `is_regular_file` validation, addressing `cpp/path-injection`.
+  - Replaced direct floating point equality comparisons with epsilon thresholds in `engine/src/complexity/expression.cpp`, `engine/src/complexity/evaluator.cpp`, `engine/src/complexity/asymptotic.cpp`, and `engine/src/api/protocol.cpp`, addressing `cpp/equality-on-floats`.
+  - Replaced structured binding iteration over JSON proxy types with iterator pairs in `engine/src/api/protocol.cpp` and `engine/src/complexity/asymptotic.cpp`, resolving CodeQL static call graph warnings (`cpp/unused-static-function`).
+  - Refactored `evalMonotoneWithConstraints` and `evaluateWorkload` in `engine/src/constraints/workload.cpp` into modular helper functions (`evalAddWithConstraints`, `evalMultiplyWithConstraints`, `evaluateWorkloadWithoutSums`, `evaluateWorkloadWithSums`), resolving `cpp/long-switch` and `cpp/poorly-documented-function`.
+  - Added comprehensive function-level documentation comments to `RequestHandler::handleParsed` and `parseRequest` in `engine/src/api/request_handler.cpp` and `engine/src/api/protocol.cpp`.
 
 ### Changed
 

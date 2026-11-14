@@ -1,0 +1,7 @@
+name: "CodeQL config"
+
+paths-ignore:
+  - 'build/**'
+  - '**/_deps/**'
+  - 'tests/**'
+  - 'node_modules/**'
