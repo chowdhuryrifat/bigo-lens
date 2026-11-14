@@ -178,6 +178,7 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 
 - A validation corpus of representative solutions, with expected classifications, scored in CI (accuracy is reported, never fabricated) (Done, BL-601)
 - Protocol stability review ahead of 1.0 and formal deprecation policy (Done, BL-606)
+- Evaluation of header parsing cost and precompiled preamble caching architecture (Done, BL-607)
 - Engine binaries for every platform where the Clang front end is supported, bundled into per-platform `.vsix` packages (Planned, BL-603)
 - Release signing, checksums and provenance (Planned, BL-604)
 - A decision on, and if taken, the process for Marketplace or Open VSX publication (Planned, BL-605)
@@ -195,5 +196,5 @@ The MVP is **M1–M3 plus M5**. M4 is the first post-MVP feature if it is not re
 These items are unscheduled:
 
 - Problem-statement extraction that produces *candidate* constraints the user must confirm, using offline heuristics, with any LLM use optional and off by default
-- A long-lived engine process, or a preamble cache, to reduce header parsing cost
+- Implementation of precompiled preamble cache in the engine (evaluated and specified in BL-607 / ADR 0014)
 - Multi-file projects

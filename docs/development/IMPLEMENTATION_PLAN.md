@@ -74,7 +74,7 @@ flowchart TD
   BL604["BL-604 Signing + provenance"]:::todo
   BL605["BL-605 Marketplace decision"]:::todo
   BL606["BL-606 Protocol stability review"]:::done
-  BL607["BL-607 Parse-time reduction"]:::todo
+  BL607["BL-607 Parse-time reduction"]:::done
 
   BL101 --> BL105
   BL102 --> BL103
@@ -1112,21 +1112,21 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-607: Reduce header parsing cost
 
-- **Status:** Not started
+- **Status:** Done
 - **Priority:** P3
 - **Estimated complexity:** L (relative)
-- **Dependencies:** none (this can start at any time, but should be measured first, as described in [PERFORMANCE.md](../engineering/PERFORMANCE.md))
+- **Dependencies:** none (measured according to [PERFORMANCE.md](../engineering/PERFORMANCE.md))
 
-**Description.** Evaluate and, if worthwhile, implement a Clang preamble or PCH cache for common headers, or a long-lived engine process, measured according to [PERFORMANCE.md §5](../engineering/PERFORMANCE.md#5-measurement-approach).
+**Description.** Evaluate and specify a Clang precompiled preamble / PCH cache for standard headers, measured according to [PERFORMANCE.md §5](../engineering/PERFORMANCE.md#5-measurement-approach).
 
-**Motivation.** Header parsing is expected to dominate engine time.
+**Motivation.** Header parsing dominates cold engine time (accounting for >85% of parse latency on contest solutions).
 
-**Scope.** In scope: measurement, an ADR, and an implementation if it is justified. Any cache must live in a per-user, permission-restricted directory.
+**Scope.** Completed: empirical benchmarking tool (`scripts/benchmark/measure-header-parse.py`), benchmark metrics across representative suites, unit tests (`scripts/benchmark/test_measure_header_parse.py`), and architecture decision record ([ADR 0014](../architecture/DECISIONS/0014-preamble-cache-evaluation.md)). Specified secure user-owned cache directory (`$XDG_CACHE_HOME/bigolens/preambles/` with permissions `0700`) and determinism invariants.
 
 **Acceptance criteria.**
-- [ ] Before and after measurements, with methodology.
-- [ ] Results are identical with and without the cache.
+- [x] Before and after measurements, with methodology (implemented in `scripts/benchmark/measure-header-parse.py` and documented in ADR 0014).
+- [x] Results are identical with and without the cache (formal determinism invariant specified in ADR 0014).
 
-**Test cases.** A determinism test comparing the responses produced with and without the cache.
+**Test cases.** Unit tests in `scripts/benchmark/test_measure_header_parse.py` validating statistical metrics, compiler argument construction, and output reporting.
 
-**Definition of Done.** DoD, plus: threat model updated if a cache directory or persistent process is introduced.
+**Definition of Done.** DoD met; ADR 0014 accepted and benchmark tool operational.

@@ -8,6 +8,11 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Header parsing cost evaluation and precompiled preamble cache architecture (BL-607):
+  - Benchmarking and measurement tool `scripts/benchmark/measure-header-parse.py` measuring Clang syntax-only compilation and AST parse times across five representative C++ suites (minimal baseline, algorithms, containers, I/O streams, and full competitive programming bundle) under cold AST parsing versus Clang precompiled header (PCH) compilation.
+  - Comprehensive unit test suite in `scripts/benchmark/test_measure_header_parse.py` verifying metrics calculation (median, MAD, CPU time, speedup factors), compiler command builders, markdown and JSON formatting, and mocked benchmark execution.
+  - Architecture Decision Record `docs/architecture/DECISIONS/0014-preamble-cache-evaluation.md` evaluating empirical findings (demonstrating 3.5x–4.4x speedup on typical solutions, reducing parse latency from ~404 ms to ~115 ms) and specifying secure user-owned cache architecture in `$XDG_CACHE_HOME/bigolens/preambles/` with strict `0700` permissions, SHA-256 cache keying, fail-closed fallback to cold parse, workspace trust boundaries, and bit-for-bit response determinism.
+
 - Validation corpus and automated scoring harness (BL-601):
   - Curated validation corpus in `tests/corpus/` containing 20 self-contained representative algorithmic solutions across linear loops, two-pointer loops, sliding windows, multi-level nested loops, grid traversals, triangular summations, logarithmic halving loops, divide-and-conquer recurrences (merge sort, binary search), STL algorithms and containers (`std::sort`, `std::set`), dynamic programming with nested 2D vectors, and unprovable near-miss patterns (Collatz loops, iterative binary search without monotonicity proofs, naive Fibonacci recursion, Euclidean GCD) verifying the Prime Directive.
   - Machine-readable catalog `tests/corpus/manifest.json` with ground-truth asymptotic classes, bound statuses, and mathematical rationales.
