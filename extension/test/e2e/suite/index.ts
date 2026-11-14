@@ -1,9 +1,33 @@
 // Smoke tests executed inside the VS Code extension host.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 
-const EXTENSION_ID = 'bigo-lens.bigo-lens';
+function getExtensionId(): string {
+  try {
+    const pkgPath = process.env.BIGOLENS_E2E_EXTENSION_PATH
+      ? join(process.env.BIGOLENS_E2E_EXTENSION_PATH, 'package.json')
+      : join(__dirname, '..', '..', '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { publisher?: string; name?: string };
+    if (pkg.publisher && pkg.name) {
+      return `${pkg.publisher}.${pkg.name}`;
+    }
+  } catch {
+    // fallback
+  }
+  return 'bigolens.bigo-lens';
+}
+
+const EXTENSION_ID = getExtensionId();
+
+function getExtension(): vscode.Extension<unknown> | undefined {
+  return (
+    vscode.extensions.getExtension(EXTENSION_ID) ??
+    vscode.extensions.getExtension('bigolens.bigo-lens') ??
+    vscode.extensions.getExtension('bigo-lens.bigo-lens')
+  );
+}
 
 async function check(name: string, body: () => Promise<void>): Promise<void> {
   try {
@@ -17,7 +41,7 @@ async function check(name: string, body: () => Promise<void>): Promise<void> {
 
 export async function run(): Promise<void> {
   await check('extension is present', () => {
-    assert.ok(vscode.extensions.getExtension(EXTENSION_ID), `${EXTENSION_ID} not installed`);
+    assert.ok(getExtension(), `${EXTENSION_ID} not installed`);
     return Promise.resolve();
   });
 
@@ -26,7 +50,7 @@ export async function run(): Promise<void> {
     assert.ok(folder, 'fixture workspace not opened');
     const document = await vscode.workspace.openTextDocument(join(folder.uri.fsPath, '01_linear_loop.cpp'));
     await vscode.window.showTextDocument(document);
-    const extension = vscode.extensions.getExtension(EXTENSION_ID);
+    const extension = getExtension();
     await extension?.activate();
     assert.equal(extension?.isActive, true);
   });
