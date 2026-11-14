@@ -72,6 +72,7 @@
     inputName.className = 'table-input input-var-name';
     inputName.placeholder = 'e.g. n, v.size()';
     inputName.value = v && v.name ? v.name : '';
+    inputName.setAttribute('aria-label', 'Variable name');
     tdName.appendChild(inputName);
 
     const tdMin = document.createElement('td');
@@ -80,6 +81,7 @@
     inputMin.className = 'table-input input-var-min';
     inputMin.placeholder = 'e.g. 1';
     inputMin.value = v && v.min !== undefined ? v.min : '';
+    inputMin.setAttribute('aria-label', `Minimum bound for ${v && v.name ? v.name : 'variable'}`);
     tdMin.appendChild(inputMin);
 
     const tdMax = document.createElement('td');
@@ -88,6 +90,7 @@
     inputMax.className = 'table-input input-var-max';
     inputMax.placeholder = 'e.g. 2e5, 200000';
     inputMax.value = v && v.max !== undefined ? v.max : '';
+    inputMax.setAttribute('aria-label', `Maximum bound for ${v && v.name ? v.name : 'variable'}`);
     tdMax.appendChild(inputMax);
 
     const tdDetected = document.createElement('td');
@@ -111,6 +114,7 @@
     btnDelete.type = 'button';
     btnDelete.className = 'btn btn-danger btn-delete-row';
     btnDelete.title = 'Delete variable';
+    btnDelete.setAttribute('aria-label', `Delete variable ${v && v.name ? v.name : ''}`);
     btnDelete.textContent = '×';
     btnDelete.addEventListener('click', () => {
       tr.remove();
@@ -138,6 +142,7 @@
     inputVar.className = 'table-input input-sum-var';
     inputVar.placeholder = 'e.g. n';
     inputVar.value = sc && sc.variable ? sc.variable : '';
+    inputVar.setAttribute('aria-label', 'Sum constraint variable');
     tdVar.appendChild(inputVar);
 
     const tdCount = document.createElement('td');
@@ -146,6 +151,7 @@
     inputCount.className = 'table-input input-sum-count';
     inputCount.placeholder = 'e.g. t';
     inputCount.value = sc && sc.count_variable ? sc.count_variable : '';
+    inputCount.setAttribute('aria-label', 'Sum constraint count variable');
     tdCount.appendChild(inputCount);
 
     const tdTotal = document.createElement('td');
@@ -154,6 +160,7 @@
     inputTotal.className = 'table-input input-sum-total';
     inputTotal.placeholder = 'e.g. 2e5, 200000';
     inputTotal.value = sc && sc.max_total ? sc.max_total : '';
+    inputTotal.setAttribute('aria-label', 'Sum constraint maximum total');
     tdTotal.appendChild(inputTotal);
 
     const tdActions = document.createElement('td');
@@ -161,6 +168,7 @@
     btnDelete.type = 'button';
     btnDelete.className = 'btn btn-danger btn-delete-row';
     btnDelete.title = 'Delete sum constraint';
+    btnDelete.setAttribute('aria-label', 'Delete sum constraint');
     btnDelete.textContent = '×';
     btnDelete.addEventListener('click', () => {
       tr.remove();
@@ -191,6 +199,7 @@
     inputVars.className = 'table-input input-prod-vars';
     inputVars.placeholder = 'e.g. n, m';
     inputVars.value = varsStr;
+    inputVars.setAttribute('aria-label', 'Product constraint variables');
     tdVars.appendChild(inputVars);
 
     const tdMax = document.createElement('td');
@@ -199,6 +208,7 @@
     inputMax.className = 'table-input input-prod-max';
     inputMax.placeholder = 'e.g. 1e6, 1000000';
     inputMax.value = pc && pc.max_product ? pc.max_product : '';
+    inputMax.setAttribute('aria-label', 'Product constraint maximum product');
     tdMax.appendChild(inputMax);
 
     const tdActions = document.createElement('td');
@@ -206,6 +216,7 @@
     btnDelete.type = 'button';
     btnDelete.className = 'btn btn-danger btn-delete-row';
     btnDelete.title = 'Delete product constraint';
+    btnDelete.setAttribute('aria-label', 'Delete product constraint');
     btnDelete.textContent = '×';
     btnDelete.addEventListener('click', () => {
       tr.remove();
@@ -237,6 +248,7 @@
     inputCoeffs.className = 'table-input input-lin-coeffs';
     inputCoeffs.placeholder = 'e.g. n: 1, m: 2';
     inputCoeffs.value = coeffStr;
+    inputCoeffs.setAttribute('aria-label', 'Linear constraint coefficients');
     tdCoeffs.appendChild(inputCoeffs);
 
     const tdBound = document.createElement('td');
@@ -245,6 +257,7 @@
     inputBound.className = 'table-input input-lin-bound';
     inputBound.placeholder = 'e.g. 300000';
     inputBound.value = lc && lc.bound ? lc.bound : '';
+    inputBound.setAttribute('aria-label', 'Linear constraint bound');
     tdBound.appendChild(inputBound);
 
     const tdActions = document.createElement('td');
@@ -252,6 +265,7 @@
     btnDelete.type = 'button';
     btnDelete.className = 'btn btn-danger btn-delete-row';
     btnDelete.title = 'Delete linear constraint';
+    btnDelete.setAttribute('aria-label', 'Delete linear constraint');
     btnDelete.textContent = '×';
     btnDelete.addEventListener('click', () => {
       tr.remove();
@@ -300,6 +314,10 @@
       btn.className = `chip-btn ${dv.status === 'missing_bound' ? 'chip-missing' : ''}`;
       const statusIcon = dv.status === 'missing_bound' ? '⚠ ' : '+ ';
       btn.textContent = `${statusIcon}${dv.name}${dv.locationHint ? ` (${dv.locationHint})` : ''}`;
+      btn.setAttribute(
+        'aria-label',
+        `Add detected variable ${dv.name}${dv.status === 'missing_bound' ? ' (missing bound)' : ''}`,
+      );
       btn.addEventListener('click', () => {
         renderVariableRow({
           name: dv.name,

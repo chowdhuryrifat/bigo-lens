@@ -72,20 +72,20 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
     </div>
   </header>
 
-  <div id="validation-banner" class="validation-banner hidden" role="alert"></div>
+  <div id="validation-banner" class="validation-banner hidden" role="alert" aria-live="polite"></div>
 
-  <main class="form-content">
+  <main class="form-content" role="main">
     <!-- Variables Section -->
-    <section class="form-section" id="section-variables">
+    <section class="form-section" id="section-variables" aria-labelledby="heading-variables">
       <div class="section-header">
-        <h2>Variables</h2>
+        <h2 id="heading-variables">Variables</h2>
         <button type="button" class="btn btn-secondary" id="btn-add-variable">+ Add Variable</button>
       </div>
       <p class="section-desc">
         Define lower and upper bounds for symbolic size variables. Inputs accept integers, scientific notation (e.g. <code>2e5</code>), or power expressions (e.g. <code>2*10^5</code>).
       </p>
 
-      <div id="detected-quickadd" class="detected-quickadd hidden">
+      <div id="detected-quickadd" class="detected-quickadd hidden" role="region" aria-label="Detected unconstrained variables">
         <span class="quickadd-label">Detected in source:</span>
         <div id="quickadd-chips" class="quickadd-chips"></div>
       </div>
@@ -94,11 +94,11 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
         <table class="form-table" id="table-variables">
           <thead>
             <tr>
-              <th style="width: 25%;">Variable Name</th>
-              <th style="width: 20%;">Min Bound</th>
-              <th style="width: 20%;">Max Bound</th>
-              <th style="width: 25%;">Detected in Source</th>
-              <th style="width: 10%;">Actions</th>
+              <th style="width: 25%;" scope="col">Variable Name</th>
+              <th style="width: 20%;" scope="col">Min Bound</th>
+              <th style="width: 20%;" scope="col">Max Bound</th>
+              <th style="width: 25%;" scope="col">Detected in Source</th>
+              <th style="width: 10%;" scope="col">Actions</th>
             </tr>
           </thead>
           <tbody id="tbody-variables">
@@ -109,9 +109,9 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
     </section>
 
     <!-- Relationships Section -->
-    <section class="form-section" id="section-relationships">
+    <section class="form-section" id="section-relationships" aria-labelledby="heading-relationships">
       <div class="section-header">
-        <h2>Relationships</h2>
+        <h2 id="heading-relationships">Relationships</h2>
         <div class="btn-group">
           <button type="button" class="btn btn-secondary" id="btn-add-sum">+ Add Sum Constraint</button>
           <button type="button" class="btn btn-secondary" id="btn-add-product">+ Add Product Constraint</button>
@@ -123,18 +123,18 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
       </p>
 
       <!-- Sum Constraints -->
-      <div class="subsection">
+      <div class="subsection" role="region" aria-labelledby="heading-sum">
         <div class="subsection-header">
-          <h3>Sum Constraints &nbsp;<span class="badge badge-used">used</span></h3>
+          <h3 id="heading-sum">Sum Constraints &nbsp;<span class="badge badge-used">used</span></h3>
         </div>
         <div class="table-container">
           <table class="form-table" id="table-sum">
             <thead>
               <tr>
-                <th style="width: 30%;">Variable (n)</th>
-                <th style="width: 30%;">Count Variable (t test cases)</th>
-                <th style="width: 30%;">Max Total (&Sigma; n &le; S)</th>
-                <th style="width: 10%;">Actions</th>
+                <th style="width: 30%;" scope="col">Variable (n)</th>
+                <th style="width: 30%;" scope="col">Count Variable (t test cases)</th>
+                <th style="width: 30%;" scope="col">Max Total (&Sigma; n &le; S)</th>
+                <th style="width: 10%;" scope="col">Actions</th>
               </tr>
             </thead>
             <tbody id="tbody-sum">
@@ -145,17 +145,17 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
       </div>
 
       <!-- Product Constraints -->
-      <div class="subsection">
+      <div class="subsection" role="region" aria-labelledby="heading-product">
         <div class="subsection-header">
-          <h3>Product Constraints &nbsp;<span class="badge badge-validated">validated</span></h3>
+          <h3 id="heading-product">Product Constraints &nbsp;<span class="badge badge-validated">validated</span></h3>
         </div>
         <div class="table-container">
           <table class="form-table" id="table-product">
             <thead>
               <tr>
-                <th style="width: 50%;">Variables (e.g. n, m)</th>
-                <th style="width: 40%;">Max Product (&Pi; v_i &le; P)</th>
-                <th style="width: 10%;">Actions</th>
+                <th style="width: 50%;" scope="col">Variables (e.g. n, m)</th>
+                <th style="width: 40%;" scope="col">Max Product (&Pi; v_i &le; P)</th>
+                <th style="width: 10%;" scope="col">Actions</th>
               </tr>
             </thead>
             <tbody id="tbody-product">
@@ -166,17 +166,17 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
       </div>
 
       <!-- Linear Constraints -->
-      <div class="subsection">
+      <div class="subsection" role="region" aria-labelledby="heading-linear">
         <div class="subsection-header">
-          <h3>Linear Constraints &nbsp;<span class="badge badge-validated">validated</span></h3>
+          <h3 id="heading-linear">Linear Constraints &nbsp;<span class="badge badge-validated">validated</span></h3>
         </div>
         <div class="table-container">
           <table class="form-table" id="table-linear">
             <thead>
               <tr>
-                <th style="width: 50%;">Coefficients (e.g. n: 1, m: 2)</th>
-                <th style="width: 40%;">Bound (&Sigma; c_i &middot; v_i &le; B)</th>
-                <th style="width: 10%;">Actions</th>
+                <th style="width: 50%;" scope="col">Coefficients (e.g. n: 1, m: 2)</th>
+                <th style="width: 40%;" scope="col">Bound (&Sigma; c_i &middot; v_i &le; B)</th>
+                <th style="width: 10%;" scope="col">Actions</th>
               </tr>
             </thead>
             <tbody id="tbody-linear">
@@ -188,9 +188,9 @@ export function renderConstraintFormHtml(options: RenderConstraintFormHtmlOption
     </section>
 
     <!-- Execution Limits Section -->
-    <section class="form-section" id="section-limits">
+    <section class="form-section" id="section-limits" aria-labelledby="heading-limits">
       <div class="section-header">
-        <h2>Limits</h2>
+        <h2 id="heading-limits">Limits</h2>
       </div>
       <p class="section-desc">
         Execution limits used for feasibility assessment and differential benchmark evaluation.

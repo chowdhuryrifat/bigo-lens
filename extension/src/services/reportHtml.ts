@@ -196,6 +196,8 @@ export function renderWorkloadChart(findings: Finding[], maxWorkload: number | n
       </div>
       <div class="chart-svg-container">
         <svg viewBox="0 0 ${chartWidth} ${totalHeight}" width="100%" height="${totalHeight}" class="workload-svg" role="img" aria-label="Workload comparison chart">
+          <title>Workload comparison chart</title>
+          <desc>Horizontal bar chart comparing loop workloads against scale maximum</desc>
           <line x1="${labelWidth}" y1="${topPadding - 10}" x2="${labelWidth}" y2="${totalHeight - bottomPadding + 5}" class="chart-axis" />
           <line x1="${labelWidth + barAreaWidth}" y1="${topPadding - 10}" x2="${labelWidth + barAreaWidth}" y2="${totalHeight - bottomPadding + 5}" class="chart-axis-grid" />
           <text x="${labelWidth}" y="${topPadding - 18}" text-anchor="start" class="axis-header">0</text>
@@ -366,7 +368,7 @@ function renderFindingCard(finding: Finding, displayPath: string): string {
       : '';
 
   return `
-    <section class="finding-card card-${escapeHtml(finding.bound_status)}" id="finding-${escapeHtml(finding.id)}">
+    <section class="finding-card card-${escapeHtml(finding.bound_status)}" id="finding-${escapeHtml(finding.id)}" aria-label="Finding ${escapeHtml(finding.id)}: ${escapeHtml(finding.pattern)}">
       <div class="finding-header">
         <div class="finding-title">
           <span class="finding-id">${escapeHtml(finding.id)}</span>
@@ -382,6 +384,7 @@ function renderFindingCard(finding: Finding, displayPath: string): string {
           data-file="${escapeHtml(fileTarget)}"
           data-line="${line}"
           data-column="${col}"
+          aria-label="Go to finding ${escapeHtml(finding.id)} at line ${line} in ${escapeHtml(fileTarget)}"
         >
           Go to source
         </button>
@@ -450,8 +453,8 @@ function renderMemorySection(memory: AnalyzeResults['memory']): string {
       : '';
 
   return `
-    <section class="report-section memory-section" id="section-memory">
-      <h2>Memory Analysis (Lower Bounds)</h2>
+    <section class="report-section memory-section" id="section-memory" aria-labelledby="heading-memory">
+      <h2 id="heading-memory">Memory Analysis (Lower Bounds)</h2>
       <div class="metrics-grid">
         <div class="metric-card">
           <span class="metric-label">Static Storage</span>
@@ -480,10 +483,10 @@ function renderFeasibilitySection(feasibility: AnalyzeResults['feasibility']): s
   const memory = feasibility.memory;
 
   return `
-    <section class="report-section feasibility-section" id="section-feasibility">
-      <h2>Feasibility Assessment</h2>
+    <section class="report-section feasibility-section" id="section-feasibility" aria-labelledby="heading-feasibility">
+      <h2 id="heading-feasibility">Feasibility Assessment</h2>
       <div class="feasibility-grid">
-        <div class="feasibility-card feasibility-${escapeHtml(time.status)}">
+        <div class="feasibility-card feasibility-${escapeHtml(time.status)}" role="region" aria-label="Time Feasibility">
           <div class="feasibility-card-header">
             <h3>Time Feasibility</h3>
             <span class="badge badge-feasibility badge-feasibility-${escapeHtml(time.status)}">
@@ -492,7 +495,7 @@ function renderFeasibilitySection(feasibility: AnalyzeResults['feasibility']): s
           </div>
           <p class="feasibility-reason">${escapeHtml(time.reason)}</p>
         </div>
-        <div class="feasibility-card feasibility-${escapeHtml(memory.status)}">
+        <div class="feasibility-card feasibility-${escapeHtml(memory.status)}" role="region" aria-label="Memory Feasibility">
           <div class="feasibility-card-header">
             <h3>Memory Feasibility</h3>
             <span class="badge badge-feasibility badge-feasibility-${escapeHtml(memory.status)}">
@@ -630,6 +633,8 @@ export function renderRuntimeRangeChart(benchmark: BenchmarkData): string {
         role="img"
         aria-label="Empirical runtime and extrapolated range chart"
       >
+        <title>Empirical runtime and extrapolated range chart</title>
+        <desc>Scatter plot of measured wall times with MAD error bars and extrapolated runtime range</desc>
         <!-- Grid lines -->
         <line x1="${leftPad}" y1="${yAxisZero.toFixed(1)}" x2="${(leftPad + plotW).toFixed(1)}" y2="${yAxisZero.toFixed(1)}" class="chart-axis-line" />
         <line x1="${leftPad}" y1="${yAxisMid.toFixed(1)}" x2="${(leftPad + plotW).toFixed(1)}" y2="${yAxisMid.toFixed(1)}" class="chart-grid-line" />
@@ -715,9 +720,9 @@ export function renderBenchmarkSection(benchmark: BenchmarkData): string {
   const maxRssBytes = benchmark.samples.reduce((max, s) => Math.max(max, s.peak_rss_bytes), 0);
 
   return `
-    <section class="report-section benchmark-section" id="section-benchmark">
+    <section class="report-section benchmark-section" id="section-benchmark" aria-labelledby="heading-benchmark">
       <div class="section-header-row">
-        <h2>Empirical Benchmark &amp; Runtime Range</h2>
+        <h2 id="heading-benchmark">Empirical Benchmark &amp; Runtime Range</h2>
         <span class="badge ${isoBadgeClass}">${isoBadgeText}</span>
       </div>
       ${warningsHtml}
@@ -799,31 +804,31 @@ export function renderReportHtml(options: RenderReportHtmlOptions): string {
           <h1>BigO Lens Report &mdash; <span class="file-path">${escapeHtml(snap.displayPath)}</span></h1>
           <div class="header-actions">
             <span class="engine-badge">Engine v${escapeHtml(snap.engineVersion)}</span>
-            <button class="action-btn benchmark-btn" data-action="run-benchmark" title="Run benchmark on local machine (requires explicit confirmation)">Run Benchmark</button>
+            <button class="action-btn benchmark-btn" data-action="run-benchmark" title="Run benchmark on local machine (requires explicit confirmation)" aria-label="Run benchmark on local machine">Run Benchmark</button>
           </div>
         </div>
-        <div class="summary-bar">
-          <div class="summary-item">
+        <div class="summary-bar" role="region" aria-label="Analysis summary">
+          <div class="summary-item" role="status">
             <span class="summary-label">Findings</span>
             <span class="summary-value">${totalFindings}</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item" role="status">
             <span class="summary-label">Coverage</span>
             <span class="summary-value">${coverage}</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item" role="status">
             <span class="summary-label">Dominant</span>
             <span class="summary-value">${dominantId}</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item" role="status">
             <span class="summary-label">Max Workload</span>
             <span class="summary-value">${maxWorkloadText}</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item" role="status">
             <span class="summary-label">Time Feasibility</span>
             <span class="summary-value badge-feasibility badge-feasibility-${escapeHtml(snap.results.feasibility.time.status)}">${timeFeas}</span>
           </div>
-          <div class="summary-item">
+          <div class="summary-item" role="status">
             <span class="summary-label">Memory Feasibility</span>
             <span class="summary-value badge-feasibility badge-feasibility-${escapeHtml(snap.results.feasibility.memory.status)}">${memFeas}</span>
           </div>
@@ -834,8 +839,8 @@ export function renderReportHtml(options: RenderReportHtmlOptions): string {
         ${benchmarkHtml}
         ${feasibilityHtml}
         ${memoryHtml}
-        <section class="report-section findings-section" id="section-findings">
-          <h2>Findings Details (${totalFindings})</h2>
+        <section class="report-section findings-section" id="section-findings" aria-labelledby="heading-findings">
+          <h2 id="heading-findings">Findings Details (${totalFindings})</h2>
           <div class="findings-list">
             ${findingsHtml}
           </div>

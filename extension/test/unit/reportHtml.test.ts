@@ -527,3 +527,93 @@ describe('reportHtml - Benchmark Section & Runtime-Range Chart (BL-507)', () => 
     assert.ok(html.includes('Empirical Benchmark &amp; Runtime Range'));
   });
 });
+
+describe('reportHtml - Accessibility & Screen Reader Compliance (BL-508)', () => {
+  it('includes required ARIA landmarks, roles, labels, and table scopes across report', () => {
+    const results = sampleResults();
+    results.benchmark = {
+      isolated: true,
+      isolation_level: 'pid/ipc/mount/net/cgroup namespace sandbox',
+      samples: [
+        {
+          size: { n: 1000 },
+          wall_time_median_ms: 1.0,
+          wall_time_mad_ms: 0.1,
+          peak_rss_bytes: 1024,
+          raw_samples_ms: [1.0],
+        },
+      ],
+      empirical_fit: {
+        model: 'linear',
+        r_squared: 0.99,
+        rss: 0.001,
+        slope: 0.001,
+        intercept: 0.0,
+        ambiguous: false,
+      },
+      extrapolated_runtime: {
+        target_size: { n: 10000 },
+        min_ms: 10.0,
+        central_ms: 10.0,
+        max_ms: 10.0,
+        extrapolated: true,
+      },
+      warnings: [],
+    };
+
+    const snapshot: ReportSnapshot = {
+      displayPath: 'solution.cpp',
+      results,
+      engineVersion: '0.1.0',
+    };
+
+    const html = renderReportHtml({
+      cspSource: 'vscode-webview:',
+      snapshot,
+    });
+
+    // Summary bar landmarks & roles
+    assert.ok(html.includes('role="region" aria-label="Analysis summary"'));
+    assert.ok(html.includes('class="summary-item" role="status"'));
+
+    // Benchmark button label
+    assert.ok(html.includes('aria-label="Run benchmark on local machine"'));
+
+    // Workload SVG title and desc
+    assert.ok(html.includes('<title>Workload comparison chart</title>'));
+    assert.ok(
+      html.includes('<desc>Horizontal bar chart comparing loop workloads against scale maximum</desc>'),
+    );
+
+    // Benchmark SVG title and desc
+    assert.ok(html.includes('<title>Empirical runtime and extrapolated range chart</title>'));
+    assert.ok(
+      html.includes(
+        '<desc>Scatter plot of measured wall times with MAD error bars and extrapolated runtime range</desc>',
+      ),
+    );
+
+    // Section headings & aria-labelledby
+    assert.ok(html.includes('aria-labelledby="heading-feasibility"'));
+    assert.ok(html.includes('id="heading-feasibility"'));
+    assert.ok(html.includes('role="region" aria-label="Time Feasibility"'));
+    assert.ok(html.includes('role="region" aria-label="Memory Feasibility"'));
+
+    assert.ok(html.includes('aria-labelledby="heading-memory"'));
+    assert.ok(html.includes('id="heading-memory"'));
+
+    assert.ok(html.includes('aria-labelledby="heading-benchmark"'));
+    assert.ok(html.includes('id="heading-benchmark"'));
+
+    assert.ok(html.includes('aria-labelledby="heading-findings"'));
+    assert.ok(html.includes('id="heading-findings"'));
+
+    // Finding card labels and source navigation
+    assert.ok(html.includes('aria-label="Finding F1: counted-for-loop"'));
+    assert.ok(html.includes('aria-label="Go to finding F1 at line 10 in main.cpp"'));
+
+    // Table scopes
+    assert.ok(html.includes('<th scope="row">Expression</th>'));
+    assert.ok(html.includes('<th scope="col">Name</th>'));
+  });
+});

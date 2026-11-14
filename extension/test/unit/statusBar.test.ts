@@ -283,4 +283,21 @@ describe('StatusBarManager lifecycle and visibility', () => {
     manager.clear();
     assert.equal(mockItem.isVisible, false);
   });
+
+  it('sets screen-reader accessibilityInformation on status bar item (BL-508)', () => {
+    const mockItem = new MockStatusBarItem();
+    const manager = new StatusBarManager(mockItem as unknown as vscode.StatusBarItem);
+    const cppUri = MockUri.file('/workspace/solution.cpp');
+    const cppEditor = {
+      document: { uri: cppUri, languageId: 'cpp' } as unknown as vscode.TextDocument,
+    } as vscode.TextEditor;
+
+    manager.updateResults(cppUri as unknown as vscode.Uri, makeResults(), 'solution.cpp');
+    manager.onActiveEditorChange(cppEditor);
+
+    assert.equal(mockItem.isVisible, true);
+    assert.ok(mockItem.accessibilityInformation !== undefined);
+    assert.ok(mockItem.accessibilityInformation.label.startsWith('BigO Lens Analysis Summary:'));
+    assert.ok(mockItem.accessibilityInformation.label.includes('O(n * m)'));
+  });
 });

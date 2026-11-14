@@ -123,8 +123,12 @@ export class StatusBarManager implements vscode.Disposable {
       return;
     }
 
-    this.item.text = `$(graph) ${formatStatusBarText(record.results)}`;
+    const statusText = formatStatusBarText(record.results);
+    this.item.text = `$(graph) ${statusText}`;
     this.item.tooltip = formatStatusBarTooltip(record.results, record.displayPath);
+    this.item.accessibilityInformation = {
+      label: `BigO Lens Analysis Summary: ${statusText}`,
+    };
     this.item.show();
   }
 
