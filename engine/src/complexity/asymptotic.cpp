@@ -22,13 +22,13 @@ bool atLeast(const GrowthFactor& a, const GrowthFactor& b) {
 
 /// a dominates b if a grows at least as fast in every variable.
 bool dominates(const Monomial& a, const Monomial& b) {
-  for (const auto& [var, factor] : b) {
-    if (!atLeast(factorOf(a, var), factor)) {
+  for (const auto& item : b) {
+    if (!atLeast(factorOf(a, item.first), item.second)) {
       return false;
     }
   }
-  for (const auto& [var, factor] : a) {
-    if (!atLeast(factor, factorOf(b, var))) {
+  for (const auto& item : a) {
+    if (!atLeast(item.second, factorOf(b, item.first))) {
       return false;
     }
   }
@@ -221,8 +221,8 @@ std::optional<Terms> derive(const Expr& expr) {
 
 std::string formatExponent(double value) {
   std::ostringstream stream;
-  if (value == std::floor(value)) {
-    stream << static_cast<long long>(value);
+  if (std::fabs(value - std::round(value)) < 1e-9) {
+    stream << static_cast<long long>(std::round(value));
   } else {
     stream << value;
   }
@@ -235,7 +235,9 @@ std::string renderMonomial(const Monomial& m) {
   }
   std::vector<std::string> powers;
   std::vector<std::string> logs;
-  for (const auto& [var, factor] : m) {
+  for (const auto& item : m) {
+    const std::string& var = item.first;
+    const GrowthFactor& factor = item.second;
     if (factor.power == 1.0) {
       powers.push_back(var);
     } else if (factor.power > 0.0) {

@@ -82,8 +82,8 @@ class Validator {
       }
     } else if (value.is_number_float()) {
       const double d = value.get<double>();
-      if (std::isfinite(d) && d == std::floor(d) && std::fabs(d) <= 1e18) {
-        result = static_cast<std::int64_t>(d);
+      if (std::isfinite(d) && std::fabs(d - std::round(d)) < 1e-9 && std::fabs(d) <= 1e18) {
+        result = static_cast<std::int64_t>(std::round(d));
       }
     } else {
       error(path, "must be an integer");
@@ -166,7 +166,9 @@ void parseConstraints(Validator& v, const json& node, constraints::ConstraintSet
               {"variables", "sum_constraints", "product_constraints", "linear_constraints", "time_limit_ms",
                "memory_limit_mb"});
   if (const json* vars = v.object(node, "variables", base, false)) {
-    for (const auto& [name, bound] : vars->items()) {
+    for (auto it = vars->begin(); it != vars->end(); ++it) {
+      const std::string& name = it.key();
+      const json& bound = it.value();
       parseVariable(v, bound, base + "/variables/" + name, name, out);
     }
   }
@@ -257,16 +259,21 @@ void parseConstraints(Validator& v, const json& node, constraints::ConstraintSet
 
 }  // namespace
 
+/// Validates and parses an incoming JSON request document into an internal Request model.
+/// Performs strict schema checking against protocol 1.0, validating identifiers,
+/// action types, source limits, and constraint shapes according to JSON_PROTOCOL.md.
 ParseOutcome parseRequest(const json& document) {
   ParseOutcome outcome;
   Validator v;
+
+  // The request must always be a top-level JSON object.
   if (!document.is_object()) {
     v.error("", "request must be a JSON object");
     outcome.errors = std::move(v.errors);
     return outcome;
   }
 
-  // Recover the request id first so error responses can be correlated.
+  // Recover the request id first so error responses can be correlated with the client call.
   if (auto id = v.string(document, "request_id", "", true, 128)) {
     if (isValidRequestId(*id)) {
       outcome.requestId = *id;
@@ -275,9 +282,12 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Reject unknown top-level keys to prevent typos and enforce protocol schema compliance.
   v.onlyKnown(document, "", {"schema_version", "request_id", "action", "source", "constraints", "options"});
 
   Request request;
+
+  // Validate the protocol schema version format (MAJOR.MINOR) and semver compatibility.
   if (auto version = v.string(document, "schema_version", "", true, 16)) {
     request.schemaVersion = *version;
     const auto dot = version->find('.');
@@ -309,6 +319,7 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Route to the requested engine action (capabilities, analyze, or benchmark).
   if (auto action = v.string(document, "action", "", true, 32)) {
     if (*action == "capabilities") {
       request.action = Action::Capabilities;
@@ -321,6 +332,7 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Both analyze and benchmark actions require the 'source' object payload.
   const bool needsSource = request.action == Action::Analyze || request.action == Action::Benchmark;
   if (const json* source = v.object(document, "source", "", needsSource)) {
     v.onlyKnown(*source, "/source", {"path", "language", "content"});
@@ -335,6 +347,7 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Parse optional sidecar constraints (variable ranges, sum constraints, limits).
   if (const json* constraintsNode = v.object(document, "constraints", "", false)) {
     parseConstraints(v, *constraintsNode, request.constraints);
     for (auto& problem : constraints::validate(request.constraints)) {
@@ -350,6 +363,7 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Parse compiler options (e.g., C++ standard dialect version).
   if (const json* options = v.object(document, "options", "", false)) {
     v.onlyKnown(*options, "/options", {"cpp_standard"});
     if (auto standard = v.string(*options, "cpp_standard", "/options", false, 16)) {
@@ -362,6 +376,7 @@ ParseOutcome parseRequest(const json& document) {
     }
   }
 
+  // Aggregate validation errors and return either validated Request or error list.
   outcome.errors.insert(outcome.errors.end(), v.errors.begin(), v.errors.end());
   if (outcome.errors.empty()) {
     request.requestId = outcome.requestId.value_or("");

@@ -97,7 +97,14 @@ int main(int argc, char** argv) {
     if (requestFile.empty()) {
       text = readBounded(std::cin, bigolens::api::kMaxRequestBytes);
     } else {
-      std::ifstream file(requestFile, std::ios::binary);
+      std::error_code ec;
+      const std::filesystem::path inputPath(requestFile);
+      const std::filesystem::path canonicalPath = std::filesystem::canonical(inputPath, ec);
+      if (ec || !std::filesystem::is_regular_file(canonicalPath, ec)) {
+        std::cerr << "bigolens-engine: cannot open request file '" << requestFile << "'\n";
+        return 1;
+      }
+      std::ifstream file(canonicalPath, std::ios::binary);
       if (!file) {
         std::cerr << "bigolens-engine: cannot open request file '" << requestFile << "'\n";
         return 1;

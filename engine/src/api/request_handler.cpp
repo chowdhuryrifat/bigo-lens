@@ -227,7 +227,12 @@ json RequestHandler::handle(const json& document) const {
   }
 }
 
+/// Executes a validated JSON request document and builds the complete protocol response.
+/// Handles request action routing (capabilities, analyze, benchmark), runs AST analysis
+/// when Clang is available, solves symbolic recurrences, evaluates workloads under constraints,
+/// estimates memory storage, and evaluates time/memory feasibility against configured limits.
 json RequestHandler::handleParsed(const json& document) const {
+  // Step 1: Parse and validate the incoming JSON request against the protocol schema.
   ParseOutcome parsed = parseRequest(document);
   json response = makeResponse(parsed.requestId, analyzer_);
   if (!parsed.request) {
@@ -244,6 +249,7 @@ json RequestHandler::handleParsed(const json& document) const {
   const Request& request = *parsed.request;
 
   try {
+    // Step 2: Route request based on requested Action.
     switch (request.action) {
       case Action::Capabilities:
         response["results"] = capabilities();
@@ -255,14 +261,18 @@ json RequestHandler::handleParsed(const json& document) const {
         break;
     }
 
+    // Step 3: Ensure C++ AST front end is available for static analysis.
     if (analyzer_ == nullptr) {
       return errorResponse(std::move(response), "frontend_unavailable",
                            "this engine build has no C++ frontend (built with BIGOLENS_ENABLE_CLANG=OFF)");
     }
 
+    // Step 4: Run AST static analysis on the source code and solve recurrences.
     analyzers::SourceInput input{request.sourcePath, request.sourceContent, request.cppStandard};
     analyzers::SourceAnalysis analysis = analyzer_->analyze(input);
     analyzers::resolveRecurrences(analysis.findings, solvers_);
+
+    // Step 5: Forward compiler / analysis diagnostics.
     for (const auto& diagnostic : analysis.diagnostics) {
       response["diagnostics"].push_back(toJson(diagnostic));
     }
@@ -271,6 +281,7 @@ json RequestHandler::handleParsed(const json& document) const {
                            "the C++ source could not be parsed; see diagnostics");
     }
 
+    // Step 6: Evaluate time and space complexity findings under constraints.
     const auto& cs = request.constraints;
     const constraints::ConstraintSet singleInstance = constraints::singleInstanceConstraints(cs);
     json findings = json::array();
@@ -298,6 +309,7 @@ json RequestHandler::handleParsed(const json& document) const {
       findings.push_back(std::move(item));
     }
 
+    // Step 7: Estimate storage memory requirements (static arrays, globals, dynamically sized containers).
     const auto memory = estimation::estimateMemory(analysis.storage, cs);
     json storage = json::array();
     for (const auto& item : analysis.storage) {
@@ -309,9 +321,12 @@ json RequestHandler::handleParsed(const json& document) const {
            {"symbolic_bytes", item.symbolicBytes ? json(complexity::toString(*item.symbolicBytes)) : json(nullptr)},
            {"location", toJson(item.location)}});
     }
+
+    // Step 8: Assess time and memory feasibility against configured resource limits.
     const auto timeAssessment = feasibility::assessTime(std::nullopt, cs.timeLimitMs);
     const auto memoryAssessment = feasibility::assessMemory(memory, std::nullopt, cs.memoryLimitBytes);
 
+    // Step 9: Assemble final response object with findings, memory, feasibility, and summary.
     response["results"] = {
         {"findings", std::move(findings)},
         {"memory",
@@ -332,6 +347,7 @@ json RequestHandler::handleParsed(const json& document) const {
           {"coverage", "partial"}}}};
     return response;
   } catch (const std::exception& ex) {
+    // Gracefully handle unexpected internal analysis exceptions and serialize structured error.
     std::cerr << "bigolens-engine: internal error: " << ex.what() << '\n';
     json fresh = makeResponse(parsed.requestId, analyzer_);
     return errorResponse(std::move(fresh), "internal_error", std::string("internal engine error: ") + ex.what());

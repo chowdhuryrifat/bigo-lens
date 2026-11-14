@@ -293,6 +293,324 @@ std::optional<VarPower> asVarPower(const Expr& expr) {
 }
 
 complexity::EvalResult evalMonotoneWithConstraints(const Expr& expr, const complexity::Bindings& bindings,
+                                                   ConstraintContext& ctx);
+
+/// Evaluates an Add expression under monotone variable bounds and applies linear constraints
+/// to tighten the sum bound when terms are bounded by linear combinations (e.g. n + m <= 2e5).
+complexity::EvalResult evalAddWithConstraints(const Expr& expr, const complexity::Bindings& bindings,
+                                              ConstraintContext& ctx) {
+  double acc = 0.0;
+  for (const auto& term : expr.operands()) {
+    auto r = evalMonotoneWithConstraints(*term, bindings, ctx);
+    if (!r.ok()) {
+      return r;
+    }
+    acc += r.value;
+    if (!std::isfinite(acc)) {
+      return complexity::EvalResult{complexity::EvalStatus::Overflow, 0.0, "value exceeds the representable range"};
+    }
+  }
+
+  std::map<std::string, double> linTerms;
+  double nonLinSum = 0.0;
+  for (const auto& term : expr.operands()) {
+    if (auto lt = asLinearTerm(*term)) {
+      linTerms[lt->name] += lt->coeff;
+    } else {
+      auto r = evalMonotoneWithConstraints(*term, bindings, ctx);
+      if (r.ok()) {
+        nonLinSum += r.value;
+      }
+    }
+  }
+  if (linTerms.size() >= 2) {
+    for (size_t i = 0; i < ctx.linear.size(); ++i) {
+      const auto& lc = ctx.linear[i];
+      bool allCoeffsPos = true;
+      for (const auto& [name, coeff] : lc.coefficients) {
+        if (coeff < 0) {
+          allCoeffsPos = false;
+          break;
+        }
+      }
+      if (!allCoeffsPos) {
+        continue;
+      }
+
+      bool coversAll = true;
+      double maxRatio = 0.0;
+      for (const auto& [name, alpha] : linTerms) {
+        auto cit = lc.coefficients.find(name);
+        if (cit == lc.coefficients.end() || cit->second <= 0) {
+          coversAll = false;
+          break;
+        }
+        double ratio = alpha / static_cast<double>(cit->second);
+        if (ratio > maxRatio) {
+          maxRatio = ratio;
+        }
+      }
+      if (!coversAll) {
+        continue;
+      }
+
+      double minOther = 0.0;
+      for (const auto& [u, ucoeff] : lc.coefficients) {
+        if (linTerms.count(u) == 0 && ucoeff > 0) {
+          auto mit = ctx.minima.find(u);
+          if (mit != ctx.minima.end()) {
+            minOther += static_cast<double>(ucoeff) * mit->second;
+          }
+        }
+      }
+      double beff = std::max(0.0, static_cast<double>(lc.bound) - minOther);
+      double linSumBound = maxRatio * beff + nonLinSum;
+      if (linSumBound < acc) {
+        acc = linSumBound;
+        ctx.linearApplied[i] = true;
+        ctx.linearTightened[i] = true;
+      }
+    }
+  }
+  return complexity::EvalResult{complexity::EvalStatus::Ok, acc, {}};
+}
+
+/// Evaluates a Multiply expression under monotone variable bounds and applies product
+/// and linear constraints to find tight bounds for composite terms.
+complexity::EvalResult evalMultiplyWithConstraints(const Expr& expr, const complexity::Bindings& bindings,
+                                                   ConstraintContext& ctx) {
+  std::vector<ExprPtr> flat;
+  std::function<void(const ExprPtr&)> flatten = [&](const ExprPtr& factor) {
+    if (factor->kind() == ExprKind::Multiply) {
+      for (const auto& child : factor->operands()) {
+        flatten(child);
+      }
+    } else {
+      flat.push_back(factor);
+    }
+  };
+  for (const auto& op : expr.operands()) {
+    flatten(op);
+  }
+
+  std::map<std::string, double> varExponents;
+  std::vector<ExprPtr> otherFactors;
+  for (const auto& f : flat) {
+    if (auto vp = asVarPower(*f)) {
+      varExponents[vp->name] += vp->exponent;
+    } else {
+      otherFactors.push_back(f);
+    }
+  }
+
+  double acc = 1.0;
+
+  while (true) {
+    enum class CandidateType { None, Product, Linear };
+    CandidateType bestType = CandidateType::None;
+    size_t bestIdx = 0;
+    double bestReduction = 1.0;
+
+    double bestProductAmin = 0.0;
+    double bestProductPeff = 0.0;
+    double bestProductMprod = 0.0;
+
+    double bestLinearBound = 0.0;
+    std::vector<std::string> bestLinearVars;
+
+    // 1. Check Product Constraints
+    for (size_t i = 0; i < ctx.products.size(); ++i) {
+      const auto& pc = ctx.products[i];
+      bool allPresent = true;
+      double amin = 0.0;
+      double mprod = 1.0;
+      for (size_t vi = 0; vi < pc.variables.size(); ++vi) {
+        const auto& v = pc.variables[vi];
+        auto it = varExponents.find(v);
+        if (it == varExponents.end() || it->second < 1.0) {
+          allPresent = false;
+          break;
+        }
+        if (vi == 0 || it->second < amin) {
+          amin = it->second;
+        }
+        auto bit = bindings.find(v);
+        if (bit == bindings.end()) {
+          allPresent = false;
+          break;
+        }
+        mprod *= bit->second;
+      }
+      if (!allPresent || amin < 1.0) {
+        continue;
+      }
+      double peff = std::min(static_cast<double>(pc.maxProduct), mprod);
+      double reduction = (mprod > 0.0) ? std::pow(peff / mprod, amin) : 1.0;
+      if (reduction < bestReduction || (bestType == CandidateType::None && peff <= mprod)) {
+        bestReduction = reduction;
+        bestType = CandidateType::Product;
+        bestIdx = i;
+        bestProductAmin = amin;
+        bestProductPeff = peff;
+        bestProductMprod = mprod;
+      }
+    }
+
+    // 2. Check Linear Constraints
+    for (size_t j = 0; j < ctx.linear.size(); ++j) {
+      const auto& lc = ctx.linear[j];
+      bool allNonNeg = true;
+      for (const auto& [name, coeff] : lc.coefficients) {
+        if (coeff < 0) {
+          allNonNeg = false;
+          break;
+        }
+      }
+      if (!allNonNeg) {
+        continue;
+      }
+
+      std::vector<std::string> matchedVars;
+      for (const auto& [v, coeff] : lc.coefficients) {
+        if (coeff > 0) {
+          auto it = varExponents.find(v);
+          if (it != varExponents.end() && it->second >= 1.0) {
+            matchedVars.push_back(v);
+          }
+        }
+      }
+
+      if (matchedVars.size() == 2) {
+        const std::string& x = matchedVars[0];
+        const std::string& y = matchedVars[1];
+        double cx = static_cast<double>(lc.coefficients.at(x));
+        double cy = static_cast<double>(lc.coefficients.at(y));
+        double ax = varExponents.at(x);
+        double ay = varExponents.at(y);
+        double mx = ctx.minima.count(x) ? ctx.minima.at(x) : 0.0;
+        double my = ctx.minima.count(y) ? ctx.minima.at(y) : 0.0;
+        double Mx = bindings.at(x);
+        double My = bindings.at(y);
+
+        double minOther = 0.0;
+        for (const auto& [u, ucoeff] : lc.coefficients) {
+          if (u != x && u != y && ucoeff > 0) {
+            double mu = ctx.minima.count(u) ? ctx.minima.at(u) : 0.0;
+            minOther += static_cast<double>(ucoeff) * mu;
+          }
+        }
+        double beff = static_cast<double>(lc.bound) - minOther;
+        if (beff > 0.0) {
+          double xstar = (ax / (ax + ay)) * (beff / cx);
+          double xlo = std::max(mx, (beff - cy * My) / cx);
+          double xhi = std::min(Mx, (beff - cy * my) / cx);
+          if (xlo <= xhi) {
+            double xopt = std::clamp(xstar, xlo, xhi);
+            double yopt = std::max(0.0, (beff - cx * xopt) / cy);
+            double linBound = std::pow(xopt, ax) * std::pow(yopt, ay);
+            double mprod = std::pow(Mx, ax) * std::pow(My, ay);
+            double reduction = (mprod > 0.0) ? (linBound / mprod) : 1.0;
+            if (reduction < bestReduction || (bestType == CandidateType::None && linBound <= mprod)) {
+              bestReduction = reduction;
+              bestType = CandidateType::Linear;
+              bestIdx = j;
+              bestLinearBound = linBound;
+              bestLinearVars = {x, y};
+            }
+          }
+        }
+      } else if (matchedVars.size() > 2) {
+        double sumA = 0.0;
+        for (const auto& v : matchedVars) {
+          sumA += varExponents.at(v);
+        }
+        double minOther = 0.0;
+        for (const auto& [u, ucoeff] : lc.coefficients) {
+          if (ucoeff > 0 && std::find(matchedVars.begin(), matchedVars.end(), u) == matchedVars.end()) {
+            double mu = ctx.minima.count(u) ? ctx.minima.at(u) : 0.0;
+            minOther += static_cast<double>(ucoeff) * mu;
+          }
+        }
+        double beff = static_cast<double>(lc.bound) - minOther;
+        if (beff > 0.0 && sumA > 0.0) {
+          double linBound = 1.0;
+          double mprod = 1.0;
+          for (const auto& v : matchedVars) {
+            double cv = static_cast<double>(lc.coefficients.at(v));
+            double av = varExponents.at(v);
+            double mv = ctx.minima.count(v) ? ctx.minima.at(v) : 0.0;
+            double Mv = bindings.at(v);
+            double xvstar = (av / sumA) * (beff / cv);
+            double xvopt = std::clamp(xvstar, mv, Mv);
+            linBound *= std::pow(xvopt, av);
+            mprod *= std::pow(Mv, av);
+          }
+          double reduction = (mprod > 0.0) ? (linBound / mprod) : 1.0;
+          if (reduction < bestReduction || (bestType == CandidateType::None && linBound <= mprod)) {
+            bestReduction = reduction;
+            bestType = CandidateType::Linear;
+            bestIdx = j;
+            bestLinearBound = linBound;
+            bestLinearVars = matchedVars;
+          }
+        }
+      }
+    }
+
+    if (bestType == CandidateType::None) {
+      break;
+    }
+
+    if (bestType == CandidateType::Product) {
+      const auto& bestPc = ctx.products[bestIdx];
+      ctx.productApplied[bestIdx] = true;
+      if (bestProductPeff < bestProductMprod) {
+        ctx.productTightened[bestIdx] = true;
+      }
+      acc *= std::pow(bestProductPeff, bestProductAmin);
+      for (const auto& v : bestPc.variables) {
+        if (varExponents[v] > bestProductAmin) {
+          ctx.remainingFactorsAtMaxima = true;
+        }
+        varExponents[v] -= bestProductAmin;
+      }
+    } else if (bestType == CandidateType::Linear) {
+      ctx.linearApplied[bestIdx] = true;
+      ctx.linearTightened[bestIdx] = true;
+      acc *= bestLinearBound;
+      for (const auto& v : bestLinearVars) {
+        varExponents[v] = 0.0;
+      }
+    }
+  }
+
+  for (const auto& [name, exp] : varExponents) {
+    if (exp > 0.0) {
+      auto it = bindings.find(name);
+      if (it == bindings.end()) {
+        return complexity::EvalResult{complexity::EvalStatus::UnboundVariable, 0.0, "unbound variable '" + name + "'"};
+      }
+      acc *= std::pow(it->second, exp);
+    }
+  }
+
+  for (const auto& of : otherFactors) {
+    auto r = evalMonotoneWithConstraints(*of, bindings, ctx);
+    if (!r.ok()) {
+      return r;
+    }
+    acc *= r.value;
+  }
+
+  if (!std::isfinite(acc)) {
+    return complexity::EvalResult{complexity::EvalStatus::Overflow, 0.0, "value exceeds the representable range"};
+  }
+  return complexity::EvalResult{complexity::EvalStatus::Ok, acc, {}};
+}
+
+/// Evaluates a monotone expression subject to linear and product constraints,
+/// maximizing monotone terms under variable bounds and constraint relationships.
+complexity::EvalResult evalMonotoneWithConstraints(const Expr& expr, const complexity::Bindings& bindings,
                                                    ConstraintContext& ctx) {
   switch (expr.kind()) {
     case ExprKind::Constant:
@@ -305,82 +623,8 @@ complexity::EvalResult evalMonotoneWithConstraints(const Expr& expr, const compl
       }
       return complexity::EvalResult{complexity::EvalStatus::Ok, it->second, {}};
     }
-    case ExprKind::Add: {
-      double acc = 0.0;
-      for (const auto& term : expr.operands()) {
-        auto r = evalMonotoneWithConstraints(*term, bindings, ctx);
-        if (!r.ok()) {
-          return r;
-        }
-        acc += r.value;
-        if (!std::isfinite(acc)) {
-          return complexity::EvalResult{complexity::EvalStatus::Overflow, 0.0, "value exceeds the representable range"};
-        }
-      }
-
-      std::map<std::string, double> linTerms;
-      double nonLinSum = 0.0;
-      for (const auto& term : expr.operands()) {
-        if (auto lt = asLinearTerm(*term)) {
-          linTerms[lt->name] += lt->coeff;
-        } else {
-          auto r = evalMonotoneWithConstraints(*term, bindings, ctx);
-          if (r.ok()) {
-            nonLinSum += r.value;
-          }
-        }
-      }
-      if (linTerms.size() >= 2) {
-        for (size_t i = 0; i < ctx.linear.size(); ++i) {
-          const auto& lc = ctx.linear[i];
-          bool allCoeffsPos = true;
-          for (const auto& [name, coeff] : lc.coefficients) {
-            if (coeff < 0) {
-              allCoeffsPos = false;
-              break;
-            }
-          }
-          if (!allCoeffsPos) {
-            continue;
-          }
-
-          bool coversAll = true;
-          double maxRatio = 0.0;
-          for (const auto& [name, alpha] : linTerms) {
-            auto cit = lc.coefficients.find(name);
-            if (cit == lc.coefficients.end() || cit->second <= 0) {
-              coversAll = false;
-              break;
-            }
-            double ratio = alpha / static_cast<double>(cit->second);
-            if (ratio > maxRatio) {
-              maxRatio = ratio;
-            }
-          }
-          if (!coversAll) {
-            continue;
-          }
-
-          double minOther = 0.0;
-          for (const auto& [u, ucoeff] : lc.coefficients) {
-            if (linTerms.count(u) == 0 && ucoeff > 0) {
-              auto mit = ctx.minima.find(u);
-              if (mit != ctx.minima.end()) {
-                minOther += static_cast<double>(ucoeff) * mit->second;
-              }
-            }
-          }
-          double beff = std::max(0.0, static_cast<double>(lc.bound) - minOther);
-          double linSumBound = maxRatio * beff + nonLinSum;
-          if (linSumBound < acc) {
-            acc = linSumBound;
-            ctx.linearApplied[i] = true;
-            ctx.linearTightened[i] = true;
-          }
-        }
-      }
-      return complexity::EvalResult{complexity::EvalStatus::Ok, acc, {}};
-    }
+    case ExprKind::Add:
+      return evalAddWithConstraints(expr, bindings, ctx);
     case ExprKind::Maximum: {
       double acc = 0.0;
       bool first = true;
@@ -422,236 +666,8 @@ complexity::EvalResult evalMonotoneWithConstraints(const Expr& expr, const compl
     case ExprKind::Summation: {
       return complexity::evaluate(expr, bindings);
     }
-    case ExprKind::Multiply: {
-      std::vector<ExprPtr> flat;
-      std::function<void(const ExprPtr&)> flatten = [&](const ExprPtr& factor) {
-        if (factor->kind() == ExprKind::Multiply) {
-          for (const auto& child : factor->operands()) {
-            flatten(child);
-          }
-        } else {
-          flat.push_back(factor);
-        }
-      };
-      for (const auto& op : expr.operands()) {
-        flatten(op);
-      }
-
-      std::map<std::string, double> varExponents;
-      std::vector<ExprPtr> otherFactors;
-      for (const auto& f : flat) {
-        if (auto vp = asVarPower(*f)) {
-          varExponents[vp->name] += vp->exponent;
-        } else {
-          otherFactors.push_back(f);
-        }
-      }
-
-      double acc = 1.0;
-
-      while (true) {
-        enum class CandidateType { None, Product, Linear };
-        CandidateType bestType = CandidateType::None;
-        size_t bestIdx = 0;
-        double bestReduction = 1.0;
-
-        double bestProductAmin = 0.0;
-        double bestProductPeff = 0.0;
-        double bestProductMprod = 0.0;
-
-        double bestLinearBound = 0.0;
-        std::vector<std::string> bestLinearVars;
-
-        // 1. Check Product Constraints
-        for (size_t i = 0; i < ctx.products.size(); ++i) {
-          const auto& pc = ctx.products[i];
-          bool allPresent = true;
-          double amin = 0.0;
-          double mprod = 1.0;
-          for (size_t vi = 0; vi < pc.variables.size(); ++vi) {
-            const auto& v = pc.variables[vi];
-            auto it = varExponents.find(v);
-            if (it == varExponents.end() || it->second < 1.0) {
-              allPresent = false;
-              break;
-            }
-            if (vi == 0 || it->second < amin) {
-              amin = it->second;
-            }
-            auto bit = bindings.find(v);
-            if (bit == bindings.end()) {
-              allPresent = false;
-              break;
-            }
-            mprod *= bit->second;
-          }
-          if (!allPresent || amin < 1.0) {
-            continue;
-          }
-          double peff = std::min(static_cast<double>(pc.maxProduct), mprod);
-          double reduction = (mprod > 0.0) ? std::pow(peff / mprod, amin) : 1.0;
-          if (reduction < bestReduction || (bestType == CandidateType::None && peff <= mprod)) {
-            bestReduction = reduction;
-            bestType = CandidateType::Product;
-            bestIdx = i;
-            bestProductAmin = amin;
-            bestProductPeff = peff;
-            bestProductMprod = mprod;
-          }
-        }
-
-        // 2. Check Linear Constraints
-        for (size_t j = 0; j < ctx.linear.size(); ++j) {
-          const auto& lc = ctx.linear[j];
-          bool allNonNeg = true;
-          for (const auto& [name, coeff] : lc.coefficients) {
-            if (coeff < 0) {
-              allNonNeg = false;
-              break;
-            }
-          }
-          if (!allNonNeg) {
-            continue;
-          }
-
-          std::vector<std::string> matchedVars;
-          for (const auto& [v, coeff] : lc.coefficients) {
-            if (coeff > 0) {
-              auto it = varExponents.find(v);
-              if (it != varExponents.end() && it->second >= 1.0) {
-                matchedVars.push_back(v);
-              }
-            }
-          }
-
-          if (matchedVars.size() == 2) {
-            const std::string& x = matchedVars[0];
-            const std::string& y = matchedVars[1];
-            double cx = static_cast<double>(lc.coefficients.at(x));
-            double cy = static_cast<double>(lc.coefficients.at(y));
-            double ax = varExponents.at(x);
-            double ay = varExponents.at(y);
-            double mx = ctx.minima.count(x) ? ctx.minima.at(x) : 0.0;
-            double my = ctx.minima.count(y) ? ctx.minima.at(y) : 0.0;
-            double Mx = bindings.at(x);
-            double My = bindings.at(y);
-
-            double minOther = 0.0;
-            for (const auto& [u, ucoeff] : lc.coefficients) {
-              if (u != x && u != y && ucoeff > 0) {
-                double mu = ctx.minima.count(u) ? ctx.minima.at(u) : 0.0;
-                minOther += static_cast<double>(ucoeff) * mu;
-              }
-            }
-            double beff = static_cast<double>(lc.bound) - minOther;
-            if (beff > 0.0) {
-              double xstar = (ax / (ax + ay)) * (beff / cx);
-              double xlo = std::max(mx, (beff - cy * My) / cx);
-              double xhi = std::min(Mx, (beff - cy * my) / cx);
-              if (xlo <= xhi) {
-                double xopt = std::clamp(xstar, xlo, xhi);
-                double yopt = std::max(0.0, (beff - cx * xopt) / cy);
-                double linBound = std::pow(xopt, ax) * std::pow(yopt, ay);
-                double mprod = std::pow(Mx, ax) * std::pow(My, ay);
-                double reduction = (mprod > 0.0) ? (linBound / mprod) : 1.0;
-                if (reduction < bestReduction || (bestType == CandidateType::None && linBound <= mprod)) {
-                  bestReduction = reduction;
-                  bestType = CandidateType::Linear;
-                  bestIdx = j;
-                  bestLinearBound = linBound;
-                  bestLinearVars = {x, y};
-                }
-              }
-            }
-          } else if (matchedVars.size() > 2) {
-            double sumA = 0.0;
-            for (const auto& v : matchedVars) {
-              sumA += varExponents.at(v);
-            }
-            double minOther = 0.0;
-            for (const auto& [u, ucoeff] : lc.coefficients) {
-              if (ucoeff > 0 && std::find(matchedVars.begin(), matchedVars.end(), u) == matchedVars.end()) {
-                double mu = ctx.minima.count(u) ? ctx.minima.at(u) : 0.0;
-                minOther += static_cast<double>(ucoeff) * mu;
-              }
-            }
-            double beff = static_cast<double>(lc.bound) - minOther;
-            if (beff > 0.0 && sumA > 0.0) {
-              double linBound = 1.0;
-              double mprod = 1.0;
-              for (const auto& v : matchedVars) {
-                double cv = static_cast<double>(lc.coefficients.at(v));
-                double av = varExponents.at(v);
-                double mv = ctx.minima.count(v) ? ctx.minima.at(v) : 0.0;
-                double Mv = bindings.at(v);
-                double xvstar = (av / sumA) * (beff / cv);
-                double xvopt = std::clamp(xvstar, mv, Mv);
-                linBound *= std::pow(xvopt, av);
-                mprod *= std::pow(Mv, av);
-              }
-              double reduction = (mprod > 0.0) ? (linBound / mprod) : 1.0;
-              if (reduction < bestReduction || (bestType == CandidateType::None && linBound <= mprod)) {
-                bestReduction = reduction;
-                bestType = CandidateType::Linear;
-                bestIdx = j;
-                bestLinearBound = linBound;
-                bestLinearVars = matchedVars;
-              }
-            }
-          }
-        }
-
-        if (bestType == CandidateType::None) {
-          break;
-        }
-
-        if (bestType == CandidateType::Product) {
-          const auto& bestPc = ctx.products[bestIdx];
-          ctx.productApplied[bestIdx] = true;
-          if (bestProductPeff < bestProductMprod) {
-            ctx.productTightened[bestIdx] = true;
-          }
-          acc *= std::pow(bestProductPeff, bestProductAmin);
-          for (const auto& v : bestPc.variables) {
-            if (varExponents[v] > bestProductAmin) {
-              ctx.remainingFactorsAtMaxima = true;
-            }
-            varExponents[v] -= bestProductAmin;
-          }
-        } else if (bestType == CandidateType::Linear) {
-          ctx.linearApplied[bestIdx] = true;
-          ctx.linearTightened[bestIdx] = true;
-          acc *= bestLinearBound;
-          for (const auto& v : bestLinearVars) {
-            varExponents[v] = 0.0;
-          }
-        }
-      }
-
-      for (const auto& [name, exp] : varExponents) {
-        if (exp > 0.0) {
-          auto it = bindings.find(name);
-          if (it == bindings.end()) {
-            return complexity::EvalResult{complexity::EvalStatus::UnboundVariable, 0.0,
-                                          "unbound variable '" + name + "'"};
-          }
-          acc *= std::pow(it->second, exp);
-        }
-      }
-
-      for (const auto& of : otherFactors) {
-        auto r = evalMonotoneWithConstraints(*of, bindings, ctx);
-        if (!r.ok()) {
-          return r;
-        }
-        acc *= r.value;
-      }
-
-      if (!std::isfinite(acc)) {
-        return complexity::EvalResult{complexity::EvalStatus::Overflow, 0.0, "value exceeds the representable range"};
-      }
-      return complexity::EvalResult{complexity::EvalStatus::Ok, acc, {}};
-    }
+    case ExprKind::Multiply:
+      return evalMultiplyWithConstraints(expr, bindings, ctx);
   }
   return complexity::EvalResult{complexity::EvalStatus::DomainError, 0.0, "unknown expression kind"};
 }
@@ -683,59 +699,11 @@ bool isSuperadditiveIn(const Expr& expr, const std::string& variable) {
   return s.monotone && s.nonNegative && superadditive(expr, variable);
 }
 
-WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
-  WorkloadResult result;
-  const std::set<std::string> free = complexity::freeVariables(expr);
-
-  complexity::Bindings maxima;
-  complexity::Bindings minima;
-  bool negativeAllowed = false;
-  for (const auto& name : free) {
-    const auto it = cs.variables.find(name);
-    if (it == cs.variables.end() || !it->second.max) {
-      result.missing.push_back(name);
-      continue;
-    }
-    maxima[name] = static_cast<double>(*it->second.max);
-    minima[name] = (it->second.min && *it->second.min > 0) ? static_cast<double>(*it->second.min) : 0.0;
-    if (it->second.min && *it->second.min < 0) {
-      negativeAllowed = true;
-    }
-  }
-  for (const auto& [name, bound] : cs.variables) {
-    if (minima.find(name) == minima.end()) {
-      minima[name] = (bound.min && *bound.min > 0) ? static_cast<double>(*bound.min) : 0.0;
-    }
-  }
-  if (!result.missing.empty()) {
-    result.status = BoundStatus::Unknown;
-    for (const auto& name : result.missing) {
-      result.assumptions.push_back("no upper bound configured for '" + name + "'");
-    }
-    return result;
-  }
-
-  const bool monotone = isMonotoneNonDecreasing(expr) && !negativeAllowed;
-  BoundStatus status = monotone ? BoundStatus::Proven : BoundStatus::Estimated;
-  if (!monotone) {
-    result.assumptions.push_back(
-        "expression is not provably non-decreasing; evaluated at variable maxima, which may not be the worst case");
-  }
-  for (const auto& name : free) {
-    const auto& bound = cs.variables.find(name)->second;
-    if (!bound.min) {
-      result.assumptions.push_back("'" + name + "' assumed non-negative (no lower bound configured)");
-    }
-  }
-
-  // Sum constraints on variables of the expression.
-  std::vector<const SumConstraint*> sums;
-  for (const auto& name : free) {
-    if (const SumConstraint* sc = findSumConstraint(cs, name)) {
-      sums.push_back(sc);
-    }
-  }
-
+/// Evaluates workload when no sum constraints are active, applying linear and product
+/// constraints if the expression is monotone, or falling back to pointwise evaluation.
+WorkloadResult evaluateWorkloadWithoutSums(const Expr& expr, const ConstraintSet& cs, const std::set<std::string>& free,
+                                           complexity::Bindings maxima, complexity::Bindings minima, bool monotone,
+                                           BoundStatus status, ConstraintContext& ctx, WorkloadResult result) {
   auto finish = [&](const complexity::EvalResult& eval, std::string method) {
     if (!eval.ok()) {
       result.status = BoundStatus::Unknown;
@@ -748,89 +716,104 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
     return result;
   };
 
-  ConstraintContext ctx(cs.products, cs.linear, minima);
+  if (monotone) {
+    tightenVariableBoundsWithLinear(maxima, minima, cs.linear, ctx.linearApplied, ctx.linearTightened);
+    auto eval = evalMonotoneWithConstraints(expr, maxima, ctx);
 
-  if (sums.empty()) {
-    if (monotone) {
-      tightenVariableBoundsWithLinear(maxima, minima, cs.linear, ctx.linearApplied, ctx.linearTightened);
-      auto eval = evalMonotoneWithConstraints(expr, maxima, ctx);
-
-      bool anyProductTightened = false;
-      for (size_t i = 0; i < cs.products.size(); ++i) {
-        if (ctx.productTightened[i]) {
-          anyProductTightened = true;
-        }
+    bool anyProductTightened = false;
+    for (size_t i = 0; i < cs.products.size(); ++i) {
+      if (ctx.productTightened[i]) {
+        anyProductTightened = true;
       }
-      for (size_t i = 0; i < cs.products.size(); ++i) {
-        const auto& product = cs.products[i];
-        const auto covered = std::count_if(product.variables.begin(), product.variables.end(),
-                                           [&](const std::string& v) { return free.count(v) != 0; });
-        if (covered >= 2 && !ctx.productApplied[i]) {
-          result.assumptions.push_back("product constraint (bound " + formatInt(product.maxProduct) +
-                                       ") not used to tighten the bound; result may be loose");
-        }
-      }
-
-      bool anyLinearTightened = false;
-      for (size_t i = 0; i < cs.linear.size(); ++i) {
-        if (ctx.linearTightened[i]) {
-          anyLinearTightened = true;
-        }
-      }
-      for (size_t i = 0; i < cs.linear.size(); ++i) {
-        const auto& lc = cs.linear[i];
-        bool hasNeg = false;
-        for (const auto& [name, coeff] : lc.coefficients) {
-          if (coeff < 0) {
-            hasNeg = true;
-            break;
-          }
-        }
-        if (hasNeg) {
-          result.assumptions.push_back("linear constraint with negative coefficient (bound " + formatInt(lc.bound) +
-                                       ") not used to tighten the bound; result may be loose");
-          continue;
-        }
-        const auto covered = std::count_if(lc.coefficients.begin(), lc.coefficients.end(),
-                                           [&](const auto& pair) { return free.count(pair.first) != 0; });
-        if (covered >= 2 && !ctx.linearApplied[i]) {
-          result.assumptions.push_back("linear constraint (bound " + formatInt(lc.bound) +
-                                       ") not used to tighten the bound; result may be loose");
-        }
-      }
-
-      std::string method = "pointwise-maxima";
-      if (anyProductTightened) {
-        method = "product-constraint-bound";
-      } else if (anyLinearTightened) {
-        method = "linear-constraint-bound";
-      }
-      if (anyProductTightened && ctx.remainingFactorsAtMaxima) {
-        result.assumptions.push_back(
-            "workload bounded by product constraint with remaining factors evaluated at individual maxima");
-      }
-      return finish(eval, std::move(method));
     }
-
-    // !monotone
-    for (const auto& product : cs.products) {
+    for (size_t i = 0; i < cs.products.size(); ++i) {
+      const auto& product = cs.products[i];
       const auto covered = std::count_if(product.variables.begin(), product.variables.end(),
                                          [&](const std::string& v) { return free.count(v) != 0; });
-      if (covered >= 2) {
+      if (covered >= 2 && !ctx.productApplied[i]) {
         result.assumptions.push_back("product constraint (bound " + formatInt(product.maxProduct) +
                                      ") not used to tighten the bound; result may be loose");
       }
     }
-    for (const auto& lc : cs.linear) {
-      const auto covered = std::count_if(lc.coefficients.begin(), lc.coefficients.end(),
-                                         [&](const auto& pair) { return free.count(pair.first) != 0; });
-      if (covered >= 2) {
-        result.assumptions.push_back("linear constraint (bound " + formatInt(lc.bound) +
-                                     ") not used to tighten the bound on non-monotone expression; result may be loose");
+
+    bool anyLinearTightened = false;
+    for (size_t i = 0; i < cs.linear.size(); ++i) {
+      if (ctx.linearTightened[i]) {
+        anyLinearTightened = true;
       }
     }
-    return finish(complexity::evaluate(expr, maxima), "pointwise-maxima");
+    for (size_t i = 0; i < cs.linear.size(); ++i) {
+      const auto& lc = cs.linear[i];
+      bool hasNeg = false;
+      for (const auto& [name, coeff] : lc.coefficients) {
+        if (coeff < 0) {
+          hasNeg = true;
+          break;
+        }
+      }
+      if (hasNeg) {
+        result.assumptions.push_back("linear constraint with negative coefficient (bound " + formatInt(lc.bound) +
+                                     ") not used to tighten the bound; result may be loose");
+        continue;
+      }
+      const auto covered = std::count_if(lc.coefficients.begin(), lc.coefficients.end(),
+                                         [&](const auto& pair) { return free.count(pair.first) != 0; });
+      if (covered >= 2 && !ctx.linearApplied[i]) {
+        result.assumptions.push_back("linear constraint (bound " + formatInt(lc.bound) +
+                                     ") not used to tighten the bound; result may be loose");
+      }
+    }
+
+    std::string method = "pointwise-maxima";
+    if (anyProductTightened) {
+      method = "product-constraint-bound";
+    } else if (anyLinearTightened) {
+      method = "linear-constraint-bound";
+    }
+    if (anyProductTightened && ctx.remainingFactorsAtMaxima) {
+      result.assumptions.push_back(
+          "workload bounded by product constraint with remaining factors evaluated at individual maxima");
+    }
+    return finish(eval, std::move(method));
   }
+
+  // Handle non-monotone expressions where bounds cannot be tightened with constraints.
+  for (const auto& product : cs.products) {
+    const auto covered = std::count_if(product.variables.begin(), product.variables.end(),
+                                       [&](const std::string& v) { return free.count(v) != 0; });
+    if (covered >= 2) {
+      result.assumptions.push_back("product constraint (bound " + formatInt(product.maxProduct) +
+                                   ") not used to tighten the bound; result may be loose");
+    }
+  }
+  for (const auto& lc : cs.linear) {
+    const auto covered = std::count_if(lc.coefficients.begin(), lc.coefficients.end(),
+                                       [&](const auto& pair) { return free.count(pair.first) != 0; });
+    if (covered >= 2) {
+      result.assumptions.push_back("linear constraint (bound " + formatInt(lc.bound) +
+                                   ") not used to tighten the bound on non-monotone expression; result may be loose");
+    }
+  }
+  return finish(complexity::evaluate(expr, maxima), "pointwise-maxima");
+}
+
+/// Evaluates workload under sum constraints, supporting single-sum superadditive packing,
+/// multi-sum separable packing over shared count variables, or sound case-multiplier fallbacks.
+WorkloadResult evaluateWorkloadWithSums(const Expr& expr, const ConstraintSet& cs, const std::set<std::string>& free,
+                                        const std::vector<const SumConstraint*>& sums, complexity::Bindings maxima,
+                                        bool monotone, BoundStatus status, ConstraintContext& ctx,
+                                        WorkloadResult result) {
+  auto finish = [&](const complexity::EvalResult& eval, std::string method) {
+    if (!eval.ok()) {
+      result.status = BoundStatus::Unknown;
+      result.assumptions.push_back("evaluation failed: " + eval.detail);
+      return result;
+    }
+    result.status = status;
+    result.upperBound = eval.value;
+    result.method = std::move(method);
+    return result;
+  };
 
   const std::string& countVar = sums.front()->countVariable;
   const bool sameCount =
@@ -886,6 +869,7 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
     return monotone ? evalMonotoneWithConstraints(*perCase, b, ctx) : complexity::evaluate(*perCase, b);
   };
 
+  // Case 1: Single sum constraint on a superadditive per-case function.
   if (sums.size() == 1 && monotone && isSuperadditiveIn(*perCase, sums.front()->variable)) {
     const SumConstraint& sc = *sums.front();
     const double total = static_cast<double>(sc.maxTotal);
@@ -930,6 +914,7 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
     return finish(complexity::EvalResult{complexity::EvalStatus::Ok, value, {}}, "sum-constraint-packing");
   }
 
+  // Case 2: Multiple sum constraints sharing one count variable on separable monotone terms.
   if (sums.size() > 1 && monotone) {
     std::vector<ExprPtr> terms;
     std::function<void(const ExprPtr&)> collectTerms = [&](const ExprPtr& e) {
@@ -943,21 +928,17 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
     };
     collectTerms(perCase);
 
-    std::map<std::string, const SumConstraint*> sumByVar;
-    for (const SumConstraint* sc : sums) {
-      sumByVar[sc->variable] = sc;
-    }
-
     bool allSeparable = true;
     for (const auto& term : terms) {
-      const auto termFree = complexity::freeVariables(*term);
-      size_t countSumVars = 0;
-      for (const auto& v : termFree) {
-        if (sumByVar.count(v) != 0) {
-          ++countSumVars;
+      std::set<std::string> constrainedVars;
+      for (const auto& v : complexity::freeVariables(*term)) {
+        for (const SumConstraint* sc : sums) {
+          if (sc->variable == v) {
+            constrainedVars.insert(v);
+          }
         }
       }
-      if (countSumVars > 1) {
+      if (constrainedVars.size() > 1) {
         allSeparable = false;
         break;
       }
@@ -970,64 +951,63 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
       bool anyPacked = false;
 
       for (const auto& term : terms) {
-        const auto termFree = complexity::freeVariables(*term);
-        const SumConstraint* sc = nullptr;
-        for (const auto& v : termFree) {
-          if (sumByVar.count(v) != 0) {
-            sc = sumByVar[v];
+        const SumConstraint* matchedSc = nullptr;
+        for (const auto& v : complexity::freeVariables(*term)) {
+          for (const SumConstraint* sc : sums) {
+            if (sc->variable == v) {
+              matchedSc = sc;
+              break;
+            }
+          }
+          if (matchedSc) {
             break;
           }
         }
 
-        if (!sc) {
-          auto r = evalMonotoneWithConstraints(*term, capped, ctx);
-          if (!r.ok()) {
+        if (matchedSc && isSuperadditiveIn(*term, matchedSc->variable)) {
+          const double total = static_cast<double>(matchedSc->maxTotal);
+          const double perCaseMax = capped[matchedSc->variable];
+          const double fullCases = perCaseMax > 0.0 ? std::min(maxCases, std::floor(total / perCaseMax)) : 0.0;
+          const double remainder = total - fullCases * perCaseMax;
+
+          auto evalTerm = [&](const complexity::Bindings& b) { return evalMonotoneWithConstraints(*term, b, ctx); };
+
+          complexity::EvalResult full = evalTerm(capped);
+          if (!full.ok()) {
             evalOk = false;
-            evalError = r.detail;
+            evalError = full.detail;
             break;
           }
-          totalValue += maxCases * r.value;
-        } else {
-          const double total = static_cast<double>(sc->maxTotal);
-          const double perCaseMax = capped[sc->variable];
-          if (isSuperadditiveIn(*term, sc->variable)) {
-            anyPacked = true;
-            const double fullCases = perCaseMax > 0.0 ? std::min(maxCases, std::floor(total / perCaseMax)) : 0.0;
-            const double remainder = total - fullCases * perCaseMax;
-
-            auto full = evalMonotoneWithConstraints(*term, capped, ctx);
-            if (!full.ok()) {
+          double termValue = fullCases * full.value;
+          if (fullCases < maxCases && remainder > 0.0) {
+            complexity::Bindings rest = capped;
+            rest[matchedSc->variable] = remainder;
+            complexity::EvalResult partial = evalTerm(rest);
+            if (!partial.ok()) {
               evalOk = false;
-              evalError = full.detail;
+              evalError = partial.detail;
               break;
             }
-            double termVal = fullCases * full.value;
-            if (fullCases < maxCases && remainder > 0.0) {
-              complexity::Bindings rest = capped;
-              rest[sc->variable] = remainder;
-              auto partial = evalMonotoneWithConstraints(*term, rest, ctx);
-              if (!partial.ok()) {
-                evalOk = false;
-                evalError = partial.detail;
-                break;
-              }
-              termVal += partial.value;
-            }
-            totalValue += termVal;
-          } else {
-            double termCases = maxCases;
-            const auto& bound = cs.variables.find(sc->variable)->second;
-            if (bound.min && *bound.min >= 1) {
-              termCases = std::min(termCases, std::floor(total / static_cast<double>(*bound.min)));
-            }
-            auto r = evalMonotoneWithConstraints(*term, capped, ctx);
-            if (!r.ok()) {
-              evalOk = false;
-              evalError = r.detail;
-              break;
-            }
-            totalValue += termCases * r.value;
+            termValue += partial.value;
           }
+          totalValue += termValue;
+          anyPacked = true;
+        } else {
+          double termCases = maxCases;
+          if (matchedSc) {
+            const auto& bound = cs.variables.find(matchedSc->variable)->second;
+            if (bound.min && *bound.min >= 1) {
+              termCases = std::min(
+                  termCases, std::floor(static_cast<double>(matchedSc->maxTotal) / static_cast<double>(*bound.min)));
+            }
+          }
+          complexity::EvalResult perTerm = evalMonotoneWithConstraints(*term, capped, ctx);
+          if (!perTerm.ok()) {
+            evalOk = false;
+            evalError = perTerm.detail;
+            break;
+          }
+          totalValue += termCases * perTerm.value;
         }
       }
 
@@ -1066,7 +1046,7 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
     }
   }
 
-  // Sound fallback for monotone costs: (number of cases) x (per-case maximum).
+  // Case 3: Sound fallback for monotone costs: (number of cases) x (per-case maximum).
   double cases = maxCases;
   for (const SumConstraint* sc : sums) {
     const auto& bound = cs.variables.find(sc->variable)->second;
@@ -1098,6 +1078,73 @@ WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
   }
   result.assumptions.push_back("per-case cost not recognised as superadditive; bound is cases x per-case maximum");
   return finish(complexity::EvalResult{complexity::EvalStatus::Ok, cases * per.value, {}}, "sum-constraint-cases");
+}
+
+/// Evaluates the worst-case numerical workload of an asymptotic complexity expression
+/// given variable bounds and constraints (linear bounds, product bounds, and test-case sum bounds).
+/// Evaluates monotone non-decreasing expressions at upper bounds tightened by constraint relationships,
+/// or packs test cases when superadditivity holds.
+WorkloadResult evaluateWorkload(const Expr& expr, const ConstraintSet& cs) {
+  WorkloadResult result;
+  const std::set<std::string> free = complexity::freeVariables(expr);
+
+  complexity::Bindings maxima;
+  complexity::Bindings minima;
+  bool negativeAllowed = false;
+  for (const auto& name : free) {
+    const auto it = cs.variables.find(name);
+    if (it == cs.variables.end() || !it->second.max) {
+      result.missing.push_back(name);
+      continue;
+    }
+    maxima[name] = static_cast<double>(*it->second.max);
+    minima[name] = (it->second.min && *it->second.min > 0) ? static_cast<double>(*it->second.min) : 0.0;
+    if (it->second.min && *it->second.min < 0) {
+      negativeAllowed = true;
+    }
+  }
+  for (const auto& [name, bound] : cs.variables) {
+    if (minima.find(name) == minima.end()) {
+      minima[name] = (bound.min && *bound.min > 0) ? static_cast<double>(*bound.min) : 0.0;
+    }
+  }
+  if (!result.missing.empty()) {
+    result.status = BoundStatus::Unknown;
+    for (const auto& name : result.missing) {
+      result.assumptions.push_back("no upper bound configured for '" + name + "'");
+    }
+    return result;
+  }
+
+  const bool monotone = isMonotoneNonDecreasing(expr) && !negativeAllowed;
+  BoundStatus status = monotone ? BoundStatus::Proven : BoundStatus::Estimated;
+  if (!monotone) {
+    result.assumptions.push_back(
+        "expression is not provably non-decreasing; evaluated at variable maxima, which may not be the worst case");
+  }
+  for (const auto& name : free) {
+    const auto& bound = cs.variables.find(name)->second;
+    if (!bound.min) {
+      result.assumptions.push_back("'" + name + "' assumed non-negative (no lower bound configured)");
+    }
+  }
+
+  // Sum constraints on variables of the expression.
+  std::vector<const SumConstraint*> sums;
+  for (const auto& name : free) {
+    if (const SumConstraint* sc = findSumConstraint(cs, name)) {
+      sums.push_back(sc);
+    }
+  }
+
+  ConstraintContext ctx(cs.products, cs.linear, minima);
+
+  if (sums.empty()) {
+    return evaluateWorkloadWithoutSums(expr, cs, free, std::move(maxima), std::move(minima), monotone, status, ctx,
+                                       std::move(result));
+  }
+
+  return evaluateWorkloadWithSums(expr, cs, free, sums, std::move(maxima), monotone, status, ctx, std::move(result));
 }
 
 }  // namespace bigolens::constraints

@@ -37,6 +37,12 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
+          config-file: .github/codeql/codeql-config.yml
+      - name: Install system dependencies
+        if: matrix.language == 'c-cpp'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y nlohmann-json3-dev
       - name: Build C++ (core engine and benchmark library)
         if: matrix.build-mode == 'manual'
         run: |

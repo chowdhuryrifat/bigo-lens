@@ -39,7 +39,7 @@ ExprPtr variable(std::string name) {
 }
 
 bool isConstant(const Expr& expr, double value) noexcept {
-  return expr.kind() == ExprKind::Constant && expr.number() == value;
+  return expr.kind() == ExprKind::Constant && std::fabs(expr.number() - value) < 1e-9;
 }
 
 ExprPtr add(std::vector<ExprPtr> terms) {
@@ -185,8 +185,8 @@ void collectFree(const Expr& expr, std::set<std::string>& bound, std::set<std::s
 
 std::string formatNumber(double value) {
   std::ostringstream stream;
-  if (value == std::floor(value) && std::fabs(value) < 1e15) {
-    stream << static_cast<long long>(value);
+  if (std::fabs(value - std::round(value)) < 1e-9 && std::fabs(value) < 1e15) {
+    stream << static_cast<long long>(std::round(value));
   } else {
     stream << value;
   }

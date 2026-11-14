@@ -128,7 +128,7 @@ class Evaluator {
         if (!base.ok()) {
           return base;
         }
-        if (base.value < 0.0 && expr.number() != std::floor(expr.number())) {
+        if (base.value < 0.0 && std::fabs(expr.number() - std::round(expr.number())) > 1e-9) {
           return fail(EvalStatus::DomainError, "fractional power of a negative value");
         }
         return value(std::pow(base.value, expr.number()));
