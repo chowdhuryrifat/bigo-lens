@@ -8,6 +8,15 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ### Added
 
+- Graduation of native Clang front end on macOS and Windows (BL-602):
+  - Graduated `native-macos-clang` in `.github/workflows/ci.yml` from experimental to a fully supported configuration, removing `continue-on-error` and verifying 100% CTest suite pass against Homebrew LLVM.
+  - Added `native-windows-clang` CI job on `windows-2022` with prebuilt Clang/LLVM development packages via MSYS2 UCRT64.
+  - Added MSVC `/GR-` compiler option when `NOT LLVM_ENABLE_RTTI` to ensure RTTI compatibility with official LLVM libraries.
+  - Added Windows system library dependencies (`version`, `ws2_32`, `ole32`, `advapi32`, `shell32`) to `BIGOLENS_CLANG_LIBS` in `cmake/ClangTooling.cmake`.
+  - Added CMake path normalization with `file(TO_CMAKE_PATH ...)` for `BIGOLENS_CLANG_RESOURCE_DIR`, `BIGOLENS_FIXTURE_DIR`, and `BIGOLENS_EXAMPLES_DIR` to guarantee forward slashes in string compiler definitions on Windows.
+  - Replaced POSIX `<unistd.h>` (`setenv`/`unsetenv`/`getpid`) with cross-platform equivalents (`_putenv_s`, `_getpid`) in `tests/integration/resource_dir_test.cpp`.
+  - Updated platform support tables and documentation across `README.md`, `LIMITATIONS.md`, `REQUIREMENTS.md`, `TROUBLESHOOTING.md`, `DEFINITION_OF_DONE.md`, `GIT_WORKFLOW.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`, `DESIGN.md`, `FAQ.md`, and `GETTING_STARTED.md`.
+
 - Branch protection, private vulnerability reporting, and issue templates (BL-107):
   - Enabled active GitHub branch ruleset `Protect main` (ruleset ID `27279054`) on default branch `main`, enforcing pull requests before merging, 8 required CI status checks, conversation thread resolution, dismissal of stale reviews, and blocking deletion and non-fast-forward pushes.
   - Enabled GitHub private vulnerability reporting and security advisories pipeline (`PUT /repos/.../private-vulnerability-reporting`).

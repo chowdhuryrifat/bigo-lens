@@ -5,14 +5,16 @@
 #   engine CLI    the bigolens-engine executable driven through files, exactly
 #                 as the VS Code extension uses it
 
-set(BIGOLENS_EXAMPLES_DIR "${PROJECT_SOURCE_DIR}/shared/examples")
+file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/shared/examples" _bigolens_examples_dir)
+set(BIGOLENS_EXAMPLES_DIR "${_bigolens_examples_dir}")
 
 if(BIGOLENS_ENABLE_CLANG)
+  file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cpp" _bigolens_fixture_dir)
   add_executable(bigolens_integration_tests integration/frontend_pipeline_test.cpp integration/loop_forms_test.cpp
                                             integration/resource_dir_test.cpp)
   target_link_libraries(bigolens_integration_tests PRIVATE bigolens_clang_frontend bigolens_core GTest::gtest_main)
   target_compile_definitions(bigolens_integration_tests
-                             PRIVATE BIGOLENS_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/cpp")
+                             PRIVATE BIGOLENS_FIXTURE_DIR="${_bigolens_fixture_dir}")
   bigolens_set_warnings(bigolens_integration_tests)
   gtest_discover_tests(bigolens_integration_tests DISCOVERY_MODE PRE_TEST PROPERTIES LABELS "integration"
                        DISCOVERY_TIMEOUT 60)

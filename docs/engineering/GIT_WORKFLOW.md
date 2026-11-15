@@ -97,7 +97,7 @@ flowchart LR
    - Analysis impact: any change in findings, statuses or workloads for existing fixtures
    - Protocol impact: none, minor or major, with the schema, docs and example updates
    - Screenshots for extension UI changes
-5. **CI must be green.** The experimental macOS Clang job is allowed to fail and does not block merge.
+5. **CI must be green.** All required status checks must pass.
 6. **Mark review conversations resolved** only when they are addressed.
 
 ## 5. Review

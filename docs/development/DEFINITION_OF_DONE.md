@@ -29,7 +29,7 @@ Mark an item as "N/A" in the pull request description only when it genuinely doe
 - [ ] The author ran the relevant suites locally and lists the exact commands and outcomes in the pull request:
   - `ctest --preset dev` (or `no-clang` where Clang is unavailable, saying so)
   - `npm test`, plus `npm run test:integration` when the engine and extension interact
-- [ ] CI is green. Only the experimental macOS Clang job may fail.
+- [ ] CI is green across all required jobs.
 
 ## 4. Protocol and compatibility
 

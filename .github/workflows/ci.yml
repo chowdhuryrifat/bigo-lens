@@ -111,13 +111,12 @@ jobs:
         run: ctest --preset no-clang
 
   native-macos-clang:
-    # Experimental: building against Homebrew LLVM is not yet a supported configuration.
+    # Supported: Clang frontend on macOS built against Homebrew LLVM.
     # Uses Homebrew's current llvm: older Clang releases cannot parse the libc++
     # headers of the runner's macOS SDK (e.g. "'_Tp' does not refer to a value").
-    name: Native · macOS · Clang frontend (experimental)
+    name: Native · macOS · Clang frontend
     runs-on: macos-latest
     timeout-minutes: 60
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install LLVM
@@ -134,6 +133,38 @@ jobs:
       - name: Build
         run: cmake --build --preset dev --parallel
       - name: Test
+        run: ctest --preset dev
+
+  native-windows-clang:
+    name: Native · Windows · Clang frontend
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-clang-tools-extra
+            mingw-w64-ucrt-x86_64-llvm
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-cmake
+      - name: Configure
+        shell: msys2 {0}
+        run: |
+          cmake --preset dev -G Ninja \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld" \
+            -DClang_DIR=/ucrt64/lib/cmake/clang \
+            -DLLVM_DIR=/ucrt64/lib/cmake/llvm
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build --preset dev --parallel
+      - name: Test
+        shell: msys2 {0}
         run: ctest --preset dev
 
   extension:

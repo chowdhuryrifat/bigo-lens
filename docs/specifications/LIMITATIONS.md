@@ -120,8 +120,8 @@ Non-affine summations are evaluated term by term under a budget (5·10⁷ node e
 | Platform | Core engine and tests | Clang frontend (`analyze`) | Notes |
 | --- | --- | --- | --- |
 | Linux (Ubuntu) | Supported, CI | Supported — primary platform (LLVM/Clang 18 in CI; developed with Clang 20) | Full build |
-| macOS | Supported, CI (without frontend) | **Experimental** with Homebrew LLVM; CI job allowed to fail | |
-| Windows | Supported, CI (MSVC, `BIGOLENS_ENABLE_CLANG=OFF`) | **Experimental / untested** | Without the frontend `analyze` returns `frontend_unavailable` |
+| macOS | Supported, CI | Supported with Homebrew LLVM in CI | Full CTest suite passes |
+| Windows | Supported, CI | Supported with official LLVM in CI (MSVC Release) | Full CTest suite passes |
 
 The VS Code extension's CI smoke test runs on Linux only. Release workflow packages the engine for Linux only.
 

@@ -46,7 +46,7 @@ All Clang use is confined to `engine/src/parser/clang_frontend.cpp`, behind the 
 **Negative**
 
 - A large build-time dependency. LLVM and Clang must be installed and found with `find_package(Clang CONFIG)`, and `Clang_DIR` may need to be set.
-- Platform friction. The frontend is primary on Linux, experimental on macOS (Homebrew LLVM) and experimental or untested on Windows. CI builds the core without Clang on macOS and Windows.
+- Platform friction. The frontend was originally primary on Linux and experimental on macOS/Windows; native Clang frontend support was graduated in BL-602 with required CI jobs on Linux, macOS, and Windows.
 - Headers named in `#include` are read from the user's filesystem, so analysis depends on the local toolchain's headers.
 - Clang API changes between LLVM major versions can require code updates. CI uses LLVM 18, and development has used Clang 20.
 
