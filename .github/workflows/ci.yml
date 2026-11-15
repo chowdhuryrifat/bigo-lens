@@ -149,6 +149,7 @@ jobs:
             mingw-w64-ucrt-x86_64-clang
             mingw-w64-ucrt-x86_64-clang-tools-extra
             mingw-w64-ucrt-x86_64-llvm
+            mingw-w64-ucrt-x86_64-lld
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-cmake
       - name: Configure
@@ -156,6 +157,7 @@ jobs:
         run: |
           cmake --preset dev -G Ninja \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld" \
             -DClang_DIR=/ucrt64/lib/cmake/clang \
             -DLLVM_DIR=/ucrt64/lib/cmake/llvm
       - name: Build
