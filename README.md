@@ -136,8 +136,8 @@ The [testing strategy](docs/engineering/TESTING_STRATEGY.md) covers the regressi
 | Platform | Core engine | Clang frontend |
 | --- | --- | --- |
 | Linux (Ubuntu, LLVM 18 in CI) | Supported | Supported |
-| macOS | Built and tested in CI | Experimental (Homebrew LLVM, allowed to fail) |
-| Windows (MSVC) | Built and tested in CI | Experimental / untested |
+| macOS | Built and tested in CI | Supported (Homebrew LLVM in CI) |
+| Windows (MSVC) | Built and tested in CI | Supported (official LLVM in CI) |
 
 ## Roadmap
 

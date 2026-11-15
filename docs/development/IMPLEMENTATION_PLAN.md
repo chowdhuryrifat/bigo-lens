@@ -12,10 +12,9 @@ This is the issue backlog for BigO Lens, organized by milestone (see [ROADMAP.md
 
 ## Recommended next issue
 
-> **[BL-602: Graduate the Clang front end on macOS and Windows](#bl-602-graduate-the-clang-front-end-on-macos-and-windows).**
+> **All milestones (M1–M6) are complete!**
 >
-> M1 through M5, as well as release packaging (BL-603), cryptographic provenance (BL-604), marketplace publication (BL-605), validation corpus (BL-601), and protocol stability (BL-606), are complete!
-> BL-602 graduates native Clang frontend support on macOS and Windows.
+> All planned issues across M1 through M6 are implemented, tested, and validated. Follow-up tasks or future enhancements can be tracked in new milestone issues or discussions.
 
 ## Dependency graph
 
@@ -69,7 +68,7 @@ flowchart TD
   BL508["BL-508 Accessibility"]:::done
 
   BL601["BL-601 Validation corpus"]:::done
-  BL602["BL-602 Clang frontend on macOS/Windows"]:::todo
+  BL602["BL-602 Clang frontend on macOS/Windows"]:::done
   BL603["BL-603 Per-platform .vsix"]:::done
   BL604["BL-604 Signing + provenance"]:::done
   BL605["BL-605 Marketplace decision"]:::done
@@ -1009,7 +1008,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 
 ### BL-602: Graduate the Clang front end on macOS and Windows
 
-- **Status:** Not started
+- **Status:** Done. macOS Clang job graduated from experimental to supported with Homebrew LLVM, Windows Clang job configured with official LLVM in Release preset matching CRT (/MD) and RTTI (/GR-), cross-platform path normalization, portable env/pid test helpers, and platform documentation updated across the repository.
 - **Priority:** P2
 - **Estimated complexity:** L (relative)
 - **Dependencies:** BL-106
@@ -1021,7 +1020,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 **Scope.** In scope: build and CI fixes, resource-directory handling, and the RTTI and CRT settings.
 
 **Acceptance criteria.**
-- [ ] The full CTest suite, including integration tests, passes on both platforms in required CI jobs.
+- [x] The full CTest suite, including integration tests, passes on both platforms in required CI jobs.
 
 **Test cases.** The existing suite.
 

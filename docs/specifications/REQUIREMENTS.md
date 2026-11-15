@@ -128,7 +128,7 @@ Status reflects version 0.1.0 / protocol 1.0. See [ROADMAP.md](../development/RO
 | NFR-9 | **Core isolation from Clang:** `bigolens_core` has no Clang dependency; only `clang_frontend.cpp` includes Clang headers | Must | M1 | Implemented |
 | NFR-10 | **Determinism:** identical request and engine build produce identical analysis results | Must | M2 | Implemented (no randomness in analysis) |
 | NFR-11 | **Bounded evaluation:** symbolic evaluation has a node budget (default 5·10⁷) and reports overflow instead of returning non-finite values | Must | M3 | Implemented |
-| NFR-12 | **Platforms:** Linux full build; macOS and Windows core engine; Clang frontend experimental on macOS/Windows | Must | M1 | Partial (see [LIMITATIONS.md](LIMITATIONS.md#15-platform-support)) |
+| NFR-12 | **Platforms:** Linux full build; macOS and Windows full build with Clang frontend (graduated in BL-602) | Must | M1 / M6 | Done (see [LIMITATIONS.md](LIMITATIONS.md#15-platform-support)) |
 | NFR-13 | **Build:** CMake ≥ 3.24, C++20; pinned dependencies with SHA-256 when fetched | Must | M1 | Implemented |
 | NFR-14 | **CI:** build and test on Linux, macOS and Windows; extension lint, unit, smoke and integration tests | Must | M1 | Implemented |
 | NFR-15 | **Static checks:** clang-format, clang-tidy, ESLint, Prettier, `-Werror` configure job | Should | M1 | Implemented |

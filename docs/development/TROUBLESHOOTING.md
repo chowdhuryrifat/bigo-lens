@@ -199,8 +199,8 @@ and `engine.frontend` is `null`.
 | Platform | Core engine and tests | Clang front end |
 | --- | --- | --- |
 | Linux (Ubuntu, LLVM 18 in CI) | Supported | Supported (primary platform) |
-| macOS | Supported (CI, without Clang) | **Experimental** (Homebrew LLVM; the CI job is allowed to fail) |
-| Windows (MSVC) | Supported (CI, `BIGOLENS_ENABLE_CLANG=OFF`) | **Experimental, untested** |
+| macOS | Supported (CI) | Supported (Homebrew LLVM in CI) |
+| Windows (MSVC) | Supported (CI) | Supported (official LLVM in CI) |
 
 ### macOS
 
@@ -208,27 +208,35 @@ and `engine.frontend` is `null`.
 
   ```bash
   brew install llvm cmake ninja
-  cmake --preset dev -DClang_DIR="$(brew --prefix llvm)/lib/cmake/clang"
+  prefix="$(brew --prefix llvm)"
+  cmake --preset dev -G Ninja \
+    -DCMAKE_CXX_COMPILER="$prefix/bin/clang++" \
+    -DClang_DIR="$prefix/lib/cmake/clang" -DLLVM_DIR="$prefix/lib/cmake/llvm"
+  cmake --build --preset dev --parallel
+  ctest --preset dev
   ```
 
-- The resource directory: `export BIGOLENS_CLANG_RESOURCE_DIR="$("$(brew --prefix llvm)/bin/clang" -print-resource-dir)"`.
-- Standard library headers may require the SDK path. If analysis reports missing system headers, this is a known gap of the experimental macOS front end. Please report it with your macOS and LLVM versions.
+- The resource directory: `export BIGOLENS_CLANG_RESOURCE_DIR="$("$(brew --prefix llvm)/bin/clang" -print-resource-dir)"` (auto-detected at configure time when Clang is found).
+- Using Homebrew's current `llvm` release ensures the Clang frontend matches the runner SDK's libc++ headers, passing 100% of tests.
 - If you do not need the front end, use the `no-clang` preset.
 
 ### Windows
 
 - Use a "Developer PowerShell for VS" (or run `vcvarsall.bat`), so that MSVC, CMake and Ninja are on `PATH`.
-- Supported configuration: `cmake --preset no-clang`, then `cmake --build --preset no-clang`, then `ctest --preset no-clang`.
-- Multi-config generators (Visual Studio) place the binary at `build\no-clang\engine\Debug\bigolens-engine.exe`. The extension's development-build lookup checks the `Debug\` and `Release\` subdirectories.
-- Building the Clang front end on Windows requires an LLVM installation that includes the CMake packages and development libraries. This is untested. Contributions are welcome via [BL-602](IMPLEMENTATION_PLAN.md#bl-602-graduate-the-clang-front-end-on-macos-and-windows).
+- Core-only configuration: `cmake --preset no-clang`, then `cmake --build --preset no-clang`, then `ctest --preset no-clang`.
+- Clang front end configuration (graduated in BL-602):
+  Install official LLVM (via Chocolatey `choco install llvm` or LLVM Windows installer) to `C:\Program Files\LLVM`.
+  Configure with the `release` preset so the CRT matches LLVM's Release runtime (`/MD`), matching LLVM's RTTI mode via `/GR-`:
+
+  ```powershell
+  cmake --preset release -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang" -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
+  cmake --build --preset release --parallel
+  ctest --preset release
+  ```
+
+- Multi-config generators (Visual Studio) place the binary at `build\no-clang\engine\Debug\bigolens-engine.exe` or `build\release\engine\Release\bigolens-engine.exe`. The extension's development-build lookup checks the `Debug\` and `Release\` subdirectories.
 - Line endings: the repository uses LF (`.gitattributes`). If Git converts files to CRLF, clang-format checks may fail. Run `git config core.autocrlf false` and re-checkout.
 
-## macOS: frontend reports errors such as `'_Tp' does not refer to a value`
+## macOS: historical note on `'_Tp' does not refer to a value`
 
-Observed in the experimental CI job (`macos-latest`, Homebrew `llvm@18`): the engine builds, but when it parses
-sources that include standard headers, the Clang 18 frontend picks up the system SDK's libc++ headers, which use
-builtins that Clang 18 does not know. Every analysis then fails with `source_parse_error`, and 14 of 93 CTest tests
-fail. This is why the macOS Clang frontend is marked experimental. Likely fixes (not yet verified): build against a
-Homebrew LLVM whose version matches or exceeds the SDK's libc++ expectations, or point the frontend at the
-matching LLVM's libc++ headers. Tracked as part of cross-platform validation in
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+Historically observed when building against older `llvm@18` with newer macOS SDKs: Clang 18 picked up the system SDK's libc++ headers which used newer compiler builtins. This was resolved by using current Homebrew LLVM matching the SDK, graduating macOS Clang support in BL-602.

@@ -134,8 +134,8 @@ is not ready. MVP acceptance requires:
 - Memory lower bounds and memory HighRisk detection.
 - VS Code extension with commands, tree view, diagnostics, source navigation and the constraint sidecar file;
   constraint form UI (M5).
-- Linux as primary platform (full build including the Clang frontend). macOS and Windows: core engine supported,
-  Clang frontend experimental (see [LIMITATIONS.md](docs/specifications/LIMITATIONS.md#15-platform-support)).
+- Linux, macOS, and Windows full build supported including the Clang frontend
+  (see [LIMITATIONS.md](docs/specifications/LIMITATIONS.md#15-platform-support)).
 - Release artifacts (engine for Linux, `.vsix`) produced by the release workflow (M6).
 
 Current progress against these items is tracked in [REQUIREMENTS.md](docs/specifications/REQUIREMENTS.md) and

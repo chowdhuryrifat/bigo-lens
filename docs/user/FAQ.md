@@ -90,7 +90,7 @@ Analysing untrusted code carries the same exposure as running a compiler's synta
 
 ### Which platforms are supported?
 
-Linux is the primary platform, with full analysis. On macOS and Windows, the core engine builds and is tested, but the Clang front end that performs source analysis is **experimental**. See [TROUBLESHOOTING.md §9](../development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows).
+Linux, macOS, and Windows are all supported platforms with full analysis tested in CI. See [TROUBLESHOOTING.md §9](../development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows).
 
 ### Which C++ standards are supported?
 

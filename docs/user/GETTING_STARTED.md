@@ -49,7 +49,7 @@ To check what is installed:
 scripts/setup/check-environment.sh
 ```
 
-macOS and Windows can build the core engine, but the Clang front end that performs source analysis is **experimental** on those platforms (see [TROUBLESHOOTING.md §9](../development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows)).
+macOS and Windows support both the core engine and the Clang front end for source analysis (see [TROUBLESHOOTING.md §9](../development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows)).
 
 ### 1.2 Build the engine
 

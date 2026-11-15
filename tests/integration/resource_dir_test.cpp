@@ -2,7 +2,30 @@
 // explicit option > BIGOLENS_CLANG_RESOURCE_DIR > valid bundled directory > build-time default.
 #include <gtest/gtest.h>
 
+#if defined(_WIN32)
+#include <process.h>
+inline int portable_setenv(const char* name, const char* value, int /*overwrite*/) {
+  return _putenv_s(name, value);
+}
+inline int portable_unsetenv(const char* name) {
+  return _putenv_s(name, "");
+}
+inline int portable_getpid() {
+  return _getpid();
+}
+#else
 #include <unistd.h>
+inline int portable_setenv(const char* name, const char* value, int overwrite) {
+  return ::setenv(name, value, overwrite);
+}
+inline int portable_unsetenv(const char* name) {
+  return ::unsetenv(name);
+}
+inline int portable_getpid() {
+  return ::getpid();
+}
+#endif
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -23,8 +46,8 @@ class ResourceDir : public ::testing::Test {
     if (const char* env = std::getenv("BIGOLENS_CLANG_RESOURCE_DIR")) {
       savedEnv_ = env;
     }
-    ::unsetenv("BIGOLENS_CLANG_RESOURCE_DIR");
-    root_ = fs::temp_directory_path() / ("bigolens-resource-test-" + std::to_string(::getpid()));
+    portable_unsetenv("BIGOLENS_CLANG_RESOURCE_DIR");
+    root_ = fs::temp_directory_path() / ("bigolens-resource-test-" + std::to_string(portable_getpid()));
     fs::create_directories(root_ / "valid" / "include");
     std::ofstream(root_ / "valid" / "include" / "stddef.h") << "/* marker */\n";
     fs::create_directories(root_ / "empty");
@@ -32,9 +55,9 @@ class ResourceDir : public ::testing::Test {
   void TearDown() override {
     fs::remove_all(root_);
     if (savedEnv_) {
-      ::setenv("BIGOLENS_CLANG_RESOURCE_DIR", savedEnv_->c_str(), 1);
+      portable_setenv("BIGOLENS_CLANG_RESOURCE_DIR", savedEnv_->c_str(), 1);
     } else {
-      ::unsetenv("BIGOLENS_CLANG_RESOURCE_DIR");
+      portable_unsetenv("BIGOLENS_CLANG_RESOURCE_DIR");
     }
   }
 
@@ -43,7 +66,7 @@ class ResourceDir : public ::testing::Test {
 };
 
 TEST_F(ResourceDir, ExplicitOptionWins) {
-  ::setenv("BIGOLENS_CLANG_RESOURCE_DIR", "/from/env", 1);
+  portable_setenv("BIGOLENS_CLANG_RESOURCE_DIR", "/from/env", 1);
   ClangFrontendOptions options;
   options.resourceDir = "/explicit";
   options.bundledResourceDir = (root_ / "valid").string();
@@ -51,7 +74,7 @@ TEST_F(ResourceDir, ExplicitOptionWins) {
 }
 
 TEST_F(ResourceDir, EnvironmentBeatsBundled) {
-  ::setenv("BIGOLENS_CLANG_RESOURCE_DIR", "/from/env", 1);
+  portable_setenv("BIGOLENS_CLANG_RESOURCE_DIR", "/from/env", 1);
   ClangFrontendOptions options;
   options.bundledResourceDir = (root_ / "valid").string();
   EXPECT_EQ(resolveResourceDir(options), "/from/env");

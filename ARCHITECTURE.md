@@ -211,7 +211,7 @@ flowchart LR
     SCH["shared/schemas"] --> EXT["extension: npm ci, tsc, copy schemas"]
 ```
 
-Platform support: Linux is the primary platform with a full build including the Clang frontend (LLVM/Clang 18 in CI). macOS and Windows build and test the core without Clang in CI. The Clang frontend on macOS (Homebrew LLVM) and on Windows is experimental.
+Platform support: Linux, macOS, and Windows build and test both the core engine and the Clang frontend in CI (LLVM/Clang 18 on Linux, Homebrew LLVM on macOS, official LLVM on Windows).
 
 ---
 

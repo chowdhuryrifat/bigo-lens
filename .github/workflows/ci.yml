@@ -111,13 +111,12 @@ jobs:
         run: ctest --preset no-clang
 
   native-macos-clang:
-    # Experimental: building against Homebrew LLVM is not yet a supported configuration.
+    # Supported: Clang frontend on macOS built against Homebrew LLVM.
     # Uses Homebrew's current llvm: older Clang releases cannot parse the libc++
     # headers of the runner's macOS SDK (e.g. "'_Tp' does not refer to a value").
-    name: Native · macOS · Clang frontend (experimental)
+    name: Native · macOS · Clang frontend
     runs-on: macos-latest
     timeout-minutes: 60
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install LLVM
@@ -135,6 +134,34 @@ jobs:
         run: cmake --build --preset dev --parallel
       - name: Test
         run: ctest --preset dev
+
+  native-windows-clang:
+    name: Native · Windows · Clang frontend
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Locate or install LLVM
+        shell: bash
+        run: |
+          if [ -d "C:/Program Files/LLVM" ]; then
+            echo "LLVM already present in C:/Program Files/LLVM"
+          else
+            choco install -y --no-progress llvm
+          fi
+          "C:/Program Files/LLVM/bin/clang" --version
+      - name: Configure
+        shell: bash
+        run: |
+          cmake --preset release \
+            -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang" \
+            -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
+      - name: Build
+        shell: bash
+        run: cmake --build --preset release --parallel
+      - name: Test
+        shell: bash
+        run: ctest --preset release
 
   extension:
     name: Extension · ${{ matrix.os }}

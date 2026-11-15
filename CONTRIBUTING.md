@@ -41,7 +41,7 @@ scripts/setup/check-environment.sh
 
 The script reports which tools are available and which are missing. It does not install anything.
 
-macOS and Windows can build and test the core engine, but the Clang front end is experimental on those platforms. See [TROUBLESHOOTING.md §9](docs/development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows).
+macOS and Windows build and test both the core engine and the Clang front end in CI. See [TROUBLESHOOTING.md §9](docs/development/TROUBLESHOOTING.md#9-platform-notes-macos-and-windows).
 
 ## 2. Building
 
@@ -174,7 +174,7 @@ Closes #42
    - Any change in analysis results for existing fixtures
    - Protocol impact (none, minor or major)
    - Screenshots for UI changes
-5. **Checks:** CI must be green, except the experimental macOS Clang job.
+5. **Checks:** CI must be green across all required jobs.
 6. **Definition of Done:** your change meets [DEFINITION_OF_DONE.md](docs/development/DEFINITION_OF_DONE.md). That means tests, docs, schemas and examples are updated together.
 7. **Review:** at least one approval from someone else. Address the feedback with new commits, and do not force-push during review unless asked. The pull request is squash-merged.
 
@@ -182,7 +182,7 @@ Closes #42
 
 - New fixtures and near-miss tests for supported loop forms ([BL-201](docs/development/IMPLEMENTATION_PLAN.md#bl-201-fixture-coverage-audit-with-near-miss-negatives))
 - Troubleshooting entries for problems you hit while setting up
-- macOS and Windows build fixes for the experimental Clang front end
+- Platform build fixes and toolchain improvements
 
 ## 8. Reporting issues
 
