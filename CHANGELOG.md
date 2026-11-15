@@ -10,7 +10,7 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 - Graduation of native Clang front end on macOS and Windows (BL-602):
   - Graduated `native-macos-clang` in `.github/workflows/ci.yml` from experimental to a fully supported configuration, removing `continue-on-error` and verifying 100% CTest suite pass against Homebrew LLVM.
-  - Added `native-windows-clang` CI job on `windows-2022` with official LLVM in Release mode, matching MSVC dynamic runtime library (`/MD`).
+  - Added `native-windows-clang` CI job on `windows-2022` with prebuilt Clang/LLVM development packages via MSYS2 UCRT64.
   - Added MSVC `/GR-` compiler option when `NOT LLVM_ENABLE_RTTI` to ensure RTTI compatibility with official LLVM libraries.
   - Added Windows system library dependencies (`version`, `ws2_32`, `ole32`, `advapi32`, `shell32`) to `BIGOLENS_CLANG_LIBS` in `cmake/ClangTooling.cmake`.
   - Added CMake path normalization with `file(TO_CMAKE_PATH ...)` for `BIGOLENS_CLANG_RESOURCE_DIR`, `BIGOLENS_FIXTURE_DIR`, and `BIGOLENS_EXAMPLES_DIR` to guarantee forward slashes in string compiler definitions on Windows.

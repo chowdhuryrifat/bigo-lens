@@ -223,16 +223,20 @@ and `engine.frontend` is `null`.
 ### Windows
 
 - Use a "Developer PowerShell for VS" (or run `vcvarsall.bat`), so that MSVC, CMake and Ninja are on `PATH`.
-- Core-only configuration: `cmake --preset no-clang`, then `cmake --build --preset no-clang`, then `ctest --preset no-clang`.
+- Core-only configuration (MSVC): `cmake --preset no-clang`, then `cmake --build --preset no-clang`, then `ctest --preset no-clang`.
 - Clang front end configuration (graduated in BL-602):
-  Install official LLVM (via Chocolatey `choco install llvm` or LLVM Windows installer) to `C:\Program Files\LLVM`.
-  Configure with the `release` preset so the CRT matches LLVM's Release runtime (`/MD`), matching LLVM's RTTI mode via `/GR-`:
+  Prebuilt Windows Clang/LLVM development packages (providing `ClangConfig.cmake` and libraries) are provided by MSYS2 UCRT64 (`pacman -S mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-llvm mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-cmake`):
 
-  ```powershell
-  cmake --preset release -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang" -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
-  cmake --build --preset release --parallel
-  ctest --preset release
+  ```bash
+  cmake --preset dev -G Ninja \
+    -DCMAKE_CXX_COMPILER=clang++ \
+    -DClang_DIR=/ucrt64/lib/cmake/clang \
+    -DLLVM_DIR=/ucrt64/lib/cmake/llvm
+  cmake --build --preset dev --parallel
+  ctest --preset dev
   ```
+
+  For MSVC builds against a locally compiled LLVM SDK, pass `-DClang_DIR=... -DLLVM_DIR=...` and use the `release` preset to match LLVM's Release CRT (`/MD`), matching LLVM's RTTI mode via `/GR-`.
 
 - Multi-config generators (Visual Studio) place the binary at `build\no-clang\engine\Debug\bigolens-engine.exe` or `build\release\engine\Release\bigolens-engine.exe`. The extension's development-build lookup checks the `Debug\` and `Release\` subdirectories.
 - Line endings: the repository uses LF (`.gitattributes`). If Git converts files to CRLF, clang-format checks may fail. Run `git config core.autocrlf false` and re-checkout.

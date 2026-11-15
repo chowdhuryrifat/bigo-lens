@@ -4,6 +4,7 @@
 
 #if defined(_WIN32)
 #include <process.h>
+#include <stdlib.h>
 inline int portable_setenv(const char* name, const char* value, int /*overwrite*/) {
   return _putenv_s(name, value);
 }

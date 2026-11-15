@@ -141,27 +141,28 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Locate or install LLVM
-        shell: bash
-        run: |
-          if [ -d "C:/Program Files/LLVM" ]; then
-            echo "LLVM already present in C:/Program Files/LLVM"
-          else
-            choco install -y --no-progress llvm
-          fi
-          "C:/Program Files/LLVM/bin/clang" --version
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-llvm
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-cmake
       - name: Configure
-        shell: bash
+        shell: msys2 {0}
         run: |
-          cmake --preset release \
-            -DClang_DIR="C:/Program Files/LLVM/lib/cmake/clang" \
-            -DLLVM_DIR="C:/Program Files/LLVM/lib/cmake/llvm"
+          cmake --preset dev -G Ninja \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DClang_DIR=/ucrt64/lib/cmake/clang \
+            -DLLVM_DIR=/ucrt64/lib/cmake/llvm
       - name: Build
-        shell: bash
-        run: cmake --build --preset release --parallel
+        shell: msys2 {0}
+        run: cmake --build --preset dev --parallel
       - name: Test
-        shell: bash
-        run: ctest --preset release
+        shell: msys2 {0}
+        run: ctest --preset dev
 
   extension:
     name: Extension · ${{ matrix.os }}
