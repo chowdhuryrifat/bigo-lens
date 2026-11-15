@@ -74,7 +74,12 @@
       "additionalProperties": false,
       "required": ["path", "language", "content"],
       "properties": {
-        "path": { "description": "Display path used in reported locations.", "type": "string", "maxLength": 4096 },
+        "path": {
+          "description": "Display-only path used in reported locations; never used for filesystem operations.",
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^[^\\u0000]+$"
+        },
         "language": { "description": "Source programming language (e.g. cpp, python, java, rust, javascript).", "type": "string", "maxLength": 64 },
         "content": { "description": "Full translation unit (at most 2 MiB).", "type": "string", "maxLength": 2097152 }
       }

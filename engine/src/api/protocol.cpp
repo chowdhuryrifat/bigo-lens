@@ -337,7 +337,11 @@ ParseOutcome parseRequest(const json& document) {
   if (const json* source = v.object(document, "source", "", needsSource)) {
     v.onlyKnown(*source, "/source", {"path", "language", "content"});
     if (auto path = v.string(*source, "path", "/source", true, 4096)) {
-      request.sourcePath = *path;
+      if (path->empty() || path->find('\0') != std::string::npos) {
+        v.error("/source/path", "must be non-empty and must not contain NUL bytes");
+      } else {
+        request.sourcePath = *path;
+      }
     }
     if (auto language = v.string(*source, "language", "/source", true, 16); language && *language != "cpp") {
       v.error("/source/language", "only 'cpp' is supported");

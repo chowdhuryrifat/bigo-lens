@@ -266,6 +266,11 @@ fn probe_compiler(path: &Path) -> Result<CompilerInfo, ()> {
 }
 
 /// Compile a C++ source file into an executable inside a target directory.
+///
+/// The source is written to a fixed, safe file (`solution.cpp`) inside `output_dir`
+/// so that `source_display_name` can never cause path traversal, file overwrites,
+/// or directory creation failures. Compiler diagnostics that reference `solution.cpp`
+/// are mapped back to `source_display_name`.
 pub fn compile_cpp(
     compiler: &CompilerInfo,
     source_content: &str,
@@ -274,7 +279,8 @@ pub fn compile_cpp(
     standard: CppStandard,
     opt_level: OptimizationLevel,
 ) -> Result<PathBuf, CompileError> {
-    let source_path = output_dir.join(source_display_name);
+    const SAFE_SOURCE_NAME: &str = "solution.cpp";
+    let source_path = output_dir.join(SAFE_SOURCE_NAME);
     fs::write(&source_path, source_content)
         .map_err(|e| CompileError::IoError(format!("failed to write source file: {}", e)))?;
 
@@ -289,7 +295,7 @@ pub fn compile_cpp(
         compiler.kind,
         standard,
         opt_level,
-        &source_path,
+        Path::new(SAFE_SOURCE_NAME),
         &output_binary,
     );
 
@@ -301,7 +307,17 @@ pub fn compile_cpp(
 
     if !output.status.success() {
         let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-        let diagnostics = parse_compiler_diagnostics(&stderr_str);
+        let mut diagnostics = parse_compiler_diagnostics(&stderr_str);
+        for diag in &mut diagnostics {
+            if diag.file == SAFE_SOURCE_NAME
+                || diag.file == format!("./{}", SAFE_SOURCE_NAME)
+                || diag.file == source_path.to_string_lossy()
+                || diag.file.ends_with(&format!("/{}", SAFE_SOURCE_NAME))
+                || diag.file.ends_with(&format!("\\{}", SAFE_SOURCE_NAME))
+            {
+                diag.file = source_display_name.to_string();
+            }
+        }
         return Err(CompileError::CompilationFailed {
             diagnostics,
             raw_stderr: stderr_str,
@@ -491,6 +507,89 @@ mod tests {
             "should safely compile file named like a flag: {:?}",
             flag_res.err()
         );
+
+        // 4. Nested path should compile safely and not fail because parent directories don't exist
+        let nested_res = compile_cpp(
+            &compiler,
+            valid_code,
+            "nested/sub/dir/solution.cpp",
+            &temp_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        );
+        assert!(
+            nested_res.is_ok(),
+            "should succeed with nested path, but got: {:?}",
+            nested_res.err()
+        );
+        assert!(!temp_dir.join("nested").exists());
+
+        // 5. Absolute path does NOT write outside the temp directory
+        let outside_dir = temp_dir.join("outside_scratch");
+        fs::create_dir_all(&outside_dir).unwrap();
+        let outside_file = outside_dir.join("victim.cpp");
+        assert!(!outside_file.exists());
+
+        let abs_res = compile_cpp(
+            &compiler,
+            valid_code,
+            outside_file.to_str().unwrap(),
+            &temp_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        );
+        assert!(
+            abs_res.is_ok(),
+            "compile should succeed: {:?}",
+            abs_res.err()
+        );
+        assert!(
+            !outside_file.exists(),
+            "absolute path must NOT be written to"
+        );
+
+        // 6. Path traversal (../../x.cpp) does NOT escape the temp directory
+        let escape_target = temp_dir.parent().unwrap().join("escaped_victim.cpp");
+        if escape_target.exists() {
+            let _ = fs::remove_file(&escape_target);
+        }
+
+        let traversal_res = compile_cpp(
+            &compiler,
+            valid_code,
+            "../../escaped_victim.cpp",
+            &temp_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        );
+        assert!(
+            traversal_res.is_ok(),
+            "compile should succeed: {:?}",
+            traversal_res.err()
+        );
+        assert!(
+            !escape_target.exists(),
+            "traversal path must NOT be written outside temp_dir"
+        );
+
+        // 7. Compiler diagnostics are mapped back to source_display_name
+        let broken_display = "user/project/my_code.cpp";
+        let diag_err = compile_cpp(
+            &compiler,
+            invalid_code,
+            broken_display,
+            &temp_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        )
+        .unwrap_err();
+        match diag_err {
+            CompileError::CompilationFailed { diagnostics, .. } => {
+                assert!(!diagnostics.is_empty());
+                assert_eq!(diagnostics[0].file, broken_display);
+            }
+            other => panic!("expected CompilationFailed, got {:?}", other),
+        }
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

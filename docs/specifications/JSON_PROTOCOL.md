@@ -36,7 +36,7 @@ Related: [ARCHITECTURE.md](../../ARCHITECTURE.md) · [DATA_FLOW.md](../architect
 | Request size | 4 MiB (4 194 304 bytes) | `request_too_large` |
 | JSON nesting depth | 64 levels, checked **before** parsing | `malformed_json` |
 | `source.content` | 2 MiB (2 097 152) — the engine counts UTF-8 bytes; the schema's `maxLength` counts characters | `invalid_request` |
-| `source.path` | 4096 | `invalid_request` |
+| `source.path` | 4096 (display-only; non-empty, no NUL bytes) | `invalid_request` |
 | Integers | magnitude ≤ 10¹⁸ | `invalid_request` |
 | Constraint arrays | ≤ 64 items each | `invalid_request` |
 | Compiler error diagnostics | at most 50 collected | — |
@@ -82,7 +82,7 @@ JSON pointer of the offending member (e.g. `/unexpected`).
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string, ≤ 4096 | yes | Display path used verbatim in reported locations. The engine does **not** read this path; it analyses `content` as an in-memory file |
+| `path` | string, ≤ 4096, `^[^\u0000]+$` | yes | Display-only path used verbatim in reported locations; never used for filesystem operations. The engine does **not** read or write this path; it analyses `content` as an in-memory file |
 | `language` | `"cpp"` | yes | Only C++ is supported |
 | `content` | string, ≤ 2 MiB | yes | The complete translation unit. Headers named in `#include` are resolved from the local filesystem as a compiler would |
 

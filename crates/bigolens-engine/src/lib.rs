@@ -91,6 +91,17 @@ pub fn dispatch_request(req: Request) -> Response {
         }
     }
 
+    if let Some(ref source) = req.source {
+        if source.path.is_empty() || source.path.len() > 4096 || source.path.contains('\0') {
+            return error_response(
+                Some(req.request_id),
+                "invalid_request",
+                "source.path must be non-empty, <= 4096 bytes, and must not contain NUL bytes",
+                Some("/source/path".to_string()),
+            );
+        }
+    }
+
     match req.action.as_str() {
         "capabilities" => capabilities_response(req.request_id),
         "analyze" => analyze_action(req),
@@ -1258,5 +1269,98 @@ int main() {
         assert_eq!(resp["status"], "error");
         assert_eq!(resp["errors"][0]["code"], "source_parse_error");
         assert!(!resp["diagnostics"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_source_path_validation_rejects_nul_and_empty() {
+        // 1. NUL byte rejection
+        let req_nul = serde_json::json!({
+            "schema_version": "1.1",
+            "request_id": "nul-path-test",
+            "action": "capabilities",
+            "source": {
+                "path": "bad\u{0000}path.cpp",
+                "language": "cpp",
+                "content": "int main() { return 0; }"
+            }
+        });
+        let resp_str = handle_request(&req_nul.to_string());
+        let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+        assert_eq!(resp["status"], "error");
+        assert_eq!(resp["errors"][0]["code"], "invalid_request");
+        assert_eq!(resp["errors"][0]["path"], "/source/path");
+
+        // 2. Empty path rejection
+        let req_empty = serde_json::json!({
+            "schema_version": "1.1",
+            "request_id": "empty-path-test",
+            "action": "capabilities",
+            "source": {
+                "path": "",
+                "language": "cpp",
+                "content": "int main() { return 0; }"
+            }
+        });
+        let resp_empty_str = handle_request(&req_empty.to_string());
+        let resp_empty: serde_json::Value = serde_json::from_str(&resp_empty_str).unwrap();
+        assert_eq!(resp_empty["status"], "error");
+        assert_eq!(resp_empty["errors"][0]["code"], "invalid_request");
+        assert_eq!(resp_empty["errors"][0]["path"], "/source/path");
+    }
+
+    #[test]
+    fn test_benchmark_action_with_traversal_and_absolute_paths() {
+        if compiler::discover_compiler(None).is_err() {
+            return;
+        }
+
+        let source = r#"
+#include <iostream>
+int main() {
+    int n;
+    if (std::cin >> n) {
+        std::cout << n << "\n";
+    }
+    return 0;
+}
+"#;
+
+        for display_path in &[
+            "/tmp/nonexistent_abs_file.cpp",
+            "../../escape_attempt.cpp",
+            "nested/a/b/c/solution.cpp",
+            "-fplugin=flag.cpp",
+        ] {
+            let req = serde_json::json!({
+                "schema_version": "1.1",
+                "request_id": "bench-paths",
+                "action": "benchmark",
+                "source": {
+                    "path": display_path,
+                    "language": "cpp",
+                    "content": source
+                },
+                "constraints": {
+                    "variables": {
+                        "n": { "min": 1, "max": 100 }
+                    }
+                },
+                "benchmark_config": {
+                    "sizes": [10, 20],
+                    "repetitions": 1,
+                    "warmup": 0,
+                    "per_run_timeout_ms": 2000,
+                    "allow_unsandboxed": true
+                }
+            });
+
+            let resp_str = handle_request(&req.to_string());
+            let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+            assert_eq!(
+                resp["status"], "ok",
+                "benchmark failed for path {}: {:?}",
+                display_path, resp
+            );
+        }
     }
 }
