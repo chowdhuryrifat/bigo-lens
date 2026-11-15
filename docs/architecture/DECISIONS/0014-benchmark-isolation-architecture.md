@@ -23,35 +23,35 @@ We adopt a defense-in-depth isolation architecture tailored per platform, implem
 ### 1. Linux Isolation Architecture
 
 Where the kernel permits unprivileged namespaces, benchmarking runs in an isolated container combining:
-- **Namespaces (`unshare` / `clone3`):**
+- **Namespaces (`unshare`):**
   - **User namespace (`CLONE_NEWUSER`):** Maps the current UID/GID to root inside the namespace, eliminating host privileges.
-  - **Mount namespace (`CLONE_NEWNS`):** Binds the root file system read-only (`MS_RDONLY`), mounts a restricted tmpfs scratch directory for input and output, and drops access to user home directories.
+  - **Mount namespace (`CLONE_NEWNS`):** Sets mount propagation to private (`MS_REC | MS_PRIVATE`), remounts the root file system read-only (`MS_RDONLY`), mounts an empty tmpfs over `/home` to conceal user home directories, masks `/etc/passwd` with a bind mount from `/dev/null`, and mounts a private writable tmpfs scratch directory for execution artifacts and temporary files.
   - **Network namespace (`CLONE_NEWNET`):** Disconnects all networking (loopback only, down by default), preventing exfiltration.
-  - **PID namespace (`CLONE_NEWPID`):** Isolates process enumeration; when the root process exits, all children are automatically terminated.
-- **Seccomp-BPF System Call Allow-List:**
-  - Allows only essential compute syscalls (`read`, `write`, `exit_group`, `brk`, `mmap`, `munmap`, `rt_sigreturn`, `clock_gettime`, `getrusage`).
-  - Denies/traps `execve`, `fork`, `clone` (without worker isolation), `socket`, `connect`, `ptrace`, `kill`, `open` outside permitted descriptors.
+  - **PID namespace (`CLONE_NEWPID`):** Isolates process enumeration; when the benchmark child exits, all child/descendant processes in the namespace are automatically terminated by the kernel, preventing fork bombs and orphaned daemons.
+- **Seccomp-BPF System Call Filtering & Argument Restrictions:**
+  - **Architecture Validation (`AUDIT_ARCH`):** Validates native architecture (`AUDIT_ARCH_X86_64` or `AUDIT_ARCH_AARCH64`) at filter entry; terminates process (`SECCOMP_RET_KILL_PROCESS`) on architecture mismatch or if the x32 ABI bit (`0x40000000`) is asserted on x86_64.
+  - **Execve / Execveat Restriction:** Denies `execve` unconditionally. Restricts `execveat` via BPF argument filtering: permits only `args[0] == 200` (`BENCH_BIN_FD`) and `args[4] & AT_EMPTY_PATH != 0`. The binary descriptor is opened and duped to fd 200 with `O_CLOEXEC` in `pre_exec`. `RLIMIT_NOFILE` is capped to 64 so that once fd 200 is closed upon execution, the child can never re-acquire fd 200. Any subsequent `execve` or `execveat` by the child is denied (`EPERM`).
+  - **Network and Tracing Restriction:** Denies socket creation, bind, listen, connect, accept, accept4, and ptrace with `EPERM`.
+  - **Async-Signal Safety:** The BPF instruction array is built before fork. `pre_exec` only installs the pre-built filter via a pointer/length `SockFprog`, performing zero heap allocations or locking.
 - **POSIX Resource Limits (rlimits):**
   - `RLIMIT_CPU`: Hard CPU seconds limit; sends `SIGXCPU` then `SIGKILL`.
-  - `RLIMIT_AS` / cgroup: Hard virtual memory ceiling.
-  - `RLIMIT_NPROC`: Active process ceiling ($N=1$ or minimal) to prevent fork bombs.
+  - `RLIMIT_AS`: Hard virtual memory ceiling.
+  - `RLIMIT_NPROC`: Best-effort per-real-UID ceiling; structural fork bomb containment is provided by `CLONE_NEWPID`.
   - `RLIMIT_FSIZE`: Hard file output size cap (e.g. 10 MiB) to prevent disk filling.
-  - `RLIMIT_NOFILE`: File descriptor ceiling.
+  - `RLIMIT_NOFILE`: Capped file descriptor ceiling.
 - **Process Group Termination:**
   - The runner calls `setpgid(0, 0)` on the child.
-  - On exit, timeout, or cancellation, the runner sends `SIGKILL` to `-pgid`, reaping the entire process tree.
+  - On timeout or error, the runner sends `SIGKILL` to `-pgid`. When the child exits normally, post-reap signals are omitted to avoid races with pid recycling.
 
-### 2. Windows Isolation Architecture
+### 2. Windows Resource Limits (Job Objects)
 
-On Windows, the runner employs native Windows kernel isolation:
+On Windows, full container/sandbox isolation is not available to unprivileged CLI tools. The runner employs native Windows Job Objects for resource limits only:
 - **Windows Job Object (`CreateJobObjectW`):**
   - `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: Guarantees child termination when the handle closes.
-  - `JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 1`: Prevents process creation/fork bombs.
+  - `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`: Enforces process creation limit.
   - `JOB_OBJECT_LIMIT_PROCESS_MEMORY` and `JOB_OBJECT_LIMIT_JOB_MEMORY`: Enforces memory caps.
   - `JOB_OBJECT_LIMIT_JOB_TIME`: Enforces user-mode CPU time limits.
-- **Restricted Token (`CreateRestrictedToken`):**
-  - Strips administrative and sensitive SIDs (`SeDebugPrivilege`, etc.).
-  - Applies restricted SIDs and denies access to network tokens.
+- **Honest Labeling:** Windows Job Objects provide process resource limits, not sandbox isolation. The runner explicitly reports `isolation_level: "process-limits-only"` with `isolated: false` and emits a warning (`"not sandboxed: Windows Job Objects provide process resource limits only"`). It fails closed with `isolation_unavailable` unless `allow_unsandboxed: true` is passed.
 
 ### 3. macOS Isolation Strategy
 

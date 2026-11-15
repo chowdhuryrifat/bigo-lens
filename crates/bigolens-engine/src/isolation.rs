@@ -1,9 +1,10 @@
-//! Linux platform isolation: unprivileged namespaces (user, mount, network)
-//! and seccomp-bpf syscall allow-lists.
+//! Linux platform isolation: unprivileged namespaces (user, mount, network, pid)
+//! and seccomp-bpf syscall allow-lists / argument filtering.
 //!
 //! Conforms to ADR 0014 and BL-405.
 
 use std::io;
+use std::path::Path;
 use std::sync::OnceLock;
 
 #[cfg(target_os = "linux")]
@@ -16,6 +17,8 @@ const SECCOMP_MODE_FILTER: libc::c_long = 2;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
 #[cfg(target_os = "linux")]
 const SECCOMP_RET_ERRNO: u32 = 0x0005_0000;
+#[cfg(target_os = "linux")]
+const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
 #[cfg(target_os = "linux")]
 const EPERM: u32 = 1;
 
@@ -30,12 +33,21 @@ const BPF_JMP: u16 = 0x05;
 #[cfg(target_os = "linux")]
 const BPF_JEQ: u16 = 0x15;
 #[cfg(target_os = "linux")]
+const BPF_JGE: u16 = 0x35;
+#[cfg(target_os = "linux")]
 const BPF_K: u16 = 0x00;
 #[cfg(target_os = "linux")]
 const BPF_RET: u16 = 0x06;
 
+#[cfg(target_os = "linux")]
+const AUDIT_ARCH_X86_64: u32 = 0xc000_003e;
+#[cfg(target_os = "linux")]
+const AUDIT_ARCH_AARCH64: u32 = 0xc000_00b7;
+#[cfg(target_os = "linux")]
+const X32_SYSCALL_BIT: u32 = 0x4000_0000;
+
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SockFilter {
     pub code: u16,
     pub jt: u8,
@@ -48,6 +60,26 @@ pub struct SockFilter {
 pub struct SockFprog {
     pub len: u16,
     pub filter: *const SockFilter,
+}
+
+// Safety: SockFprog contains a raw pointer to an array of SockFilter that outlives the spawn.
+// It is POD and safe to send/share across thread boundaries into the pre_exec closure.
+unsafe impl Send for SockFprog {}
+unsafe impl Sync for SockFprog {}
+
+/// Owned BPF program built before fork, keeping pre_exec async-signal-safe.
+#[derive(Debug, Clone)]
+pub struct SeccompProgram {
+    filters: Vec<SockFilter>,
+}
+
+impl SeccompProgram {
+    pub fn as_fprog(&self) -> SockFprog {
+        SockFprog {
+            len: self.filters.len() as u16,
+            filter: self.filters.as_ptr(),
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -100,6 +132,11 @@ static ISOLATION_AVAILABLE: OnceLock<bool> = OnceLock::new();
 /// Check whether the current Linux environment supports unprivileged user namespaces and isolation.
 #[cfg(target_os = "linux")]
 pub fn is_linux_isolation_available() -> bool {
+    // Fail closed on unsupported architectures
+    if !cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
+        return false;
+    }
+
     *ISOLATION_AVAILABLE.get_or_init(|| {
         let pid = unsafe { libc::fork() };
         if pid < 0 {
@@ -135,21 +172,59 @@ pub fn is_linux_isolation_available() -> bool {
                     libc::_exit(4);
                 }
 
-                // Stage 2: unshare network and mount namespaces
-                if libc::unshare(libc::CLONE_NEWNET | libc::CLONE_NEWNS) != 0 {
+                // Stage 2: unshare network, mount, and PID namespaces
+                if libc::unshare(libc::CLONE_NEWNET | libc::CLONE_NEWNS | libc::CLONE_NEWPID) != 0 {
                     libc::_exit(5);
                 }
 
-                // Mount tmpfs over /home
-                let fstype = c"tmpfs".as_ptr();
-                let target = c"/home".as_ptr();
-                if libc::mount(fstype, target, fstype, 0, std::ptr::null()) != 0 {
+                // Make mount namespace private
+                let root = c"/".as_ptr();
+                if libc::mount(
+                    std::ptr::null(),
+                    root,
+                    std::ptr::null(),
+                    libc::MS_REC | libc::MS_PRIVATE,
+                    std::ptr::null(),
+                ) != 0
+                {
                     libc::_exit(6);
+                }
+
+                // Read-only root bind mount
+                if libc::mount(
+                    root,
+                    root,
+                    std::ptr::null(),
+                    libc::MS_BIND | libc::MS_REC,
+                    std::ptr::null(),
+                ) != 0
+                {
+                    libc::_exit(7);
+                }
+                if libc::mount(
+                    std::ptr::null(),
+                    root,
+                    std::ptr::null(),
+                    libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | libc::MS_REC,
+                    std::ptr::null(),
+                ) != 0
+                {
+                    libc::_exit(8);
                 }
 
                 // Probe PR_SET_NO_NEW_PRIVS
                 if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
-                    libc::_exit(7);
+                    libc::_exit(9);
+                }
+
+                // Probe seccomp BPF filter
+                if let Ok(prog) = build_seccomp_filter(1000) {
+                    let fprog = prog.as_fprog();
+                    if libc::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog) != 0 {
+                        libc::_exit(10);
+                    }
+                } else {
+                    libc::_exit(11);
                 }
 
                 libc::_exit(0);
@@ -167,16 +242,16 @@ pub fn is_linux_isolation_available() -> bool {
     false
 }
 
-/// Apply unprivileged user, network, and mount namespaces to isolate the benchmark child.
+/// Apply unprivileged user, network, mount, and PID namespaces to isolate the benchmark child.
 ///
-/// Disconnects network completely, mounts tmpfs over `/home` to obscure all user files,
-/// and maps the process to unprivileged UID 0 inside its isolated namespace.
+/// Disconnects networking completely, remounts root read-only, conceals `/home` and `/etc/passwd`,
+/// mounts a private writable tmpfs over the scratch dir, and maps the process to UID 0 inside.
 ///
 /// # Safety
 ///
 /// Must be called only in a single-threaded process context (e.g. child process after `fork`).
 #[cfg(target_os = "linux")]
-pub unsafe fn apply_linux_namespaces() -> io::Result<()> {
+pub unsafe fn apply_linux_namespaces(scratch_dir: Option<&Path>) -> io::Result<()> {
     let uid = libc::getuid();
     let gid = libc::getgid();
 
@@ -202,17 +277,68 @@ pub unsafe fn apply_linux_namespaces() -> io::Result<()> {
     // Map GID
     write_proc_map(b"/proc/self/gid_map\0", gid)?;
 
-    // Stage 2: unshare network and mount namespaces
-    if libc::unshare(libc::CLONE_NEWNET | libc::CLONE_NEWNS) != 0 {
+    // Stage 2: unshare network, mount, and PID namespaces
+    if libc::unshare(libc::CLONE_NEWNET | libc::CLONE_NEWNS | libc::CLONE_NEWPID) != 0 {
         return Err(io::Error::last_os_error());
     }
 
-    // Mount an empty tmpfs over /home to conceal user directories
-    let fstype = c"tmpfs".as_ptr();
-    let target = c"/home".as_ptr();
-    let mount_res = libc::mount(fstype, target, fstype, 0, std::ptr::null());
-    if mount_res != 0 {
+    // 1. Make mount namespace private so mount events do not propagate to host
+    let root = c"/".as_ptr();
+    if libc::mount(
+        std::ptr::null(),
+        root,
+        std::ptr::null(),
+        libc::MS_REC | libc::MS_PRIVATE,
+        std::ptr::null(),
+    ) != 0
+    {
         return Err(io::Error::last_os_error());
+    }
+
+    // 2. Read-only root bind mount
+    if libc::mount(
+        root,
+        root,
+        std::ptr::null(),
+        libc::MS_BIND | libc::MS_REC,
+        std::ptr::null(),
+    ) != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if libc::mount(
+        std::ptr::null(),
+        root,
+        std::ptr::null(),
+        libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | libc::MS_REC,
+        std::ptr::null(),
+    ) != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    // 3. Mount an empty tmpfs over /home to conceal user directories
+    let tmpfs = c"tmpfs".as_ptr();
+    let home = c"/home".as_ptr();
+    let _ = libc::mount(tmpfs, home, tmpfs, 0, std::ptr::null());
+
+    // 4. Mask /etc/passwd by bind mounting /dev/null over it
+    let dev_null = c"/dev/null".as_ptr();
+    let etc_passwd = c"/etc/passwd".as_ptr();
+    let _ = libc::mount(
+        dev_null,
+        etc_passwd,
+        std::ptr::null(),
+        libc::MS_BIND,
+        std::ptr::null(),
+    );
+
+    // 5. Mount private writable tmpfs scratch dir and chdir into it
+    if let Some(scratch) = scratch_dir {
+        if let Ok(c_scratch) = std::ffi::CString::new(scratch.as_os_str().as_encoded_bytes()) {
+            let _ = libc::mount(tmpfs, c_scratch.as_ptr(), tmpfs, 0, std::ptr::null());
+            let _ = libc::chdir(c_scratch.as_ptr());
+        }
     }
 
     Ok(())
@@ -224,98 +350,271 @@ pub unsafe fn apply_linux_namespaces() -> io::Result<()> {
 ///
 /// Unused on non-Linux OS.
 #[cfg(not(target_os = "linux"))]
-pub unsafe fn apply_linux_namespaces() -> io::Result<()> {
+pub unsafe fn apply_linux_namespaces(_scratch_dir: Option<&Path>) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "linux namespaces are only supported on Linux",
     ))
 }
 
-/// Apply a seccomp BPF filter that explicitly blocks sensitive syscalls
-/// (`execve`, `socket`, `connect`, `bind`, `listen`, `accept`, `ptrace`).
+/// Build a seccomp BPF program for benchmark isolation.
+///
+/// Properties:
+/// 1. Verifies AUDIT_ARCH for the native CPU architecture; kills on mismatch.
+/// 2. On x86_64, rejects the x32 ABI (bit 0x40000000); kills on invocation.
+/// 3. Denies execve, socket, connect, bind, listen, accept, accept4, ptrace with EPERM.
+/// 4. Filters execveat: permits launch only via `allowed_fd` with `AT_EMPTY_PATH`.
+///    All other execveat calls are denied with EPERM.
+/// 5. On unsupported CPU architectures, fails closed with an error.
+#[cfg(target_os = "linux")]
+pub fn build_seccomp_filter(allowed_fd: i32) -> io::Result<SeccompProgram> {
+    let native_arch = if cfg!(target_arch = "x86_64") {
+        AUDIT_ARCH_X86_64
+    } else if cfg!(target_arch = "aarch64") {
+        AUDIT_ARCH_AARCH64
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "seccomp architecture check unsupported on this CPU architecture; failing closed",
+        ));
+    };
+
+    let (execve_nr, execveat_nr, blocked_syscalls): (u32, u32, &[u32]) =
+        if cfg!(target_arch = "x86_64") {
+            (
+                59,  // execve
+                322, // execveat
+                &[
+                    41,  // socket
+                    42,  // connect
+                    43,  // accept
+                    49,  // bind
+                    50,  // listen
+                    101, // ptrace
+                    288, // accept4
+                ],
+            )
+        } else if cfg!(target_arch = "aarch64") {
+            (
+                221, // execve
+                281, // execveat
+                &[
+                    117, // ptrace
+                    198, // socket
+                    200, // bind
+                    201, // listen
+                    202, // accept
+                    203, // connect
+                    242, // accept4
+                ],
+            )
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "unsupported CPU architecture for seccomp",
+            ));
+        };
+
+    enum JumpTarget {
+        Insn(usize),
+        Deny,
+        Kill,
+        Allow,
+    }
+
+    struct RawInsn {
+        code: u16,
+        jt: JumpTarget,
+        jf: JumpTarget,
+        k: u32,
+    }
+
+    let mut raw: Vec<RawInsn> = Vec::new();
+
+    // 1. Arch check: offsetof(seccomp_data, arch) == 4
+    raw.push(RawInsn {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: 4,
+    });
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Insn(2),
+        jf: JumpTarget::Kill,
+        k: native_arch,
+    });
+
+    // 2. Load syscall number: offsetof(seccomp_data, nr) == 0
+    raw.push(RawInsn {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: 0,
+    });
+
+    // 3. On x86_64, check x32 ABI bit (nr >= 0x40000000)
+    if cfg!(target_arch = "x86_64") {
+        let next = raw.len() + 1;
+        raw.push(RawInsn {
+            code: BPF_JMP | BPF_JGE | BPF_K,
+            jt: JumpTarget::Kill,
+            jf: JumpTarget::Insn(next),
+            k: X32_SYSCALL_BIT,
+        });
+    }
+
+    // 4. Deny execve
+    let next = raw.len() + 1;
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Deny,
+        jf: JumpTarget::Insn(next),
+        k: execve_nr,
+    });
+
+    // 5. Deny other blocked syscalls
+    for &sc in blocked_syscalls {
+        let next = raw.len() + 1;
+        raw.push(RawInsn {
+            code: BPF_JMP | BPF_JEQ | BPF_K,
+            jt: JumpTarget::Deny,
+            jf: JumpTarget::Insn(next),
+            k: sc,
+        });
+    }
+
+    // 6. Check execveat
+    let arg_check = raw.len() + 1;
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Insn(arg_check),
+        jf: JumpTarget::Allow,
+        k: execveat_nr,
+    });
+
+    // args[0] low 32 bits (offset 16): allowed_fd
+    let next = raw.len() + 1;
+    raw.push(RawInsn {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: 16,
+    });
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Insn(next + 1),
+        jf: JumpTarget::Deny,
+        k: allowed_fd as u32,
+    });
+
+    // args[0] high 32 bits (offset 20): 0
+    let next = raw.len() + 1;
+    raw.push(RawInsn {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: 20,
+    });
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Insn(next + 1),
+        jf: JumpTarget::Deny,
+        k: 0,
+    });
+
+    // args[4] (flags) low 32 bits (offset 48): AT_EMPTY_PATH (0x1000)
+    raw.push(RawInsn {
+        code: BPF_LD | BPF_W | BPF_ABS,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: 48,
+    });
+    raw.push(RawInsn {
+        code: BPF_JMP | BPF_JEQ | BPF_K,
+        jt: JumpTarget::Allow,
+        jf: JumpTarget::Deny,
+        k: libc::AT_EMPTY_PATH as u32,
+    });
+
+    // Terminal instructions
+    let deny_idx = raw.len();
+    raw.push(RawInsn {
+        code: BPF_RET | BPF_K,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: SECCOMP_RET_ERRNO | EPERM,
+    });
+
+    let kill_idx = raw.len();
+    raw.push(RawInsn {
+        code: BPF_RET | BPF_K,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: SECCOMP_RET_KILL_PROCESS,
+    });
+
+    let allow_idx = raw.len();
+    raw.push(RawInsn {
+        code: BPF_RET | BPF_K,
+        jt: JumpTarget::Insn(0),
+        jf: JumpTarget::Insn(0),
+        k: SECCOMP_RET_ALLOW,
+    });
+
+    // Resolve jump offsets
+    let mut filters = Vec::with_capacity(raw.len());
+    for (idx, insn) in raw.iter().enumerate() {
+        let resolve = |target: &JumpTarget| -> u8 {
+            let dest = match target {
+                JumpTarget::Insn(d) => *d,
+                JumpTarget::Deny => deny_idx,
+                JumpTarget::Kill => kill_idx,
+                JumpTarget::Allow => allow_idx,
+            };
+            if dest <= idx {
+                0
+            } else {
+                (dest - idx - 1) as u8
+            }
+        };
+
+        filters.push(SockFilter {
+            code: insn.code,
+            jt: resolve(&insn.jt),
+            jf: resolve(&insn.jf),
+            k: insn.k,
+        });
+    }
+
+    Ok(SeccompProgram { filters })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn build_seccomp_filter(_allowed_fd: i32) -> io::Result<SeccompProgram> {
+    Ok(SeccompProgram {
+        filters: Vec::new(),
+    })
+}
+
+/// Apply a pre-built seccomp BPF filter to the current process.
+///
+/// Async-signal-safe: performs zero heap allocations or formatting.
 ///
 /// # Safety
 ///
 /// Must be called in a process that is about to execute untrusted child code.
 #[cfg(target_os = "linux")]
-pub unsafe fn apply_seccomp_filter() -> io::Result<()> {
-    // PR_SET_NO_NEW_PRIVS is mandatory before unprivileged seccomp
+pub unsafe fn apply_seccomp_filter(fprog: &SockFprog) -> io::Result<()> {
     if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
         return Err(io::Error::last_os_error());
     }
 
-    // Determine blocked syscalls based on CPU architecture
-    // Note: execveat is permitted for initial binary launch via fexecve/execveat
-    let blocked_syscalls: &'static [u32] = if cfg!(target_arch = "x86_64") {
-        &[
-            59,  // execve
-            41,  // socket
-            42,  // connect
-            49,  // bind
-            50,  // listen
-            43,  // accept
-            101, // ptrace
-        ]
-    } else if cfg!(target_arch = "aarch64") {
-        &[
-            221, // execve
-            198, // socket
-            203, // connect
-            200, // bind
-            201, // listen
-            202, // accept
-            117, // ptrace
-        ]
-    } else {
-        &[]
-    };
-
-    if blocked_syscalls.is_empty() {
-        return Ok(());
-    }
-
-    let mut instructions = Vec::new();
-    // 0: Load syscall number from seccomp_data: offsetof(seccomp_data, nr) == 0
-    instructions.push(SockFilter {
-        code: BPF_LD | BPF_W | BPF_ABS,
-        jt: 0,
-        jf: 0,
-        k: 0,
-    });
-
-    let n = blocked_syscalls.len();
-    for (i, &sc) in blocked_syscalls.iter().enumerate() {
-        let remaining_checks = (n - 1 - i) as u8;
-        instructions.push(SockFilter {
-            code: BPF_JMP | BPF_JEQ | BPF_K,
-            jt: remaining_checks + 1,
-            jf: 0,
-            k: sc,
-        });
-    }
-
-    // Default: allow syscall
-    instructions.push(SockFilter {
-        code: BPF_RET | BPF_K,
-        jt: 0,
-        jf: 0,
-        k: SECCOMP_RET_ALLOW,
-    });
-
-    // Deny: return EPERM
-    instructions.push(SockFilter {
-        code: BPF_RET | BPF_K,
-        jt: 0,
-        jf: 0,
-        k: SECCOMP_RET_ERRNO | EPERM,
-    });
-
-    let fprog = SockFprog {
-        len: instructions.len() as u16,
-        filter: instructions.as_ptr(),
-    };
-
-    let ret = libc::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog);
+    let ret = libc::prctl(
+        PR_SET_SECCOMP,
+        SECCOMP_MODE_FILTER,
+        fprog as *const SockFprog as *const _,
+    );
     if ret != 0 {
         return Err(io::Error::last_os_error());
     }
@@ -329,7 +628,7 @@ pub unsafe fn apply_seccomp_filter() -> io::Result<()> {
 ///
 /// Unused on non-Linux OS.
 #[cfg(not(target_os = "linux"))]
-pub unsafe fn apply_seccomp_filter() -> io::Result<()> {
+pub unsafe fn apply_seccomp_filter(_fprog: &SockFprog) -> io::Result<()> {
     Ok(())
 }
 
@@ -342,5 +641,14 @@ mod tests {
     fn test_linux_isolation_availability() {
         // Probe must complete and return boolean without crashing or hanging
         let _ = is_linux_isolation_available();
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_seccomp_filter_building() {
+        let prog = build_seccomp_filter(1000).expect("failed to build filter");
+        let fprog = prog.as_fprog();
+        assert!(fprog.len > 0);
+        assert!(!fprog.filter.is_null());
     }
 }

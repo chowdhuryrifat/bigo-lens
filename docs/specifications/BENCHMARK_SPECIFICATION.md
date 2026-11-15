@@ -3,18 +3,7 @@
 Specification of dynamic benchmarking: compiling the user's solution, generating inputs, measuring runtime and peak
 memory, fitting growth models, and producing a runtime range for time feasibility.
 
-> **Status.** Milestone **M4 Dynamic benchmarking** — **not implemented** except for two library components in
-> `benchmark/`:
->
-> | Component | Files | Status |
-> | --- | --- | --- |
-> | Sample statistics | `benchmark/include/bigolens/benchmark/statistics.hpp`, `benchmark/src/statistics.cpp` | Implemented, unit-tested |
-> | Growth-model fitting | `benchmark/include/bigolens/benchmark/growth_fit.hpp`, `benchmark/src/growth_fit.cpp` | Implemented, unit-tested |
-> | Compiler adapter, input generators, runner, resource monitor, isolation | — | Not implemented |
->
-> The `bigolens_benchmark` library does not compile or run any code. The engine's `benchmark` action returns
-> `not_implemented`. **Until platform isolation exists, benchmarking must be documented and presented as not
-> sandboxed.**
+> **Status.** Dynamic benchmarking is implemented in the Rust engine (`crates/bigolens-engine`) using unprivileged Linux namespaces (`CLONE_NEWUSER`, `CLONE_NEWNET`, `CLONE_NEWNS`, `CLONE_NEWPID`), read-only root mount with in-memory tmpfs scratch, and seccomp-BPF argument-filtered syscall restrictions (BL-401–BL-407). On platforms without container isolation (Windows and macOS), the runner reports `isolation_level: "process-limits-only"` with `isolated: false` and fails closed unless `allow_unsandboxed: true` is passed. In the transitional C++ engine, `benchmark` returns `not_implemented`. **Honest labeling is strictly enforced:** non-sandboxed executions are never presented as isolated.
 
 Related: [SECURITY.md](../../SECURITY.md) · [THREAT_MODEL.md](../engineering/THREAT_MODEL.md) ·
 [FEASIBILITY_MODEL.md](FEASIBILITY_MODEL.md) · [ANALYSIS_MODEL.md §9](../design/ANALYSIS_MODEL.md#9-runtime-estimation-planned-m4)

@@ -99,19 +99,19 @@ STRIDE categories: **S**poofing, **T**ampering, **R**epudiation, **I**nformation
 | Source triggering exponential template instantiation | D | Extension timeout. Clang's own instantiation depth limits apply | Partial |
 | Analysis results that falsely claim certainty | T (of A3) | Bound status and confidence rules. Unknown shapes are reported as `unknown` or `unsupported`. Fixture tests cover the near misses | Implemented (partial analyzer coverage) |
 
-### 4.2 Malicious benchmark programs (TB6, Planned M4)
+### 4.2 Malicious benchmark programs (TB6)
 
-Benchmarking would compile and **execute** user code. That code may be hostile, for example a solution copied from an untrusted source, or a workspace opened from a malicious repository.
+Dynamic benchmarking compiles and **executes** user code in the Rust engine (`crates/bigolens-engine`). That code may be hostile, for example a solution copied from an untrusted source, or a workspace opened from a malicious repository.
 
 | Threat | STRIDE | Required mitigation | Status |
 | --- | --- | --- | --- |
-| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Implemented (Linux, BL-405) |
-| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
-| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (Linux, BL-404) |
-| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Implemented (Linux, BL-404) |
-| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Implemented (Linux, BL-404) |
+| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: unprivileged user, mount (`MS_RDONLY` root, masked `/home` and `/etc/passwd`, private writable `tmpfs` scratch), network and PID namespaces, plus seccomp-BPF filter with architecture checks (`AUDIT_ARCH`), x32 blocking, and `execveat` argument restriction on the binary descriptor only. Windows and macOS: no sandbox container is available; the engine fails closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is passed, and reports `isolation_level: "process-limits-only"` with `isolated: false` | Implemented (Linux, BL-405) |
+| Fork bomb or runaway child processes | D | `CLONE_NEWPID` on Linux terminates all namespace descendants on child exit; process-group `kill(-pgid)` and best-effort `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
+| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (BL-404) |
+| Memory exhaustion | D | Virtual address space (`RLIMIT_AS`) or Windows Job memory limits, with the measured peak reported | Implemented (BL-404) |
+| Disk filling | D | `RLIMIT_FSIZE` and per-run temporary in-memory tmpfs scratch directory | Implemented (Linux, BL-404) |
 | Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Designed (ADR 0014, BL-401) |
-| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Implemented (honest labelling, BL-404, BL-405) |
+| Users believing a timeout or Job Object is a sandbox | I | **A timeout or Job Object alone is not a sandbox.** On platforms without full isolation (Windows, macOS), the runner labels execution as `isolation_level: "process-limits-only"` with `isolated: false` and emits explicit warnings | Implemented (honest labelling, BL-404, BL-405) |
 
 ### 4.3 Compiler argument injection (TB3, TB6)
 
