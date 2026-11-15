@@ -116,10 +116,16 @@ pub fn dispatch_request(req: Request) -> Response {
 }
 
 pub fn capabilities_response(request_id: String) -> Response {
+    let benchmark_feature = if crate::isolation::is_linux_isolation_available() {
+        "supported"
+    } else {
+        "partial"
+    };
+
     let caps = serde_json::json!({
         "actions": ["capabilities", "analyze", "benchmark"],
         "features": {
-            "benchmark": "supported",
+            "benchmark": benchmark_feature,
             "constraint_workload": "partial",
             "interprocedural_analysis": "partial",
             "loop_analysis": "partial",
@@ -691,7 +697,12 @@ mod tests {
         assert_eq!(resp["schema_version"], "1.1");
 
         let results = &resp["results"];
-        assert_eq!(results["features"]["benchmark"], "supported");
+        let expected_bench = if crate::isolation::is_linux_isolation_available() {
+            "supported"
+        } else {
+            "partial"
+        };
+        assert_eq!(results["features"]["benchmark"], expected_bench);
         assert!(results["actions"]
             .as_array()
             .unwrap()

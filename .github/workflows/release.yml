@@ -122,6 +122,14 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: xvfb-run -a scripts/test/verify-vsix.sh "dist/bigo-lens-$VERSION-linux-x64.vsix"
 
+      - name: Verify the Windows / macOS .vsix
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: SKIP_CONTAINER=1 SKIP_VSCODE=1 scripts/test/verify-vsix.sh "dist/bigo-lens-$VERSION-$TARGET.vsix"
+
       - name: Assemble standalone engine archive
         shell: bash
         env:

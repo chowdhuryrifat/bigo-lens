@@ -67,61 +67,78 @@ not a runtime; [ANALYSIS_MODEL.md](docs/design/ANALYSIS_MODEL.md) explains the d
 ## Architecture
 
 ```text
-VS Code extension (TypeScript)  ──  versioned JSON over stdin/stdout  ──  bigolens-engine (C++20)
-  commands · tree view · diagnostics                                       ├─ protocol validation
-  engine locator · schema validation (ajv)                                 ├─ Clang frontend (only Clang-aware module)
-                                                                           ├─ symbolic expressions · O() derivation
-                                                                           ├─ constraint workload engine
-                                                                           ├─ memory estimator · feasibility
-                                                                           └─ (M4) benchmark subsystem
+VS Code extension (TypeScript)  ──  versioned JSON over stdin/stdout  ──  bigolens-engine
+  commands · tree view · diagnostics                                       ├─ C++20 / Clang LibTooling engine
+  engine locator · schema validation (ajv)                                 │   ├─ Clang frontend (AST analysis)
+                                                                           │   ├─ symbolic expressions · O() derivation
+                                                                           │   ├─ constraint workload engine
+                                                                           │   └─ memory estimator · feasibility
+                                                                           └─ Rust workspace (crates/)
+                                                                               ├─ bigolens-core (models, constraints, feasibility)
+                                                                               ├─ bigolens-syntax (tree-sitter multi-language parser)
+                                                                               └─ bigolens-engine (dynamic benchmarking & CLI)
 ```
 
-The engine runs as one process per request, and Clang types never cross the protocol boundary. See
+The engine runs as one process per request, and internal compiler types never cross the protocol boundary. See
 [ARCHITECTURE.md](ARCHITECTURE.md) and the [architecture decision records](docs/architecture/DECISIONS/README.md).
 
 ## Technology stack
 
-C++20 · Clang LibTooling · CMake ≥ 3.24 · nlohmann/json · GoogleTest/CTest · TypeScript · VS Code Extension API ·
-Node.js 22 · ajv · ESLint · Prettier · clang-format · clang-tidy · GitHub Actions · CodeQL · Dependabot.
+- **C++ engine**: C++20 · Clang LibTooling · CMake ≥ 3.24 · nlohmann/json · GoogleTest/CTest · clang-format · clang-tidy
+- **Rust workspace**: Rust (2021 edition) · Cargo · tree-sitter · Linux user namespaces & seccomp-bpf
+- **VS Code extension**: TypeScript · VS Code Extension API · Node.js 22 · ajv · ESLint · Prettier
+- **Infrastructure**: GitHub Actions · CodeQL · Dependabot
 
 ## Installation status
 
-BigO Lens is **not published** to the VS Code Marketplace. A self-contained **Linux x64 `.vsix`** can be built with
-`scripts/build/package-extension.sh`. It bundles a statically linked engine, so LLVM does not need to be installed;
-only the C++ standard library headers (`g++`) are required. CI also uploads it as the `bigo-lens-vsix-linux-x64`
-artifact. Alternatively, build the engine and run the extension from source in an Extension Development Host. See
+BigO Lens is **not published** to the VS Code Marketplace. Self-contained platform `.vsix` packages are built in CI:
+- **Linux x64 `.vsix`**: Bundles the statically linked C++ engine and Clang builtin headers (only host C++ runtime headers required).
+- **Windows x64 / macOS arm64 `.vsix`**: Bundles the Rust standalone engine (`bigolens-engine`).
+
+CI uploads these as artifacts for each commit. Alternatively, build the engine and run the extension from source in an Extension Development Host. See
 [Getting started](docs/user/GETTING_STARTED.md).
 
 ## Building
 
-Prerequisites: CMake ≥ 3.24, a C++20 compiler, Node.js ≥ 22 and npm. The Clang frontend also needs the
+Prerequisites: CMake ≥ 3.24, a C++20 compiler, Rust (Cargo ≥ 1.75), Node.js ≥ 22 and npm. The Clang frontend also needs the
 Clang/LLVM development packages, for example on Ubuntu:
 `sudo apt install cmake ninja-build clang-18 llvm-18-dev libclang-18-dev`.
 
 ```bash
+# C++ engine (with Clang)
 cmake --preset dev                 # add -DClang_DIR=/usr/lib/llvm-18/lib/cmake/clang if Clang is not found
 cmake --build --preset dev
 ctest --preset dev
 
+# Rust workspace
+cargo build --release --bin bigolens-engine
+cargo test --workspace
+
+# VS Code extension
 cd extension
 npm ci
 npm run compile
 ```
 
-Without Clang, use the `no-clang` preset. That builds the core engine, which answers `capabilities` and reports
+Without Clang, use the `no-clang` preset for C++. That builds the core engine, which answers `capabilities` and reports
 `frontend_unavailable` for `analyze`. Then open the repository in VS Code and press **F5** ("Run Extension").
 
-Try the engine directly:
+Try the engines directly:
 
 ```bash
+# C++ engine
 ./build/dev/engine/bigolens-engine --request shared/examples/analyze.request.json
+
+# Rust engine
+cargo run --bin bigolens-engine -- --request shared/examples/analyze.request.json
 ```
 
 ## Testing
 
 | Suite | Command |
 | --- | --- |
-| Native unit + integration tests (GoogleTest, CTest) | `ctest --preset dev` |
+| Rust workspace checks and tests | `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check` |
+| Native C++ unit + integration tests (GoogleTest, CTest) | `ctest --preset dev` (or `ctest --preset no-clang`) |
 | Extension unit tests (node:test) | `cd extension && npm test` |
 | Extension ↔ real engine | `npm run test:integration` |
 | VS Code extension-host smoke test | `npm run test:vscode` (downloads VS Code; needs a display) |
@@ -133,11 +150,11 @@ The [testing strategy](docs/engineering/TESTING_STRATEGY.md) covers the regressi
 
 ## Platform support
 
-| Platform | Core engine | Clang frontend |
-| --- | --- | --- |
-| Linux (Ubuntu, LLVM 18 in CI) | Supported | Supported |
-| macOS | Built and tested in CI | Supported (Homebrew LLVM in CI) |
-| Windows (MSVC) | Built and tested in CI | Supported (official LLVM in CI) |
+| Platform | C++ Clang frontend | Rust engine & parser | Dynamic benchmark isolation | Release packaging |
+| --- | --- | --- | --- | --- |
+| Linux (x86_64, aarch64) | Supported (LLVM 18 in CI) | Supported | Supported (user namespaces + seccomp-bpf) | C++ engine (`bigo-lens-vsix-linux-x64`) |
+| macOS (Apple Silicon / Intel) | Supported (Homebrew LLVM in CI) | Supported | Process limits only (`allow_unsandboxed`) | Rust engine (`darwin-arm64`, `darwin-x64`) |
+| Windows (x86_64) | Supported (official LLVM in CI) | Supported | Job Object limits (`allow_unsandboxed`) | Rust engine (`win32-x64`) |
 
 ## Roadmap
 
