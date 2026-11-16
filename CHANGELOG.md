@@ -6,6 +6,42 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
 
 ## [Unreleased]
 
+### Security & Hardening
+
+- Benchmark compile-step path traversal & file write elimination (BL-402):
+  - Fixed benchmark source writing to a constant, non-user-controlled filename (`solution.cpp`) inside an auto-cleaned temporary directory created via `tempfile` with mode `0700`.
+  - Constrained `source.path` in `shared/schemas/request.schema.json` to reject NUL characters and empty/whitespace paths, documenting it strictly as a display identifier mapped in compiler diagnostics.
+  - Enforced a 15-second wall-clock timeout and 512 KiB compiler output size limit with process-group `SIGKILL` termination.
+  - Enforced compiler resource-capping flags (`-ftemplate-depth=256`, `-fconstexpr-depth=256`, `-fconstexpr-steps=1048576`/`-fconstexpr-ops-limit=10000000`, `-fmax-errors=10`).
+  - Redacted absolute paths outside the scratch directory from returned compiler diagnostics and stderr to `[redacted_path]`.
+  - Cleared compiler execution environment (`cmd.env_clear()`), retaining explicit `PATH` only (and required Windows environment variables).
+  - Replaced predictable temporary directories in `lib.rs`, `runner.rs`, and `differential.rs` with RAII `tempfile` handles.
+
+- Kernel isolation hardening & honest platform labeling (ADR 0014, BL-405):
+  - Upgraded Linux seccomp-BPF filter to an allow-list with architecture checking (`AUDIT_ARCH`) killing x32 ABI calls, and argument-filtered `execveat` permitting execution only for the benchmark binary descriptor (`fd 200`) before child closes it under low `RLIMIT_NOFILE`.
+  - Enhanced Linux namespace sandbox: mounted root read-only (`MS_REC | MS_PRIVATE | MS_RDONLY`), masked `/home` with tmpfs, masked `/etc/passwd` with `/dev/null`, and created private writable tmpfs scratch space.
+  - Adopted `CLONE_NEWPID` to terminate all descendant processes in the namespace on child exit.
+  - Made `pre_exec` strictly async-signal-safe by pre-compiling the BPF program before fork with zero heap allocation or locking.
+  - Enforced truthful Windows labeling: Job Objects report `isolation_level: "process-limits-only"` with `isolated: false` and fail closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is provided.
+
+- Engine disambiguation & truthful capability reporting (ADR 0015):
+  - Disambiguated C++ Clang-based engine (`bigolens-clang-engine`) and Rust multi-language engine (`bigolens-rust-engine`) in protocol metadata, examples, and docs.
+  - Truthful capability reporting: C++ engine reports `["capabilities", "analyze"]` for `cpp`, and Rust engine reports `["capabilities", "analyze", "benchmark"]` with truthful benchmark isolation levels.
+  - Extension catches `isolation_unavailable` and prompts with a modal confirmation explaining lack of kernel isolation before retrying with `allow_unsandboxed: true`.
+  - Added CI jobs (`package-windows`, `package-macos`) verifying every shipped VSIX using `verify-vsix.sh`.
+
+- Metadata, licensing, & supply-chain hardening:
+  - Unified license across `Cargo.toml`, package files, and corpus documentation to MIT.
+  - Unified repository URLs to `https://github.com/chowdhuryrifat/bigo-lens`.
+  - Extended release workflow tag validation to assert Cargo workspace version matches git tag alongside CMake and package.json versions.
+  - Pinned Rust toolchain via `rust-toolchain.toml` (1.90.0) and declared `rust-version = "1.90.0"` (MSRV) in workspace `Cargo.toml`.
+  - Added `--locked` to every cargo invocation in CI and release workflows.
+  - Added non-blocking `rust-latest-stable` canary job in CI.
+  - Pinned `@vscode/vsce` (4.1.0) and `ovsx` (1.4.0) to exact versions in `extension/package.json` devDependencies and executed via local lockfile in `release.yml`.
+  - Scoped `VSCE_PAT` and `OVSX_PAT` secrets strictly to their individual marketplace publishing steps.
+  - Migrated `darwin-x64` packaging from retired `macos-13` runner to `macos-latest` cross-compilation with `x86_64-apple-darwin` target.
+  - Added `cargo-audit` dependency security audit via `rustsec/audit-check` in `.github/workflows/security.yml`.
+
 ### Added
 
 - Graduation of native Clang front end on macOS and Windows (BL-602):

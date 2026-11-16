@@ -36,7 +36,7 @@ Related: [ARCHITECTURE.md](../../ARCHITECTURE.md) · [DATA_FLOW.md](../architect
 | Request size | 4 MiB (4 194 304 bytes) | `request_too_large` |
 | JSON nesting depth | 64 levels, checked **before** parsing | `malformed_json` |
 | `source.content` | 2 MiB (2 097 152) — the engine counts UTF-8 bytes; the schema's `maxLength` counts characters | `invalid_request` |
-| `source.path` | 4096 | `invalid_request` |
+| `source.path` | 4096 (display-only; non-empty, no NUL bytes) | `invalid_request` |
 | Integers | magnitude ≤ 10¹⁸ | `invalid_request` |
 | Constraint arrays | ≤ 64 items each | `invalid_request` |
 | Compiler error diagnostics | at most 50 collected | — |
@@ -82,7 +82,7 @@ JSON pointer of the offending member (e.g. `/unexpected`).
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `path` | string, ≤ 4096 | yes | Display path used verbatim in reported locations. The engine does **not** read this path; it analyses `content` as an in-memory file |
+| `path` | string, ≤ 4096, `^[^\u0000]+$` | yes | Display-only path used verbatim in reported locations; never used for filesystem operations. The engine does **not** read or write this path; it analyses `content` as an in-memory file |
 | `language` | `"cpp"` | yes | Only C++ is supported |
 | `content` | string, ≤ 2 MiB | yes | The complete translation unit. Headers named in `#include` are resolved from the local filesystem as a compiler would |
 
@@ -147,7 +147,7 @@ frontend, `engine.frontend` holds the Clang version string.)
 | `schema_version` | string | Engine's protocol version |
 | `request_id` | string \| null | Echoed id; `null` if it could not be recovered (malformed JSON, oversize, invalid id) |
 | `status` | `"ok"` \| `"error"` | `error` ⇔ `errors` non-empty; `ok` ⇔ `errors` empty |
-| `engine` | object | `name`, `version`, `protocol_version`, `frontend` (string or `null` if built with `BIGOLENS_ENABLE_CLANG=OFF`) |
+| `engine` | object | `name` (`"bigolens-clang-engine"` for C++/Clang LibTooling engine, `"bigolens-rust-engine"` for Rust standalone engine), `version`, `protocol_version`, `frontend` (string or `null` if built without Clang frontend) |
 | `results` | object \| null | Action-specific (§6); `null` on error |
 | `diagnostics` | array | `{ severity: "error" \| "warning" \| "information", message, location: Location \| null }`. Compiler diagnostics for the analysed source |
 | `errors` | array | `{ code, message, path? }` (§7) |

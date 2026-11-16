@@ -99,19 +99,19 @@ STRIDE categories: **S**poofing, **T**ampering, **R**epudiation, **I**nformation
 | Source triggering exponential template instantiation | D | Extension timeout. Clang's own instantiation depth limits apply | Partial |
 | Analysis results that falsely claim certainty | T (of A3) | Bound status and confidence rules. Unknown shapes are reported as `unknown` or `unsupported`. Fixture tests cover the near misses | Implemented (partial analyzer coverage) |
 
-### 4.2 Malicious benchmark programs (TB6, Planned M4)
+### 4.2 Malicious benchmark programs (TB6)
 
-Benchmarking would compile and **execute** user code. That code may be hostile, for example a solution copied from an untrusted source, or a workspace opened from a malicious repository.
+Dynamic benchmarking compiles and **executes** user code in the Rust engine (`crates/bigolens-engine`). That code may be hostile, for example a solution copied from an untrusted source, or a workspace opened from a malicious repository.
 
 | Threat | STRIDE | Required mitigation | Status |
 | --- | --- | --- | --- |
-| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: separate user, mount and network namespaces where available, seccomp filter, rlimits (`RLIMIT_AS`, `RLIMIT_CPU`, `RLIMIT_NPROC`, `RLIMIT_FSIZE`, `RLIMIT_NOFILE`). Windows: Job Objects with restricted tokens. macOS: `sandbox-exec` is deprecated, so a supported alternative must be found or benchmarking marked unsupported there | Implemented (Linux, BL-405) |
-| Fork bomb or runaway child processes | D | Process-group or Job Object tracking with kill-tree on every exit path, plus `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
-| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (Linux, BL-404) |
-| Memory exhaustion | D | Address-space or Job memory limits, with the measured peak reported | Implemented (Linux, BL-404) |
-| Disk filling | D | `RLIMIT_FSIZE` and a per-run temporary directory with a quota where available | Implemented (Linux, BL-404) |
+| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: unprivileged user, mount (`MS_RDONLY` root, masked `/home` and `/etc/passwd`, private writable `tmpfs` scratch), network and PID namespaces, plus seccomp-BPF filter with architecture checks (`AUDIT_ARCH`), x32 blocking, and `execveat` argument restriction on the binary descriptor only. Windows and macOS: no sandbox container is available; the engine fails closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is passed, and reports `isolation_level: "process-limits-only"` with `isolated: false` | Implemented (Linux, BL-405) |
+| Fork bomb or runaway child processes | D | `CLONE_NEWPID` on Linux terminates all namespace descendants on child exit; process-group `kill(-pgid)` and best-effort `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
+| Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (BL-404) |
+| Memory exhaustion | D | Virtual address space (`RLIMIT_AS`) or Windows Job memory limits, with the measured peak reported | Implemented (BL-404) |
+| Disk filling | D | `RLIMIT_FSIZE` and per-run temporary in-memory tmpfs scratch directory | Implemented (Linux, BL-404) |
 | Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Designed (ADR 0014, BL-401) |
-| Users believing a timeout is a sandbox | I | **A timeout alone is not a sandbox.** Until isolation is implemented for a platform, the UI and documentation must state that benchmarking there is **not sandboxed** | Implemented (honest labelling, BL-404, BL-405) |
+| Users believing a timeout or Job Object is a sandbox | I | **A timeout or Job Object alone is not a sandbox.** On platforms without full isolation (Windows, macOS), the runner labels execution as `isolation_level: "process-limits-only"` with `isolated: false` and emits explicit warnings | Implemented (honest labelling, BL-404, BL-405) |
 
 ### 4.3 Compiler argument injection (TB3, TB6)
 
@@ -119,7 +119,9 @@ Benchmarking would compile and **execute** user code. That code may be hostile, 
 | --- | --- | --- | --- |
 | A request field smuggles compiler flags (`-Xclang -load`, `-fplugin=`, `-include /etc/passwd`, `-o /path`) | E, I | The Clang front end uses a **fixed argument list**. The only request-derived value is `options.cpp_standard`, validated against the enum `c++11 … c++23` before use. Unknown request fields are rejected | Implemented |
 | A future benchmark compiler invocation takes flags from the user | E | The compiler is invoked with a fixed argv. Optimization level and standard come from validated enums, and free-form flags are never accepted | Implemented (BL-402) |
-| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, not as a path argument. A future compiler adapter must place `--` before file operands | Implemented (BL-402) |
+| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, written to a fixed `solution.cpp` inside a private temp dir. Operands in Clang are preceded by `--`; GCC operands are sanitized with `./` | Implemented (BL-402) |
+| Compilation hangs or exhausts memory via template recursion or large constexpr | D | Compiler invocation has a 15-second wall-clock timeout and 512 KiB output limit with process-group termination (`kill(-pgid)`), plus resource limit flags (`-ftemplate-depth=256`, `-fconstexpr-depth=256`, `-fconstexpr-steps=1048576`/`-fconstexpr-ops-limit=10000000`, `-fmax-errors=10`) | Implemented |
+| Sensitive file path leakage through compiler diagnostics (e.g. `#include "/etc/shadow"`) | I | Absolute host paths outside the compile scratch directory are redacted to `[redacted_path]` in compiler diagnostics, messages, and raw stderr before returning to the user | Implemented |
 
 ### 4.4 Shell injection and process spawning (TB2, TB3)
 
@@ -136,7 +138,7 @@ Benchmarking would compile and **execute** user code. That code may be hostile, 
 | --- | --- | --- | --- |
 | `source.path` in a request used to read or write arbitrary files | T, I | The engine treats `source.path` as a **display name only**. The content comes from `source.content`, and the engine writes no files | Implemented |
 | The sidecar file location is manipulated | T | The sidecar path is derived from the active document's path (`<file>.bigolens.json`), not from file content | Implemented |
-| Future benchmark artifacts written outside their temporary directory | T | Generated names, never user-controlled names. Paths canonicalized and checked against the run directory | Planned (M4) |
+| Benchmark artifacts written outside their temporary directory | T | Fixed source file name `solution.cpp`, unique temporary directories via `tempfile` (mode 0700), never user-controlled filesystem paths | Implemented |
 
 ### 4.6 Temporary directories (TB6)
 
@@ -207,8 +209,9 @@ BigO Lens is a local tool and does not keep audit logs. Requests carry a `reques
 
 1. Clang reads any header the source includes. A user who analyses untrusted code on a machine with sensitive readable files accepts the same exposure as when compiling that code.
 2. Engine-binary resolution trusts the user's settings and environment, including workspace-level settings (see §4.4).
-3. Until M4 isolation exists, there is no safe way to run user programs, so the feature is not implemented.
-4. Release artifacts are not signed.
+3. Dynamic benchmarking is isolated on Linux via namespaces and seccomp-BPF. On Windows and macOS, isolation is unavailable; programs run under process limits only with an explicit modal warning.
+4. Benchmark compilation runs the host C++ compiler in the scratch directory with a cleared environment, but without filesystem namespace isolation (so system headers remain accessible). While paths outside the scratch directory in diagnostics are redacted to `[redacted_path]`, compiler error messages quoting lines from included files could still expose local file fragments to the user if sensitive files are included via `#include "/abs/path"`.
+5. Release artifacts are not signed.
 
 ## 7. Review triggers
 

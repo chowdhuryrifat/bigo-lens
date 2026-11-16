@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: &str = "1.1";
 pub const ENGINE_VERSION: &str = "0.1.0";
-pub const ENGINE_NAME: &str = "bigolens-engine";
+pub const ENGINE_NAME: &str = "bigolens-rust-engine";
 pub const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024; // 4 MiB
 pub const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024; // 2 MiB
 

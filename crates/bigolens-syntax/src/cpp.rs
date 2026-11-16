@@ -104,10 +104,8 @@ fn parse_for_loop(node: Node, source: &[u8], file_name: &str) -> Result<LoopNest
         if paren_depth > 0 {
             if child.kind() == ";" {
                 parts.push(Vec::new());
-            } else {
-                if let Some(last) = parts.last_mut() {
-                    last.push(*child);
-                }
+            } else if let Some(last) = parts.last_mut() {
+                last.push(*child);
             }
         }
     }

@@ -139,7 +139,7 @@ json capabilities() {
                    {"amortized", entry.amortized},
                    {"note", entry.note}});
   }
-  return {{"actions", {"capabilities", "analyze", "benchmark"}},
+  return {{"actions", {"capabilities", "analyze"}},
           {"features",
            {{"loop_analysis", "partial"},
             {"while_countdown_loops", "partial"},

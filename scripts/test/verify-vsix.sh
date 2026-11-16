@@ -15,14 +15,36 @@ trap 'rm -rf "$work"' EXIT
 
 unzip -q "$vsix" -d "$work/vsix"
 ext="$work/vsix/extension"
-for required in package.json out/src/extension.js schemas/response.schema.json bin/bigolens-engine \
-  bin/clang-resource/include/stddef.h LICENSE.txt node_modules/ajv/package.json; do
+for required in package.json out/src/extension.js schemas/response.schema.json \
+  LICENSE.txt node_modules/ajv/package.json; do
   test -e "$ext/$required" || { echo "FAIL: $required missing from the .vsix" >&2; exit 1; }
 done
-echo "ok   .vsix contains the extension, runtime dependencies, schemas, engine and Clang builtin headers"
-chmod +x "$ext/bin/bigolens-engine"  # zip extraction by unzip may drop the mode bit
 
-if [[ "${SKIP_CONTAINER:-0}" != 1 ]]; then
+# Locate bundled engine binary (POSIX or Windows executable)
+if [ -e "$ext/bin/bigolens-engine" ]; then
+  engine_bin="$ext/bin/bigolens-engine"
+elif [ -e "$ext/bin/bigolens-engine.exe" ]; then
+  engine_bin="$ext/bin/bigolens-engine.exe"
+else
+  echo "FAIL: neither bin/bigolens-engine nor bin/bigolens-engine.exe found in the .vsix" >&2
+  exit 1
+fi
+chmod +x "$engine_bin"
+
+if [ -d "$ext/bin/clang-resource" ]; then
+  test -e "$ext/bin/clang-resource/include/stddef.h" || {
+    echo "FAIL: bin/clang-resource/include/stddef.h missing from the .vsix" >&2
+    exit 1
+  }
+fi
+echo "ok   .vsix contains the extension, runtime dependencies, schemas and engine binary"
+
+# Verify engine binary runs on host
+"$engine_bin" --version >/dev/null
+"$engine_bin" --request "$repo_root/shared/examples/capabilities.request.json" | grep -q '"status":"ok"'
+echo "ok   bundled engine binary runs and handles capabilities request"
+
+if [[ "${SKIP_CONTAINER:-0}" != 1 ]] && [ -d "$ext/bin/clang-resource" ] && command -v docker >/dev/null 2>&1; then
   image="ubuntu:24.04"
   mkdir -p "$work/requests"
   node - "$repo_root/tests/fixtures/cpp/01_linear_loop.cpp" "$work/requests" <<'NODE'

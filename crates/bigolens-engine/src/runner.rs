@@ -160,13 +160,52 @@ pub fn execute_single_run(
     }
 
     let should_isolate = limits.isolate && isolation_available;
-
+    let scratch_dir = executable.parent().map(|p| p.to_path_buf());
     let bin_path_c = std::ffi::CString::new(executable.to_str().unwrap_or("")).unwrap_or_default();
-    let bin_fd = if should_isolate {
-        unsafe { libc::open(bin_path_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) }
+
+    #[cfg(target_os = "linux")]
+    const BENCH_BIN_FD: libc::c_int = 200;
+
+    #[cfg(target_os = "linux")]
+    let (bin_fd, seccomp_prog) = if should_isolate {
+        let fd = unsafe { libc::open(bin_path_c.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
+        if fd < 0 {
+            return SingleRunResult {
+                status: BenchmarkRunStatus::Error(format!(
+                    "failed to open binary for isolation: {}",
+                    std::io::Error::last_os_error()
+                )),
+                wall_time: Duration::ZERO,
+                cpu_time: Duration::ZERO,
+                peak_rss_bytes: 0,
+                stdout: Vec::new(),
+                stderr: String::new(),
+            };
+        }
+        let prog = match crate::isolation::build_seccomp_filter(BENCH_BIN_FD) {
+            Ok(p) => p,
+            Err(e) => {
+                unsafe { libc::close(fd) };
+                return SingleRunResult {
+                    status: BenchmarkRunStatus::Error(format!(
+                        "failed to build seccomp filter: {}",
+                        e
+                    )),
+                    wall_time: Duration::ZERO,
+                    cpu_time: Duration::ZERO,
+                    peak_rss_bytes: 0,
+                    stdout: Vec::new(),
+                    stderr: String::new(),
+                };
+            }
+        };
+        (fd, Some(prog))
     } else {
-        -1
+        (-1, None)
     };
+
+    #[cfg(target_os = "linux")]
+    let fprog_opt = seccomp_prog.as_ref().map(|p| p.as_fprog());
 
     unsafe {
         cmd.pre_exec(move || {
@@ -200,16 +239,30 @@ pub fn execute_single_run(
                 libc::setrlimit(libc::RLIMIT_FSIZE, &fsize_rlim);
             }
 
-            // 5. Open file descriptors limit
+            // 5. If isolated, dup benchmark binary to BENCH_BIN_FD before setting RLIMIT_NOFILE
+            #[cfg(target_os = "linux")]
+            if should_isolate && bin_fd >= 0 {
+                if libc::dup3(bin_fd, BENCH_BIN_FD, libc::O_CLOEXEC) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                libc::close(bin_fd);
+            }
+
+            // 6. Open file descriptors limit (capped at 64 in isolated mode so BENCH_BIN_FD=200 cannot be re-opened)
             if max_nofile > 0 {
+                let limit_val = if should_isolate {
+                    max_nofile.min(64)
+                } else {
+                    max_nofile
+                };
                 let nofile_rlim = libc::rlimit {
-                    rlim_cur: max_nofile,
-                    rlim_max: max_nofile,
+                    rlim_cur: limit_val,
+                    rlim_max: limit_val,
                 };
                 libc::setrlimit(libc::RLIMIT_NOFILE, &nofile_rlim);
             }
 
-            // 6. Max process ceiling if configured
+            // 7. Max process ceiling if configured
             if let Some(nproc) = max_nproc {
                 let nproc_rlim = libc::rlimit {
                     rlim_cur: nproc,
@@ -218,26 +271,26 @@ pub fn execute_single_run(
                 libc::setrlimit(libc::RLIMIT_NPROC, &nproc_rlim);
             }
 
-            // 7. Apply unprivileged Linux namespaces and seccomp if requested
+            // 8. Apply unprivileged Linux namespaces and seccomp if requested
             #[cfg(target_os = "linux")]
             if should_isolate {
-                crate::isolation::apply_linux_namespaces()?;
-                crate::isolation::apply_seccomp_filter()?;
-
-                if bin_fd >= 0 {
-                    let empty = c"".as_ptr();
-                    let argv: [*const libc::c_char; 2] = [bin_path_c.as_ptr(), std::ptr::null()];
-                    let envp: [*const libc::c_char; 1] = [std::ptr::null()];
-                    libc::syscall(
-                        libc::SYS_execveat,
-                        bin_fd,
-                        empty,
-                        argv.as_ptr(),
-                        envp.as_ptr(),
-                        libc::AT_EMPTY_PATH,
-                    );
-                    return Err(std::io::Error::last_os_error());
+                crate::isolation::apply_linux_namespaces(scratch_dir.as_deref())?;
+                if let Some(ref fp) = fprog_opt {
+                    crate::isolation::apply_seccomp_filter(fp)?;
                 }
+
+                let empty = c"".as_ptr();
+                let argv: [*const libc::c_char; 2] = [bin_path_c.as_ptr(), std::ptr::null()];
+                let envp: [*const libc::c_char; 1] = [std::ptr::null()];
+                libc::syscall(
+                    libc::SYS_execveat,
+                    BENCH_BIN_FD,
+                    empty,
+                    argv.as_ptr(),
+                    envp.as_ptr(),
+                    libc::AT_EMPTY_PATH,
+                );
+                return Err(std::io::Error::last_os_error());
             }
 
             Ok(())
@@ -246,12 +299,14 @@ pub fn execute_single_run(
 
     let mut child = match cmd.spawn() {
         Ok(c) => {
+            #[cfg(target_os = "linux")]
             if bin_fd >= 0 {
                 unsafe { libc::close(bin_fd) };
             }
             c
         }
         Err(e) => {
+            #[cfg(target_os = "linux")]
             if bin_fd >= 0 {
                 unsafe { libc::close(bin_fd) };
             }
@@ -342,11 +397,14 @@ pub fn execute_single_run(
 
     let elapsed = start.elapsed();
 
-    // Ensure all descendant processes in this group are terminated
-    unsafe {
-        libc::kill(-pgid, libc::SIGKILL);
-        let mut dummy = 0;
-        while libc::waitpid(-pgid, &mut dummy, libc::WNOHANG) > 0 {}
+    // Ensure all descendant processes in this group are terminated only if timed out.
+    // Avoid racing against pgid reuse when the child has already cleanly exited.
+    if timed_out {
+        unsafe {
+            libc::kill(-pgid, libc::SIGKILL);
+            let mut dummy = 0;
+            while libc::waitpid(-pgid, &mut dummy, libc::WNOHANG) > 0 {}
+        }
     }
     guard.active = false;
 
@@ -660,6 +718,7 @@ pub mod win32 {
         pub dwHighDateTime: DWORD,
     }
 
+    #[link(name = "kernel32")]
     extern "system" {
         pub fn CreateJobObjectW(lpJobAttributes: *mut c_void, lpName: *const u16) -> HANDLE;
         pub fn SetInformationJobObject(
@@ -696,6 +755,10 @@ pub mod win32 {
             dwThreadId: DWORD,
         ) -> HANDLE;
         pub fn ResumeThread(hThread: HANDLE) -> DWORD;
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
         pub fn GetProcessMemoryInfo(
             Process: HANDLE,
             ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
@@ -815,6 +878,19 @@ pub fn execute_single_run(
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
     use win32::*;
+
+    if limits.isolate && !limits.allow_unsandboxed {
+        return SingleRunResult {
+            status: BenchmarkRunStatus::Error(
+                "isolation_unavailable: Windows Job Objects provide process resource limits only, not sandbox isolation (pass allow_unsandboxed: true to override)".to_string(),
+            ),
+            wall_time: Duration::ZERO,
+            cpu_time: Duration::ZERO,
+            peak_rss_bytes: 0,
+            stdout: Vec::new(),
+            stderr: String::new(),
+        };
+    }
 
     let mut cmd = Command::new(executable);
     if let Some(parent) = executable.parent() {
@@ -1111,9 +1187,7 @@ pub fn run_benchmark_series(
 ) -> BenchmarkSampleResult {
     #[cfg(target_os = "linux")]
     let isolation_available = crate::isolation::is_linux_isolation_available();
-    #[cfg(windows)]
-    let isolation_available = true;
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(not(target_os = "linux"))]
     let isolation_available = false;
 
     let is_isolated = limits.isolate && isolation_available;
@@ -1145,14 +1219,16 @@ pub fn run_benchmark_series(
     };
 
     #[cfg(windows)]
-    let (isolation_level, warnings) = if is_isolated {
-        ("windows-job-objects", Vec::new())
-    } else {
-        (
-            "process-limits-only",
-            vec!["not sandboxed: running with process resource limits only".to_string()],
-        )
-    };
+    let (isolation_level, warnings) = (
+        "process-limits-only",
+        vec!["not sandboxed: Windows Job Objects provide process resource limits only".to_string()],
+    );
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    let (isolation_level, warnings) = (
+        "process-limits-only",
+        vec!["not sandboxed: running with process resource limits only".to_string()],
+    );
 
     #[cfg(not(any(target_os = "linux", windows)))]
     let (isolation_level, warnings) = (
@@ -1227,15 +1303,28 @@ mod tests {
     use crate::compiler::{compile_cpp, discover_compiler, CppStandard, OptimizationLevel};
     use std::fs;
 
-    fn make_test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "bigolens_runner_test_{}_{}",
-            name,
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("failed to create test directory");
-        dir
+    struct TestDir(tempfile::TempDir);
+
+    impl std::ops::Deref for TestDir {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            self.0.path()
+        }
+    }
+
+    impl AsRef<std::path::Path> for TestDir {
+        fn as_ref(&self) -> &std::path::Path {
+            self.0.path()
+        }
+    }
+
+    fn make_test_dir(name: &str) -> TestDir {
+        TestDir(
+            tempfile::Builder::new()
+                .prefix(&format!("bigolens_runner_test_{}_", name))
+                .tempdir()
+                .expect("failed to create test directory"),
+        )
     }
 
     #[test]
@@ -1576,6 +1665,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1623,6 +1713,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1667,6 +1758,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1711,11 +1803,223 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
         assert_ne!(res.status, BenchmarkRunStatus::Success);
         assert!(res.stderr.contains("PTRACE_BLOCKED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_execveat() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_execveat");
+        let source = r#"
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <iostream>
+int main() {
+    char* argv[] = {(char*)"/bin/echo", (char*)"escaped", nullptr};
+    char* envp[] = {nullptr};
+    long ret = syscall(SYS_execveat, AT_FDCWD, "/bin/echo", argv, envp, 0);
+    if (ret < 0) {
+        std::cerr << "EXECVEAT_BLOCKED\n";
+        return 1;
+    }
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("EXECVEAT_BLOCKED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_writing_outside_scratch() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_outside_write");
+        let source = r#"
+#include <fstream>
+#include <iostream>
+int main() {
+    std::ofstream f("/tmp/bigolens_escape_test.txt");
+    if (f.is_open()) {
+        std::cerr << "WRITE_OUTSIDE_ALLOWED\n";
+        return 0;
+    }
+    std::ofstream f_local("local_scratch.txt");
+    if (!f_local.is_open()) {
+        std::cerr << "LOCAL_WRITE_FAILED\n";
+        return 2;
+    }
+    f_local << "scratch";
+    f_local.close();
+    std::cerr << "WRITE_OUTSIDE_BLOCKED\n";
+    return 1;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        assert_ne!(res.status, BenchmarkRunStatus::Success);
+        assert!(res.stderr.contains("WRITE_OUTSIDE_BLOCKED"));
+        assert!(!res.stderr.contains("WRITE_OUTSIDE_ALLOWED"));
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_reading_etc_passwd() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_passwd");
+        let source = r#"
+#include <fstream>
+#include <iostream>
+#include <string>
+int main() {
+    std::ifstream f("/etc/passwd");
+    if (!f.is_open()) {
+        std::cout << "PASSWD_UNREADABLE\n";
+        return 0;
+    }
+    std::string line;
+    if (std::getline(f, line)) {
+        if (line.find("root:") != std::string::npos) {
+            std::cerr << "PASSWD_EXPOSED\n";
+            return 1;
+        }
+    }
+    std::cout << "PASSWD_EMPTY_OR_CONCEALED\n";
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        let stdout = String::from_utf8_lossy(&res.stdout);
+        assert!(!res.stderr.contains("PASSWD_EXPOSED"));
+        assert!(
+            stdout.contains("PASSWD_EMPTY_OR_CONCEALED") || stdout.contains("PASSWD_UNREADABLE")
+        );
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    fn test_sandbox_kills_x32_abi_invocation() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_x32");
+        let source = r#"
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <iostream>
+int main() {
+    long ret = syscall(0x40000000 | SYS_getpid);
+    std::cout << "X32_ALLOWED: " << ret << "\n";
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        match res.status {
+            BenchmarkRunStatus::Crash(ref msg) => {
+                assert!(msg.contains("SIGSYS") || msg.contains("signal"));
+            }
+            other => panic!("expected Crash due to SIGSYS/kill, got {:?}", other),
+        }
 
         let _ = fs::remove_dir_all(&work_dir);
     }
@@ -1753,6 +2057,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let sample = run_benchmark_series(&bin, b"10\n", &limits, 1, 3);

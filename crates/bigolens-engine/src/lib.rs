@@ -91,6 +91,17 @@ pub fn dispatch_request(req: Request) -> Response {
         }
     }
 
+    if let Some(ref source) = req.source {
+        if source.path.is_empty() || source.path.len() > 4096 || source.path.contains('\0') {
+            return error_response(
+                Some(req.request_id),
+                "invalid_request",
+                "source.path must be non-empty, <= 4096 bytes, and must not contain NUL bytes",
+                Some("/source/path".to_string()),
+            );
+        }
+    }
+
     match req.action.as_str() {
         "capabilities" => capabilities_response(req.request_id),
         "analyze" => analyze_action(req),
@@ -105,10 +116,16 @@ pub fn dispatch_request(req: Request) -> Response {
 }
 
 pub fn capabilities_response(request_id: String) -> Response {
+    let benchmark_feature = if crate::isolation::is_linux_isolation_available() {
+        "supported"
+    } else {
+        "partial"
+    };
+
     let caps = serde_json::json!({
         "actions": ["capabilities", "analyze", "benchmark"],
         "features": {
-            "benchmark": "supported",
+            "benchmark": benchmark_feature,
             "constraint_workload": "partial",
             "interprocedural_analysis": "partial",
             "loop_analysis": "partial",
@@ -306,23 +323,18 @@ pub fn benchmark_action(req: Request) -> Response {
         _ => compiler::CppStandard::Cpp17,
     };
 
-    let temp_dir = std::env::temp_dir().join(format!(
-        "bigolens_bench_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    ));
-    if let Err(e) = fs::create_dir_all(&temp_dir) {
-        return error_response(
-            Some(req.request_id),
-            "internal_error",
-            &format!("failed to create temporary scratch directory: {}", e),
-            None,
-        );
-    }
-    let _guard = TempDirGuard(temp_dir.clone());
+    let temp_dir_obj = match tempfile::Builder::new().prefix("bigolens_bench_").tempdir() {
+        Ok(d) => d,
+        Err(e) => {
+            return error_response(
+                Some(req.request_id),
+                "internal_error",
+                &format!("failed to create temporary scratch directory: {}", e),
+                None,
+            );
+        }
+    };
+    let temp_dir = temp_dir_obj.path().to_path_buf();
 
     let bin_path = match compiler::compile_cpp(
         &compiler,
@@ -333,9 +345,31 @@ pub fn benchmark_action(req: Request) -> Response {
         compiler::OptimizationLevel::O2,
     ) {
         Ok(p) => p,
-        Err(compile_err) => {
-            let protocol_diags = match compile_err {
-                compiler::CompileError::CompilationFailed { diagnostics, .. } => diagnostics
+        Err(compile_err) => match compile_err {
+            compiler::CompileError::Timeout { timeout_secs } => {
+                return error_response(
+                    Some(req.request_id),
+                    "timeout",
+                    &format!(
+                        "benchmark source compilation timed out after {}s",
+                        timeout_secs
+                    ),
+                    Some("/source".to_string()),
+                );
+            }
+            compiler::CompileError::OutputLimitExceeded { limit_bytes } => {
+                return error_response(
+                    Some(req.request_id),
+                    "output_limit_exceeded",
+                    &format!(
+                        "benchmark compiler output exceeded limit ({} bytes)",
+                        limit_bytes
+                    ),
+                    Some("/source".to_string()),
+                );
+            }
+            compiler::CompileError::CompilationFailed { diagnostics, .. } => {
+                let protocol_diags = diagnostics
                     .into_iter()
                     .map(|d| bigolens_core::models::Diagnostic {
                         severity: if d.severity.contains("error") {
@@ -354,24 +388,31 @@ pub fn benchmark_action(req: Request) -> Response {
                             end_column: None,
                         }),
                     })
-                    .collect(),
-                _ => Vec::new(),
-            };
+                    .collect();
 
-            return Response {
-                schema_version: PROTOCOL_VERSION.to_string(),
-                request_id: Some(req.request_id),
-                status: "error".to_string(),
-                engine: engine_metadata(),
-                results: None,
-                diagnostics: protocol_diags,
-                errors: vec![ProtocolError {
-                    code: "source_parse_error".to_string(),
-                    message: "benchmark source compilation failed".to_string(),
-                    path: Some("/source".to_string()),
-                }],
-            };
-        }
+                return Response {
+                    schema_version: PROTOCOL_VERSION.to_string(),
+                    request_id: Some(req.request_id),
+                    status: "error".to_string(),
+                    engine: engine_metadata(),
+                    results: None,
+                    diagnostics: protocol_diags,
+                    errors: vec![ProtocolError {
+                        code: "source_parse_error".to_string(),
+                        message: "benchmark source compilation failed".to_string(),
+                        path: Some("/source".to_string()),
+                    }],
+                };
+            }
+            _ => {
+                return error_response(
+                    Some(req.request_id),
+                    "compilation_error",
+                    &compile_err.to_string(),
+                    Some("/source".to_string()),
+                );
+            }
+        },
     };
 
     let constraints = req.constraints.unwrap_or_default();
@@ -678,9 +719,15 @@ mod tests {
         assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         assert_eq!(resp["request_id"], "test-cap-1");
         assert_eq!(resp["schema_version"], "1.1");
+        assert_eq!(resp["engine"]["name"], "bigolens-rust-engine");
 
         let results = &resp["results"];
-        assert_eq!(results["features"]["benchmark"], "supported");
+        let expected_bench = if crate::isolation::is_linux_isolation_available() {
+            "supported"
+        } else {
+            "partial"
+        };
+        assert_eq!(results["features"]["benchmark"], expected_bench);
         assert!(results["actions"]
             .as_array()
             .unwrap()
@@ -1258,5 +1305,98 @@ int main() {
         assert_eq!(resp["status"], "error");
         assert_eq!(resp["errors"][0]["code"], "source_parse_error");
         assert!(!resp["diagnostics"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_source_path_validation_rejects_nul_and_empty() {
+        // 1. NUL byte rejection
+        let req_nul = serde_json::json!({
+            "schema_version": "1.1",
+            "request_id": "nul-path-test",
+            "action": "capabilities",
+            "source": {
+                "path": "bad\u{0000}path.cpp",
+                "language": "cpp",
+                "content": "int main() { return 0; }"
+            }
+        });
+        let resp_str = handle_request(&req_nul.to_string());
+        let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+        assert_eq!(resp["status"], "error");
+        assert_eq!(resp["errors"][0]["code"], "invalid_request");
+        assert_eq!(resp["errors"][0]["path"], "/source/path");
+
+        // 2. Empty path rejection
+        let req_empty = serde_json::json!({
+            "schema_version": "1.1",
+            "request_id": "empty-path-test",
+            "action": "capabilities",
+            "source": {
+                "path": "",
+                "language": "cpp",
+                "content": "int main() { return 0; }"
+            }
+        });
+        let resp_empty_str = handle_request(&req_empty.to_string());
+        let resp_empty: serde_json::Value = serde_json::from_str(&resp_empty_str).unwrap();
+        assert_eq!(resp_empty["status"], "error");
+        assert_eq!(resp_empty["errors"][0]["code"], "invalid_request");
+        assert_eq!(resp_empty["errors"][0]["path"], "/source/path");
+    }
+
+    #[test]
+    fn test_benchmark_action_with_traversal_and_absolute_paths() {
+        if compiler::discover_compiler(None).is_err() {
+            return;
+        }
+
+        let source = r#"
+#include <iostream>
+int main() {
+    int n;
+    if (std::cin >> n) {
+        std::cout << n << "\n";
+    }
+    return 0;
+}
+"#;
+
+        for display_path in &[
+            "/tmp/nonexistent_abs_file.cpp",
+            "../../escape_attempt.cpp",
+            "nested/a/b/c/solution.cpp",
+            "-fplugin=flag.cpp",
+        ] {
+            let req = serde_json::json!({
+                "schema_version": "1.1",
+                "request_id": "bench-paths",
+                "action": "benchmark",
+                "source": {
+                    "path": display_path,
+                    "language": "cpp",
+                    "content": source
+                },
+                "constraints": {
+                    "variables": {
+                        "n": { "min": 1, "max": 100 }
+                    }
+                },
+                "benchmark_config": {
+                    "sizes": [10, 20],
+                    "repetitions": 1,
+                    "warmup": 0,
+                    "per_run_timeout_ms": 2000,
+                    "allow_unsandboxed": true
+                }
+            });
+
+            let resp_str = handle_request(&req.to_string());
+            let resp: serde_json::Value = serde_json::from_str(&resp_str).unwrap();
+            assert_eq!(
+                resp["status"], "ok",
+                "benchmark failed for path {}: {:?}",
+                display_path, resp
+            );
+        }
     }
 }

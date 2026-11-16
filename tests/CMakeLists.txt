@@ -37,7 +37,7 @@ else()
 endif()
 
 add_test(NAME engine_cli.version COMMAND bigolens-engine --version)
-set_tests_properties(engine_cli.version PROPERTIES PASS_REGULAR_EXPRESSION "bigolens-engine [0-9]+\\.[0-9]+\\.[0-9]+"
+set_tests_properties(engine_cli.version PROPERTIES PASS_REGULAR_EXPRESSION "bigolens-clang-engine [0-9]+\\.[0-9]+\\.[0-9]+"
                                                    LABELS "integration")
 add_test(NAME engine_cli.unknown_argument COMMAND bigolens-engine --definitely-not-an-option)
 set_tests_properties(engine_cli.unknown_argument PROPERTIES WILL_FAIL TRUE LABELS "integration")

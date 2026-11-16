@@ -39,12 +39,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Ensure stable Rust toolchain
-        run: rustup update stable && rustup default stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.90.0
+          components: clippy, rustfmt
       - name: Format check
         run: cargo fmt --check
       - name: Clippy check
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   clang-format:
     runs-on: ubuntu-24.04
