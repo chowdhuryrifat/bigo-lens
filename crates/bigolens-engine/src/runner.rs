@@ -2429,6 +2429,112 @@ int main() {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_masks_root_and_private_tmp() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("root_and_private_tmp");
+
+        // Create a host canary file in host /tmp
+        let host_canary_path = "/tmp/bigolens_audit_task3_canary.txt";
+        let _ = fs::write(host_canary_path, "secret_host_data");
+
+        let source = r#"
+#include <dirent.h>
+#include <fcntl.h>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <unistd.h>
+
+int main() {
+    // 1. Host canary file in /tmp should NOT be visible
+    std::ifstream canary("/tmp/bigolens_audit_task3_canary.txt");
+    if (canary.is_open()) {
+        std::cerr << "FAIL: host /tmp canary is visible inside sandbox\n";
+        return 1;
+    }
+
+    // 2. /root should be masked (empty tmpfs) or unreadable
+    DIR* root_dir = opendir("/root");
+    if (root_dir != nullptr) {
+        struct dirent* entry;
+        int count = 0;
+        while ((entry = readdir(root_dir)) != nullptr) {
+            std::string name = entry->d_name;
+            if (name != "." && name != "..") {
+                count++;
+            }
+        }
+        closedir(root_dir);
+        if (count > 0) {
+            std::cerr << "FAIL: /root has visible host entries (" << count << ")\n";
+            return 2;
+        }
+    }
+
+    // 3. Writing to /tmp outside scratch dir should fail (read-only filesystem)
+    int fd = open("/tmp/forbidden_outside_scratch.txt", O_CREAT | O_WRONLY, 0600);
+    if (fd >= 0) {
+        close(fd);
+        std::cerr << "FAIL: writing to /tmp outside scratch succeeded\n";
+        return 3;
+    }
+
+    // 4. Writing inside scratch dir (current working dir or /tmp/scratch) should succeed
+    std::ofstream scratch_file("test_scratch.txt");
+    if (!scratch_file.is_open()) {
+        std::cerr << "FAIL: writing inside scratch dir failed\n";
+        return 4;
+    }
+    scratch_file << "ok\n";
+    scratch_file.close();
+
+    std::cout << "MASK_ROOT_AND_PRIVATE_TMP_PASSED\n";
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        let _ = fs::remove_file(host_canary_path);
+        let _ = fs::remove_dir_all(&work_dir);
+
+        let stdout = String::from_utf8_lossy(&res.stdout);
+        assert_eq!(
+            res.status,
+            BenchmarkRunStatus::Success,
+            "Execution failed: stderr={}",
+            res.stderr
+        );
+        assert!(
+            stdout.contains("MASK_ROOT_AND_PRIVATE_TMP_PASSED"),
+            "Output missing verification: stdout={}, stderr={}",
+            stdout,
+            res.stderr
+        );
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_unsandboxed_override_warning() {
         let compiler = match discover_compiler(None) {

@@ -105,13 +105,26 @@ Dynamic benchmarking compiles and **executes** user code in the Rust engine (`cr
 
 | Threat | STRIDE | Required mitigation | Status |
 | --- | --- | --- | --- |
-| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: unprivileged user, mount (`MS_RDONLY` root, masked `/home` and `/etc/passwd`, private writable `tmpfs` scratch), network and PID namespaces (with benchmark running as PID 1 and fresh private `/proc` hidepid mount), plus seccomp-BPF filter with architecture checks (`AUDIT_ARCH`), x32 blocking, and `execveat` argument restriction on the binary descriptor only. Windows and macOS: no sandbox container is available; the engine fails closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is passed, and reports `isolation_level: "process-limits-only"` with `isolated: false` | Implemented (Linux, BL-405) |
+| Program reads or writes user files, or exfiltrates over the network | I, T, E | Platform isolation. Linux: unprivileged user, mount (`MS_RDONLY` root, masked `/home`, `/root`, and `/etc/passwd`, private `/tmp` tmpfs with writable `/tmp/scratch` tmpfs and read-only `/tmp`), network and PID namespaces (with benchmark running as PID 1 and fresh private `/proc` hidepid mount), full capability dropping (`PR_CAPBSET_DROP`, zeroed `capset`, securebits), plus seccomp-BPF filter with architecture checks (`AUDIT_ARCH`), x32 blocking, privilege escalation syscall blocking, and `execveat` argument restriction on the binary descriptor only. Windows and macOS: no sandbox container is available; the engine fails closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is passed, and reports `isolation_level: "process-limits-only"` with `isolated: false` | Implemented (Linux, BL-405) |
 | Fork bomb or runaway child processes | D | `CLONE_NEWPID` on Linux terminates all namespace descendants on child exit (benchmark runs as PID 1 via intermediate launcher); process-group `kill(-pgid)` and best-effort `RLIMIT_NPROC` | Implemented (Linux, BL-404) |
 | Infinite loop | D | Wall-clock and CPU timeouts, then forced termination | Implemented (BL-404) |
 | Memory exhaustion | D | Virtual address space (`RLIMIT_AS`) or Windows Job memory limits, with the measured peak reported | Implemented (BL-404) |
 | Disk filling | D | `RLIMIT_FSIZE` and per-run temporary in-memory tmpfs scratch directory | Implemented (Linux, BL-404) |
 | Benchmarking started without the user's knowledge | E | Benchmarks are user-initiated only, with an explicit command and confirmation. They never run on file open or save | Designed (ADR 0014, BL-401) |
 | Users believing a timeout or Job Object is a sandbox | I | **A timeout or Job Object alone is not a sandbox.** On platforms without full isolation (Windows, macOS), the runner labels execution as `isolation_level: "process-limits-only"` with `isolated: false` and emits explicit warnings | Implemented (honest labelling, BL-404, BL-405) |
+
+#### Linux Filesystem Isolation & Residual Readable Paths
+
+The benchmark isolation environment on Linux implements multi-layered filesystem controls:
+1. **Private Mount Namespace:** Created with `MS_REC | MS_PRIVATE` so mount events do not leak to or from the host.
+2. **Read-Only Root:** The entire root filesystem is bind-mounted and remounted read-only (`MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC`).
+3. **Sensitive Path Masking:**
+   - `/home` is masked with an empty, non-executable tmpfs (`MS_NOSUID | MS_NODEV | libc::MS_NOEXEC`).
+   - `/root` is masked with an empty, non-executable tmpfs (`MS_NOSUID | MS_NODEV | libc::MS_NOEXEC`).
+   - `/etc/passwd` is masked by bind-mounting `/dev/null` over it.
+   - Any missing paths (`ENOENT`) are skipped as "nothing to hide", while unexpected mount failures abort isolation.
+4. **Private Temporary Filesystem:** `/tmp` is masked with a private empty tmpfs and remounted read-only, preventing the benchmark from viewing host temporary files or writing directly to `/tmp`. A writable tmpfs is mounted at `/tmp/scratch`, and the benchmark process `chdir`s into `/tmp/scratch`. Outside `/tmp/scratch`, writing fails with `EROFS`.
+5. **Residual Readable Filesystem:** System directories (`/usr`, `/lib`, `/bin`, and `/etc` minus `/etc/passwd`) remain readable to allow dynamic linking (`ld.so`), loading C/C++ runtime shared libraries (`libc.so`, `libstdc++.so`), and reading basic locale/time zone data. Code executing inside the benchmark cannot modify these files or persist changes past process termination.
 
 ### 4.3 Compiler argument injection (TB3, TB6)
 
@@ -209,7 +222,7 @@ BigO Lens is a local tool and does not keep audit logs. Requests carry a `reques
 
 1. Clang reads any header the source includes. A user who analyses untrusted code on a machine with sensitive readable files accepts the same exposure as when compiling that code.
 2. Engine-binary resolution trusts the user's settings and environment, including workspace-level settings (see §4.4).
-3. Dynamic benchmarking is isolated on Linux via namespaces and seccomp-BPF. On Windows and macOS, isolation is unavailable; programs run under process limits only with an explicit modal warning.
+3. Dynamic benchmarking is isolated on Linux via namespaces, seccomp-BPF, capability dropping, and path masking. However, host system directories (`/usr`, `/lib`, `/bin`, `/etc`) remain readable so dynamically linked binaries can execute. On Windows and macOS, isolation is unavailable; programs run under process limits only with an explicit modal warning.
 4. Benchmark compilation runs the host C++ compiler in the scratch directory with a cleared environment, but without filesystem namespace isolation (so system headers remain accessible). While paths outside the scratch directory in diagnostics are redacted to `[redacted_path]`, compiler error messages quoting lines from included files could still expose local file fragments to the user if sensitive files are included via `#include "/abs/path"`.
 5. Release artifacts are not signed.
 
