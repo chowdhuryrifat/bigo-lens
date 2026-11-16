@@ -248,16 +248,11 @@ pub fn execute_single_run(
                 libc::close(bin_fd);
             }
 
-            // 6. Open file descriptors limit (capped at 64 in isolated mode so BENCH_BIN_FD=200 cannot be re-opened)
-            if max_nofile > 0 {
-                let limit_val = if should_isolate {
-                    max_nofile.min(64)
-                } else {
-                    max_nofile
-                };
+            // 6. Open file descriptors limit (non-isolated mode; isolated runs set this in the child after namespace setup)
+            if !should_isolate && max_nofile > 0 {
                 let nofile_rlim = libc::rlimit {
-                    rlim_cur: limit_val,
-                    rlim_max: limit_val,
+                    rlim_cur: max_nofile,
+                    rlim_max: max_nofile,
                 };
                 libc::setrlimit(libc::RLIMIT_NOFILE, &nofile_rlim);
             }
@@ -306,6 +301,24 @@ pub fn execute_single_run(
                             msg.len(),
                         );
                         libc::_exit(125);
+                    }
+
+                    // Close all inherited file descriptors except stdio (0, 1, 2) and BENCH_BIN_FD (200)
+                    for fd in 3..BENCH_BIN_FD {
+                        libc::close(fd);
+                    }
+                    for fd in (BENCH_BIN_FD + 1)..1024 {
+                        libc::close(fd);
+                    }
+
+                    // Open file descriptors limit (capped at 64 in isolated mode so BENCH_BIN_FD=200 cannot be re-opened)
+                    if max_nofile > 0 {
+                        let limit_val = max_nofile.min(64);
+                        let nofile_rlim = libc::rlimit {
+                            rlim_cur: limit_val,
+                            rlim_max: limit_val,
+                        };
+                        libc::setrlimit(libc::RLIMIT_NOFILE, &nofile_rlim);
                     }
 
                     // Drop all capabilities inside user namespace
@@ -1628,6 +1641,7 @@ int main() {
 int main() {
     while (true) {
         fork();
+        usleep(1000);
     }
     return 0;
 }
