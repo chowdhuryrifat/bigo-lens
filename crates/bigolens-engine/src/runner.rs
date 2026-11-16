@@ -308,6 +308,17 @@ pub fn execute_single_run(
                         libc::_exit(125);
                     }
 
+                    // Drop all capabilities inside user namespace
+                    if crate::isolation::drop_all_capabilities().is_err() {
+                        let msg = b"ISOLATION_FAILURE: drop capabilities failed\n";
+                        libc::write(
+                            libc::STDERR_FILENO,
+                            msg.as_ptr() as *const libc::c_void,
+                            msg.len(),
+                        );
+                        libc::_exit(124);
+                    }
+
                     if let Some(ref fp) = fprog_opt {
                         if crate::isolation::apply_seccomp_filter(fp).is_err() {
                             let msg = b"ISOLATION_FAILURE: seccomp filter failed\n";
@@ -2317,6 +2328,101 @@ int main() {
             res.peak_rss_bytes >= 20 * 1024 * 1024,
             "Expected peak_rss_bytes >= 20MB, got {}",
             res.peak_rss_bytes
+        );
+
+        let _ = fs::remove_dir_all(&work_dir);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_sandbox_denies_privilege_escalation_and_filesystem_unmasking() {
+        if !crate::isolation::is_linux_isolation_available() {
+            println!("Skipping test: Linux isolation is unavailable in this environment");
+            return;
+        }
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let work_dir = make_test_dir("deny_priv_esc");
+        let source = r#"
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sys/mount.h>
+#include <sched.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+
+int main() {
+    // 1. Try umount2 on /home
+    if (umount2("/home", MNT_DETACH) == 0) {
+        std::cerr << "ESCAPE_ALLOWED: umount2 /home succeeded\n";
+        return 1;
+    }
+    // 2. Try umount2 on /etc/passwd
+    if (umount2("/etc/passwd", MNT_DETACH) == 0) {
+        std::cerr << "ESCAPE_ALLOWED: umount2 /etc/passwd succeeded\n";
+        return 2;
+    }
+    // 3. Try mount
+    if (mount("tmpfs", "/tmp", "tmpfs", 0, nullptr) == 0) {
+        std::cerr << "ESCAPE_ALLOWED: mount succeeded\n";
+        return 3;
+    }
+    // 4. Try unshare
+    if (unshare(CLONE_NEWUSER) == 0) {
+        std::cerr << "ESCAPE_ALLOWED: unshare CLONE_NEWUSER succeeded\n";
+        return 4;
+    }
+    // 5. Try chroot
+    if (chroot("/") == 0) {
+        std::cerr << "ESCAPE_ALLOWED: chroot succeeded\n";
+        return 5;
+    }
+
+    // Verify /etc/passwd cannot be read
+    std::ifstream passwd("/etc/passwd");
+    std::string line;
+    if (passwd.is_open() && std::getline(passwd, line)) {
+        if (line.find("root:") != std::string::npos) {
+            std::cerr << "PASSWD_EXPOSED\n";
+            return 6;
+        }
+    }
+
+    std::cout << "CAPABILITIES_AND_MASKING_SECURE\n";
+    return 0;
+}
+"#;
+        let bin = compile_cpp(
+            &compiler,
+            source,
+            "solution.cpp",
+            &work_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O0,
+        )
+        .expect("compilation failed");
+
+        let limits = RunnerLimits {
+            isolate: true,
+            wall_timeout: Duration::from_secs(5),
+            ..Default::default()
+        };
+        let res = execute_single_run(&bin, b"", &limits);
+        let stdout = String::from_utf8_lossy(&res.stdout);
+        assert_eq!(
+            res.status,
+            BenchmarkRunStatus::Success,
+            "Execution failed: stderr={}",
+            res.stderr
+        );
+        assert!(
+            stdout.contains("CAPABILITIES_AND_MASKING_SECURE"),
+            "Output missing verification: stdout={}, stderr={}",
+            stdout,
+            res.stderr
         );
 
         let _ = fs::remove_dir_all(&work_dir);

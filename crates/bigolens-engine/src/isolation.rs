@@ -127,6 +127,98 @@ unsafe fn write_proc_map(path: &[u8], id: u32) -> Result<(), io::Error> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+const PR_CAPBSET_DROP: libc::c_int = 24;
+#[cfg(target_os = "linux")]
+const PR_SET_SECUREBITS: libc::c_int = 28;
+#[cfg(target_os = "linux")]
+const SECBIT_NOROOT: u32 = 1 << 0;
+#[cfg(target_os = "linux")]
+const SECBIT_NOROOT_LOCKED: u32 = 1 << 1;
+#[cfg(target_os = "linux")]
+const SECBIT_NO_SETUID_FIXUP: u32 = 1 << 2;
+#[cfg(target_os = "linux")]
+const SECBIT_NO_SETUID_FIXUP_LOCKED: u32 = 1 << 3;
+#[cfg(target_os = "linux")]
+const LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
+
+#[repr(C)]
+struct CapUserHeader {
+    version: u32,
+    pid: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CapUserData {
+    effective: u32,
+    permitted: u32,
+    inheritable: u32,
+}
+
+/// Drop all Linux capabilities using raw, async-signal-safe syscalls.
+///
+/// Clears the capability bounding set via PR_CAPBSET_DROP, locks securebits
+/// (SECBIT_NOROOT and SECBIT_NO_SETUID_FIXUP), enforces PR_SET_NO_NEW_PRIVS,
+/// and clears effective, permitted, and inheritable capabilities via capset(2).
+///
+/// # Safety
+///
+/// Must be called in a single-threaded process context (e.g. after fork)
+/// before executing the benchmark binary.
+#[cfg(target_os = "linux")]
+pub unsafe fn drop_all_capabilities() -> io::Result<()> {
+    // 1. Drop every capability from the bounding set (caps 0..63)
+    for cap in 0..64 {
+        let _ = libc::prctl(PR_CAPBSET_DROP, cap, 0, 0, 0);
+    }
+
+    // 2. Lock securebits to prevent root or setuid regaining capabilities
+    let secbits = SECBIT_NOROOT
+        | SECBIT_NOROOT_LOCKED
+        | SECBIT_NO_SETUID_FIXUP
+        | SECBIT_NO_SETUID_FIXUP_LOCKED;
+    let _ = libc::prctl(PR_SET_SECUREBITS, secbits, 0, 0, 0);
+
+    // 3. Ensure no new privileges can be gained across execve
+    if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    // 4. Clear all effective, permitted, and inheritable capability bits
+    let hdr = CapUserHeader {
+        version: LINUX_CAPABILITY_VERSION_3,
+        pid: 0,
+    };
+    let data = [
+        CapUserData {
+            effective: 0,
+            permitted: 0,
+            inheritable: 0,
+        },
+        CapUserData {
+            effective: 0,
+            permitted: 0,
+            inheritable: 0,
+        },
+    ];
+    if libc::syscall(libc::SYS_capset, &hdr, data.as_ptr()) != 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    Ok(())
+}
+
+/// Fallback for non-Linux OS.
+///
+/// # Safety
+///
+/// Unused on non-Linux OS.
+#[cfg(not(target_os = "linux"))]
+pub unsafe fn drop_all_capabilities() -> io::Result<()> {
+    Ok(())
+}
+
 static ISOLATION_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
 /// Check whether the current Linux environment supports unprivileged user namespaces and isolation.
@@ -233,8 +325,8 @@ pub fn is_linux_isolation_available() -> bool {
                         libc::_exit(10);
                     }
 
-                    // Probe PR_SET_NO_NEW_PRIVS
-                    if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                    // Probe capability drop
+                    if drop_all_capabilities().is_err() {
                         libc::_exit(11);
                     }
 
@@ -423,7 +515,22 @@ pub fn build_seccomp_filter(allowed_fd: i32) -> io::Result<SeccompProgram> {
                     49,  // bind
                     50,  // listen
                     101, // ptrace
+                    155, // pivot_root
+                    161, // chroot
+                    165, // mount
+                    166, // umount2
+                    250, // keyctl
+                    272, // unshare
                     288, // accept4
+                    298, // perf_event_open
+                    304, // open_by_handle_at
+                    308, // setns
+                    310, // process_vm_readv
+                    311, // process_vm_writev
+                    321, // bpf
+                    323, // userfaultfd
+                    425, // io_uring_setup
+                    435, // clone3
                 ],
             )
         } else if cfg!(target_arch = "aarch64") {
@@ -431,13 +538,28 @@ pub fn build_seccomp_filter(allowed_fd: i32) -> io::Result<SeccompProgram> {
                 221, // execve
                 281, // execveat
                 &[
+                    39,  // umount2
+                    40,  // mount
+                    41,  // pivot_root
+                    51,  // chroot
+                    97,  // unshare
                     117, // ptrace
                     198, // socket
                     200, // bind
                     201, // listen
                     202, // accept
                     203, // connect
+                    219, // keyctl
+                    241, // perf_event_open
                     242, // accept4
+                    265, // open_by_handle_at
+                    268, // setns
+                    270, // process_vm_readv
+                    271, // process_vm_writev
+                    280, // bpf
+                    282, // userfaultfd
+                    425, // io_uring_setup
+                    435, // clone3
                 ],
             )
         } else {
