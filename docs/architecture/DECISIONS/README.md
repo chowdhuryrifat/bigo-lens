@@ -20,6 +20,7 @@ This directory records the significant architectural decisions for BigO Lens. Ea
 | [0013](0013-marketplace-and-open-vsx-publication.md) | VS Code Marketplace and Open VSX Publication Strategy | Accepted | 2026-11-14 |
 | [0014](0014-benchmark-isolation-architecture.md) | Benchmark Isolation Architecture | Accepted | 2026-11-12 |
 | [0014](0014-preamble-cache-evaluation.md) | Evaluation of Header Parsing Cost and Precompiled Preamble Caching | Accepted | 2026-11-14 |
+| [0015](0015-dual-engine-distribution-and-truthful-capabilities.md) | Dual Engine Distribution, Explicit Engine Naming, and Truthful Capabilities | Accepted | 2026-11-16 |
 
 ## Process
 

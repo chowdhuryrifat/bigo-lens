@@ -67,10 +67,13 @@ If full isolation cannot be established on Linux (e.g. unprivileged user namespa
 
 ### 5. Compiler & Runner Safety
 
-- **No Shell:** Executables are spawned directly with fixed argument arrays (`Command::new("...")`).
-- **Validated Options:** Optimization level (`-O0`, `-O2`, `-O3`) and language standards come from validated enums.
-- **Flag Escapes (`--`):** Source file operands are preceded by `--` to prevent source files named `-fplugin=...` from being interpreted as flags.
-- **RAII Scratch Directories:** All compilation artifacts, inputs, and outputs reside in per-run temporary directories that are wiped upon completion.
+- **No Shell:** Executables and compilers are spawned directly with fixed argument arrays (`Command::new("...")`).
+- **Validated Options:** Optimization level (`-O0`, `-O2`, `-O3`) and language standards come from validated enums. Free-form compiler flags from requests are strictly rejected.
+- **Fixed Source Names & Path Traversal Immunity:** Source content from requests is written to a fixed filename `solution.cpp` within an auto-cleaned temporary directory created via `tempfile` with mode 0700. `source.path` is treated as a display name only and mapped in diagnostics.
+- **Flag Escapes & Operands:** Source file operands are preceded by `--` for Clang; for GCC (which rejects `--`), operands are prefixed with `./` to prevent filenames beginning with `-` from being parsed as flags.
+- **Compilation Limits & Resource Caps:** Compilations run with a 15-second wall-clock timeout and a 512 KiB output size limit with process-group `SIGKILL` termination. Resource-capping compiler flags are enforced: `-ftemplate-depth=256`, `-fconstexpr-depth=256`, `-fconstexpr-steps=1048576` / `-fconstexpr-ops-limit=10000000`, and `-fmax-errors=10`.
+- **Diagnostic Path Redaction:** Absolute host paths outside the compile scratch directory are redacted to `[redacted_path]` in compiler diagnostics and stderr to mitigate arbitrary file path disclosure.
+- **Minimal Environment:** Compilers run with cleared environments (`cmd.env_clear()`), passing explicit `PATH` only (and required Windows environment variables on Windows) to prevent ambient `LD_PRELOAD` or include path overrides.
 
 ## Consequences
 
