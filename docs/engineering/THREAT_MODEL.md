@@ -119,7 +119,9 @@ Dynamic benchmarking compiles and **executes** user code in the Rust engine (`cr
 | --- | --- | --- | --- |
 | A request field smuggles compiler flags (`-Xclang -load`, `-fplugin=`, `-include /etc/passwd`, `-o /path`) | E, I | The Clang front end uses a **fixed argument list**. The only request-derived value is `options.cpp_standard`, validated against the enum `c++11 … c++23` before use. Unknown request fields are rejected | Implemented |
 | A future benchmark compiler invocation takes flags from the user | E | The compiler is invoked with a fixed argv. Optimization level and standard come from validated enums, and free-form flags are never accepted | Implemented (BL-402) |
-| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, not as a path argument. A future compiler adapter must place `--` before file operands | Implemented (BL-402) |
+| A source path used as an option (a file named `-fplugin=x.so`) | E | Source is passed as an in-memory buffer under a display name, written to a fixed `solution.cpp` inside a private temp dir. Operands in Clang are preceded by `--`; GCC operands are sanitized with `./` | Implemented (BL-402) |
+| Compilation hangs or exhausts memory via template recursion or large constexpr | D | Compiler invocation has a 15-second wall-clock timeout and 512 KiB output limit with process-group termination (`kill(-pgid)`), plus resource limit flags (`-ftemplate-depth=256`, `-fconstexpr-depth=256`, `-fconstexpr-steps=1048576`/`-fconstexpr-ops-limit=10000000`, `-fmax-errors=10`) | Implemented |
+| Sensitive file path leakage through compiler diagnostics (e.g. `#include "/etc/shadow"`) | I | Absolute host paths outside the compile scratch directory are redacted to `[redacted_path]` in compiler diagnostics, messages, and raw stderr before returning to the user | Implemented |
 
 ### 4.4 Shell injection and process spawning (TB2, TB3)
 
@@ -136,7 +138,7 @@ Dynamic benchmarking compiles and **executes** user code in the Rust engine (`cr
 | --- | --- | --- | --- |
 | `source.path` in a request used to read or write arbitrary files | T, I | The engine treats `source.path` as a **display name only**. The content comes from `source.content`, and the engine writes no files | Implemented |
 | The sidecar file location is manipulated | T | The sidecar path is derived from the active document's path (`<file>.bigolens.json`), not from file content | Implemented |
-| Future benchmark artifacts written outside their temporary directory | T | Generated names, never user-controlled names. Paths canonicalized and checked against the run directory | Planned (M4) |
+| Benchmark artifacts written outside their temporary directory | T | Fixed source file name `solution.cpp`, unique temporary directories via `tempfile` (mode 0700), never user-controlled filesystem paths | Implemented |
 
 ### 4.6 Temporary directories (TB6)
 
@@ -207,8 +209,9 @@ BigO Lens is a local tool and does not keep audit logs. Requests carry a `reques
 
 1. Clang reads any header the source includes. A user who analyses untrusted code on a machine with sensitive readable files accepts the same exposure as when compiling that code.
 2. Engine-binary resolution trusts the user's settings and environment, including workspace-level settings (see §4.4).
-3. Until M4 isolation exists, there is no safe way to run user programs, so the feature is not implemented.
-4. Release artifacts are not signed.
+3. Dynamic benchmarking is isolated on Linux via namespaces and seccomp-BPF. On Windows and macOS, isolation is unavailable; programs run under process limits only with an explicit modal warning.
+4. Benchmark compilation runs the host C++ compiler in the scratch directory with a cleared environment, but without filesystem namespace isolation (so system headers remain accessible). While paths outside the scratch directory in diagnostics are redacted to `[redacted_path]`, compiler error messages quoting lines from included files could still expose local file fragments to the user if sensitive files are included via `#include "/abs/path"`.
+5. Release artifacts are not signed.
 
 ## 7. Review triggers
 

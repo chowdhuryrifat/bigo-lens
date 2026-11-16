@@ -323,23 +323,18 @@ pub fn benchmark_action(req: Request) -> Response {
         _ => compiler::CppStandard::Cpp17,
     };
 
-    let temp_dir = std::env::temp_dir().join(format!(
-        "bigolens_bench_{}_{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    ));
-    if let Err(e) = fs::create_dir_all(&temp_dir) {
-        return error_response(
-            Some(req.request_id),
-            "internal_error",
-            &format!("failed to create temporary scratch directory: {}", e),
-            None,
-        );
-    }
-    let _guard = TempDirGuard(temp_dir.clone());
+    let temp_dir_obj = match tempfile::Builder::new().prefix("bigolens_bench_").tempdir() {
+        Ok(d) => d,
+        Err(e) => {
+            return error_response(
+                Some(req.request_id),
+                "internal_error",
+                &format!("failed to create temporary scratch directory: {}", e),
+                None,
+            );
+        }
+    };
+    let temp_dir = temp_dir_obj.path().to_path_buf();
 
     let bin_path = match compiler::compile_cpp(
         &compiler,
@@ -350,9 +345,31 @@ pub fn benchmark_action(req: Request) -> Response {
         compiler::OptimizationLevel::O2,
     ) {
         Ok(p) => p,
-        Err(compile_err) => {
-            let protocol_diags = match compile_err {
-                compiler::CompileError::CompilationFailed { diagnostics, .. } => diagnostics
+        Err(compile_err) => match compile_err {
+            compiler::CompileError::Timeout { timeout_secs } => {
+                return error_response(
+                    Some(req.request_id),
+                    "timeout",
+                    &format!(
+                        "benchmark source compilation timed out after {}s",
+                        timeout_secs
+                    ),
+                    Some("/source".to_string()),
+                );
+            }
+            compiler::CompileError::OutputLimitExceeded { limit_bytes } => {
+                return error_response(
+                    Some(req.request_id),
+                    "output_limit_exceeded",
+                    &format!(
+                        "benchmark compiler output exceeded limit ({} bytes)",
+                        limit_bytes
+                    ),
+                    Some("/source".to_string()),
+                );
+            }
+            compiler::CompileError::CompilationFailed { diagnostics, .. } => {
+                let protocol_diags = diagnostics
                     .into_iter()
                     .map(|d| bigolens_core::models::Diagnostic {
                         severity: if d.severity.contains("error") {
@@ -371,24 +388,31 @@ pub fn benchmark_action(req: Request) -> Response {
                             end_column: None,
                         }),
                     })
-                    .collect(),
-                _ => Vec::new(),
-            };
+                    .collect();
 
-            return Response {
-                schema_version: PROTOCOL_VERSION.to_string(),
-                request_id: Some(req.request_id),
-                status: "error".to_string(),
-                engine: engine_metadata(),
-                results: None,
-                diagnostics: protocol_diags,
-                errors: vec![ProtocolError {
-                    code: "source_parse_error".to_string(),
-                    message: "benchmark source compilation failed".to_string(),
-                    path: Some("/source".to_string()),
-                }],
-            };
-        }
+                return Response {
+                    schema_version: PROTOCOL_VERSION.to_string(),
+                    request_id: Some(req.request_id),
+                    status: "error".to_string(),
+                    engine: engine_metadata(),
+                    results: None,
+                    diagnostics: protocol_diags,
+                    errors: vec![ProtocolError {
+                        code: "source_parse_error".to_string(),
+                        message: "benchmark source compilation failed".to_string(),
+                        path: Some("/source".to_string()),
+                    }],
+                };
+            }
+            _ => {
+                return error_response(
+                    Some(req.request_id),
+                    "compilation_error",
+                    &compile_err.to_string(),
+                    Some("/source".to_string()),
+                );
+            }
+        },
     };
 
     let constraints = req.constraints.unwrap_or_default();

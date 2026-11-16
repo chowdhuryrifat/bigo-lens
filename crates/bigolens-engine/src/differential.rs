@@ -769,8 +769,11 @@ int main() {
             ],
         };
 
-        let temp_dir = std::env::temp_dir().join(format!("diff_test_{}", std::process::id()));
-        let report_path = temp_dir.join("results.json");
+        let temp_dir = tempfile::Builder::new()
+            .prefix("diff_test_")
+            .tempdir()
+            .expect("failed to create temp dir");
+        let report_path = temp_dir.path().join("results.json");
 
         assert!(write_report(&report, &report_path).is_ok());
         assert!(report_path.exists());
@@ -781,7 +784,5 @@ int main() {
         assert_eq!(read_back.matched, 1);
         assert_eq!(read_back.ambiguous, 1);
         assert!(read_back.passed);
-
-        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

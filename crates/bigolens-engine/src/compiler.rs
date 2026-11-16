@@ -4,11 +4,21 @@
 //! zero shell invocation, and structured diagnostic extraction.
 //! Conforms to ADR 0014 and BL-402.
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
+use std::time::Duration;
+
+pub const DEFAULT_COMPILE_TIMEOUT: Duration = Duration::from_secs(15);
+pub const DEFAULT_MAX_COMPILER_OUTPUT_BYTES: usize = 512 * 1024; // 512 KiB
+
+static PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?:^|[\s:;,"'\(])(/[^\s:;,"'\(\)]+|[a-zA-Z]:[/\\][^\s:;,"'\(\)]+)"#).unwrap()
+});
 
 /// Supported C++ standards from validated enums.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +125,10 @@ pub enum CompileError {
         searched: Vec<String>,
         path_env: Option<String>,
     },
+    #[error("compilation timed out after {timeout_secs}s")]
+    Timeout { timeout_secs: u64 },
+    #[error("compilation output limit exceeded ({limit_bytes} bytes)")]
+    OutputLimitExceeded { limit_bytes: usize },
     #[error("compilation failed with {} diagnostics: {raw_stderr}", diagnostics.len())]
     CompilationFailed {
         diagnostics: Vec<CompileDiagnostic>,
@@ -128,8 +142,11 @@ pub enum CompileError {
 ///
 /// Guaranteed properties:
 /// 1. Only validated enum flags are used for options.
-/// 2. The `--` argument is placed before any file operands to prevent option injection.
-/// 3. No shell is used.
+/// 2. For Clang, the `--` argument is placed before file operands to prevent option injection.
+///    GCC does not accept `--`, so operands are sanitized to prevent leading-dash option injection.
+/// 3. Resource limiting flags (-ftemplate-depth, -fconstexpr-depth, -fconstexpr-steps/-fconstexpr-ops-limit, -fmax-errors)
+///    are enforced to mitigate compile-time recursion and allocation exhaustion.
+/// 4. No shell is used.
 pub fn build_compile_args(
     kind: CompilerKind,
     standard: CppStandard,
@@ -152,6 +169,10 @@ pub fn build_compile_args(
         CompilerKind::Clang => vec![
             standard.flag().to_string(),
             opt_level.flag().to_string(),
+            "-ftemplate-depth=256".to_string(),
+            "-fconstexpr-depth=256".to_string(),
+            "-fconstexpr-steps=1048576".to_string(),
+            "-fmax-errors=10".to_string(),
             "-o".to_string(),
             output_path.to_string_lossy().to_string(),
             "--".to_string(),
@@ -160,6 +181,10 @@ pub fn build_compile_args(
         CompilerKind::Gcc => vec![
             standard.flag().to_string(),
             opt_level.flag().to_string(),
+            "-ftemplate-depth=256".to_string(),
+            "-fconstexpr-depth=256".to_string(),
+            "-fconstexpr-ops-limit=10000000".to_string(),
+            "-fmax-errors=10".to_string(),
             "-o".to_string(),
             output_path.to_string_lossy().to_string(),
             safe_source,
@@ -167,6 +192,7 @@ pub fn build_compile_args(
         CompilerKind::Msvc => vec![
             format!("/std:{}", standard.msvc_flag()),
             opt_level.msvc_flag().to_string(),
+            "/constexpr:depth256".to_string(),
             format!("/Fe:{}", output_path.to_string_lossy()),
             safe_source,
         ],
@@ -265,19 +291,244 @@ fn probe_compiler(path: &Path) -> Result<CompilerInfo, ()> {
     })
 }
 
-/// Compile a C++ source file into an executable inside a target directory.
+/// Execution result of a compiler process run with limits.
+pub struct RunCompilerOutput {
+    pub status: std::process::ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Redact absolute filesystem paths outside scratch directory from diagnostics text.
 ///
-/// The source is written to a fixed, safe file (`solution.cpp`) inside `output_dir`
-/// so that `source_display_name` can never cause path traversal, file overwrites,
-/// or directory creation failures. Compiler diagnostics that reference `solution.cpp`
-/// are mapped back to `source_display_name`.
-pub fn compile_cpp(
+/// Residual risk: An attacker might infer the existence or non-existence of files by examining
+/// compiler error types (e.g. "No such file" vs "Permission denied"), but actual host filesystem
+/// paths are redacted from the response.
+pub fn redact_paths_in_text(text: &str, scratch_dir: &str) -> String {
+    let scratch_norm = scratch_dir.replace('\\', "/");
+    PATH_REGEX
+        .replace_all(text, |caps: &regex::Captures| {
+            let full_match = caps.get(0).unwrap().as_str();
+            let path_part = caps.get(1).unwrap().as_str();
+            let path_norm = path_part.replace('\\', "/");
+            let prefix_len = full_match.len() - path_part.len();
+            let prefix = &full_match[..prefix_len];
+
+            if path_norm.starts_with(&scratch_norm) {
+                full_match.to_string()
+            } else {
+                format!("{}[redacted_path]", prefix)
+            }
+        })
+        .to_string()
+}
+
+/// Redact diagnostics file and message fields so that no host paths outside output_dir leak.
+pub fn redact_diagnostics(
+    mut diagnostics: Vec<CompileDiagnostic>,
+    raw_stderr: &str,
+    output_dir: &Path,
+    source_display_name: &str,
+) -> (Vec<CompileDiagnostic>, String) {
+    let output_dir_str = output_dir.to_string_lossy();
+    let safe_source_name = "solution.cpp";
+
+    for diag in &mut diagnostics {
+        if diag.file == safe_source_name
+            || diag.file == format!("./{}", safe_source_name)
+            || diag.file == output_dir.join(safe_source_name).to_string_lossy()
+            || diag.file.ends_with(&format!("/{}", safe_source_name))
+            || diag.file.ends_with(&format!("\\{}", safe_source_name))
+        {
+            diag.file = source_display_name.to_string();
+        } else if Path::new(&diag.file).is_absolute()
+            && !diag
+                .file
+                .replace('\\', "/")
+                .starts_with(&output_dir_str.replace('\\', "/"))
+        {
+            diag.file = "[redacted_path]".to_string();
+        }
+
+        diag.message = redact_paths_in_text(&diag.message, output_dir_str.as_ref());
+    }
+
+    let redacted_stderr = redact_paths_in_text(raw_stderr, output_dir_str.as_ref());
+    (diagnostics, redacted_stderr)
+}
+
+/// Run compiler process with a wall-clock timeout and output size cap.
+///
+/// On Unix, sets up a separate process group so timeout kills the entire compiler tree
+/// (including any child driver, assembler, or linker processes).
+pub fn run_compiler_with_timeout(
+    cmd: &mut Command,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<RunCompilerOutput, CompileError> {
+    use std::io::Read;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| CompileError::IoError(format!("failed to spawn compiler: {}", e)))?;
+
+    #[cfg(unix)]
+    let pgid = child.id() as libc::pid_t;
+
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let exceeded_limit = Arc::new(AtomicBool::new(false));
+
+    let stdout_exceeded = Arc::clone(&exceeded_limit);
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stdout_pipe {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = stream.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if buf.len() + n > max_output_bytes {
+                    stdout_exceeded.store(true, Ordering::Relaxed);
+                    buf.extend_from_slice(&chunk[..max_output_bytes.saturating_sub(buf.len())]);
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+        buf
+    });
+
+    let stderr_exceeded = Arc::clone(&exceeded_limit);
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stderr_pipe {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = stream.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if buf.len() + n > max_output_bytes {
+                    stderr_exceeded.store(true, Ordering::Relaxed);
+                    buf.extend_from_slice(&chunk[..max_output_bytes.saturating_sub(buf.len())]);
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+        buf
+    });
+
+    let start = Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    timed_out = true;
+                    #[cfg(unix)]
+                    unsafe {
+                        libc::kill(-pgid, libc::SIGKILL);
+                    }
+                    #[cfg(not(unix))]
+                    let _ = child.kill();
+                    break child.wait().unwrap_or_else(|_| {
+                        #[cfg(unix)]
+                        use std::os::unix::process::ExitStatusExt;
+                        #[cfg(unix)]
+                        return std::process::ExitStatus::from_raw(9);
+                        #[cfg(windows)]
+                        use std::os::windows::process::ExitStatusExt;
+                        #[cfg(windows)]
+                        return std::process::ExitStatus::from_raw(1);
+                    });
+                }
+                if exceeded_limit.load(Ordering::Relaxed) {
+                    #[cfg(unix)]
+                    unsafe {
+                        libc::kill(-pgid, libc::SIGKILL);
+                    }
+                    #[cfg(not(unix))]
+                    let _ = child.kill();
+                    break child.wait().unwrap_or_else(|_| {
+                        #[cfg(unix)]
+                        use std::os::unix::process::ExitStatusExt;
+                        #[cfg(unix)]
+                        return std::process::ExitStatus::from_raw(9);
+                        #[cfg(windows)]
+                        use std::os::windows::process::ExitStatusExt;
+                        #[cfg(windows)]
+                        return std::process::ExitStatus::from_raw(1);
+                    });
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => {
+                #[cfg(unix)]
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL);
+                }
+                #[cfg(not(unix))]
+                let _ = child.kill();
+                return Err(CompileError::IoError(format!(
+                    "error waiting for compiler: {}",
+                    e
+                )));
+            }
+        }
+    };
+
+    let stdout = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
+
+    if timed_out {
+        return Err(CompileError::Timeout {
+            timeout_secs: timeout.as_secs(),
+        });
+    }
+
+    if exceeded_limit.load(Ordering::Relaxed) {
+        return Err(CompileError::OutputLimitExceeded {
+            limit_bytes: max_output_bytes,
+        });
+    }
+
+    Ok(RunCompilerOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// Resource limits for compiler invocation.
+#[derive(Debug, Clone, Copy)]
+pub struct CompileLimits {
+    pub timeout: Duration,
+    pub max_output_bytes: usize,
+}
+
+impl Default for CompileLimits {
+    fn default() -> Self {
+        Self {
+            timeout: DEFAULT_COMPILE_TIMEOUT,
+            max_output_bytes: DEFAULT_MAX_COMPILER_OUTPUT_BYTES,
+        }
+    }
+}
+
+/// Compile a C++ source file into an executable inside a target directory with specified limits.
+pub fn compile_cpp_with_limits(
     compiler: &CompilerInfo,
     source_content: &str,
     source_display_name: &str,
     output_dir: &Path,
     standard: CppStandard,
     opt_level: OptimizationLevel,
+    limits: CompileLimits,
 ) -> Result<PathBuf, CompileError> {
     const SAFE_SOURCE_NAME: &str = "solution.cpp";
     let source_path = output_dir.join(SAFE_SOURCE_NAME);
@@ -299,32 +550,76 @@ pub fn compile_cpp(
         &output_binary,
     );
 
-    let output = Command::new(&compiler.path)
-        .args(&args)
+    let mut cmd = Command::new(&compiler.path);
+    cmd.args(&args)
         .current_dir(output_dir)
-        .output()
-        .map_err(|e| CompileError::IoError(format!("failed to execute compiler: {}", e)))?;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // Cleared, minimal environment: explicit PATH only (plus Windows core variables if on Windows)
+    cmd.env_clear();
+    if let Some(path) = env::var_os("PATH") {
+        cmd.env("PATH", path);
+    }
+    #[cfg(windows)]
+    {
+        if let Some(sysroot) = env::var_os("SystemRoot") {
+            cmd.env("SystemRoot", sysroot);
+        }
+        if let Some(tmp) = env::var_os("TMP") {
+            cmd.env("TMP", tmp);
+        }
+        if let Some(temp) = env::var_os("TEMP") {
+            cmd.env("TEMP", temp);
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    let output = run_compiler_with_timeout(&mut cmd, limits.timeout, limits.max_output_bytes)?;
 
     if !output.status.success() {
         let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
-        let mut diagnostics = parse_compiler_diagnostics(&stderr_str);
-        for diag in &mut diagnostics {
-            if diag.file == SAFE_SOURCE_NAME
-                || diag.file == format!("./{}", SAFE_SOURCE_NAME)
-                || diag.file == source_path.to_string_lossy()
-                || diag.file.ends_with(&format!("/{}", SAFE_SOURCE_NAME))
-                || diag.file.ends_with(&format!("\\{}", SAFE_SOURCE_NAME))
-            {
-                diag.file = source_display_name.to_string();
-            }
-        }
+        let diagnostics = parse_compiler_diagnostics(&stderr_str);
+        let (redacted_diags, redacted_stderr) =
+            redact_diagnostics(diagnostics, &stderr_str, output_dir, source_display_name);
+
         return Err(CompileError::CompilationFailed {
-            diagnostics,
-            raw_stderr: stderr_str,
+            diagnostics: redacted_diags,
+            raw_stderr: redacted_stderr,
         });
     }
 
     Ok(output_binary)
+}
+
+/// Compile a C++ source file into an executable inside a target directory using default limits.
+///
+/// The source is written to a fixed, safe file (`solution.cpp`) inside `output_dir`
+/// so that `source_display_name` can never cause path traversal, file overwrites,
+/// or directory creation failures. Compiler diagnostics that reference `solution.cpp`
+/// are mapped back to `source_display_name`.
+pub fn compile_cpp(
+    compiler: &CompilerInfo,
+    source_content: &str,
+    source_display_name: &str,
+    output_dir: &Path,
+    standard: CppStandard,
+    opt_level: OptimizationLevel,
+) -> Result<PathBuf, CompileError> {
+    compile_cpp_with_limits(
+        compiler,
+        source_content,
+        source_display_name,
+        output_dir,
+        standard,
+        opt_level,
+        CompileLimits::default(),
+    )
 }
 
 /// Parse GCC and Clang stderr diagnostics.
@@ -387,6 +682,10 @@ mod tests {
             vec![
                 "-std=c++17",
                 "-O2",
+                "-ftemplate-depth=256",
+                "-fconstexpr-depth=256",
+                "-fconstexpr-steps=1048576",
+                "-fmax-errors=10",
                 "-o",
                 "/tmp/test.out",
                 "--",
@@ -409,7 +708,7 @@ mod tests {
 
         // For Clang, verify that "--" is located immediately prior to the source file operand
         let dash_dash_idx = args.iter().position(|a| a == "--").unwrap();
-        assert_eq!(dash_dash_idx, 4);
+        assert_eq!(dash_dash_idx, args.len() - 2);
         assert_eq!(args[dash_dash_idx + 1], "/tmp/-fplugin=malicious.so");
 
         // For GCC, relative paths starting with '-' are prefixed with './'
@@ -422,6 +721,138 @@ mod tests {
             out,
         );
         assert_eq!(gcc_args.last().unwrap(), "./-fplugin=malicious.so");
+    }
+
+    #[test]
+    fn test_build_compile_args_all_compiler_kinds() {
+        let src = Path::new("solution.cpp");
+        let out = Path::new("bench_bin");
+
+        // Clang
+        let clang_args = build_compile_args(
+            CompilerKind::Clang,
+            CppStandard::Cpp20,
+            OptimizationLevel::O3,
+            src,
+            out,
+        );
+        assert!(clang_args.contains(&"-std=c++20".to_string()));
+        assert!(clang_args.contains(&"-O3".to_string()));
+        assert!(clang_args.contains(&"-ftemplate-depth=256".to_string()));
+        assert!(clang_args.contains(&"-fconstexpr-steps=1048576".to_string()));
+        assert!(clang_args.contains(&"-fmax-errors=10".to_string()));
+        let dash_dash = clang_args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(clang_args[dash_dash + 1], "solution.cpp");
+
+        // GCC
+        let gcc_args = build_compile_args(
+            CompilerKind::Gcc,
+            CppStandard::Cpp20,
+            OptimizationLevel::O3,
+            src,
+            out,
+        );
+        assert!(gcc_args.contains(&"-std=c++20".to_string()));
+        assert!(gcc_args.contains(&"-O3".to_string()));
+        assert!(gcc_args.contains(&"-ftemplate-depth=256".to_string()));
+        assert!(gcc_args.contains(&"-fconstexpr-ops-limit=10000000".to_string()));
+        assert!(gcc_args.contains(&"-fmax-errors=10".to_string()));
+        assert!(!gcc_args.contains(&"--".to_string()));
+        assert_eq!(gcc_args.last().unwrap(), "solution.cpp");
+
+        // MSVC
+        let msvc_args = build_compile_args(
+            CompilerKind::Msvc,
+            CppStandard::Cpp20,
+            OptimizationLevel::O3,
+            src,
+            out,
+        );
+        assert!(msvc_args.contains(&"/std:c++20".to_string()));
+        assert!(msvc_args.contains(&"/Ox".to_string()));
+        assert!(msvc_args.contains(&"/constexpr:depth256".to_string()));
+        assert_eq!(msvc_args.last().unwrap(), "solution.cpp");
+    }
+
+    #[test]
+    fn test_path_redaction_in_diagnostics() {
+        let scratch_dir = "/tmp/bigolens_scratch_12345";
+        let raw_stderr = "In file included from /tmp/bigolens_scratch_12345/solution.cpp:1:\n/etc/shadow:1:1: error: stray '\\x1f'\nsolution.cpp:2:3: fatal error: /home/secret/passwords.txt: No such file\n";
+        let diags = vec![
+            CompileDiagnostic {
+                file: "/etc/shadow".to_string(),
+                line: Some(1),
+                column: Some(1),
+                severity: "error".to_string(),
+                message: "stray '\\x1f'".to_string(),
+            },
+            CompileDiagnostic {
+                file: "solution.cpp".to_string(),
+                line: Some(2),
+                column: Some(3),
+                severity: "error".to_string(),
+                message: "fatal error: /home/secret/passwords.txt: No such file".to_string(),
+            },
+        ];
+
+        let (redacted_diags, redacted_stderr) =
+            redact_diagnostics(diags, raw_stderr, Path::new(scratch_dir), "my_display.cpp");
+
+        assert_eq!(redacted_diags[0].file, "[redacted_path]");
+        assert_eq!(redacted_diags[1].file, "my_display.cpp");
+        assert!(redacted_diags[1].message.contains("[redacted_path]"));
+        assert!(!redacted_diags[1]
+            .message
+            .contains("/home/secret/passwords.txt"));
+        assert!(!redacted_stderr.contains("/etc/shadow"));
+        assert!(!redacted_stderr.contains("/home/secret/passwords.txt"));
+        assert!(redacted_stderr.contains("/tmp/bigolens_scratch_12345/solution.cpp"));
+    }
+
+    #[test]
+    fn test_compile_timeout_and_output_limit() {
+        let compiler = match discover_compiler(None) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let temp_dir_obj = tempfile::tempdir().unwrap();
+
+        // Test timeout with 1ns limit
+        let code = "int main() { return 0; }\n";
+        let res = compile_cpp_with_limits(
+            &compiler,
+            code,
+            "main.cpp",
+            temp_dir_obj.path(),
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+            CompileLimits {
+                timeout: Duration::from_nanos(1), // Exceeds immediately
+                max_output_bytes: DEFAULT_MAX_COMPILER_OUTPUT_BYTES,
+            },
+        );
+        assert!(res.is_err());
+        assert!(matches!(res.unwrap_err(), CompileError::Timeout { .. }));
+
+        // Test output limit with 1 byte limit
+        let res = compile_cpp_with_limits(
+            &compiler,
+            "int main() { syntax error }\n",
+            "main.cpp",
+            temp_dir_obj.path(),
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+            CompileLimits {
+                timeout: Duration::from_secs(10),
+                max_output_bytes: 1, // 1 byte limit
+            },
+        );
+        assert!(res.is_err());
+        assert!(matches!(
+            res.unwrap_err(),
+            CompileError::OutputLimitExceeded { .. }
+        ));
     }
 
     #[test]
@@ -452,8 +883,8 @@ mod tests {
             Err(_) => return, // Skip if no compiler on system
         };
 
-        let temp_dir = std::env::temp_dir().join(format!("bigolens_test_{}", std::process::id()));
-        let _ = fs::create_dir_all(&temp_dir);
+        let temp_dir_obj = tempfile::tempdir().unwrap();
+        let temp_dir = temp_dir_obj.path().to_path_buf();
 
         // 1. Successful compilation
         let valid_code = "int main() { return 0; }\n";
@@ -591,6 +1022,30 @@ mod tests {
             other => panic!("expected CompilationFailed, got {:?}", other),
         }
 
-        let _ = fs::remove_dir_all(&temp_dir);
+        // 8. Compiler diagnostics redact external absolute paths
+        let evil_include_code = "#include \"/etc/shadow\"\nint main() { return 0; }\n";
+        let redact_err = compile_cpp(
+            &compiler,
+            evil_include_code,
+            "main.cpp",
+            &temp_dir,
+            CppStandard::Cpp17,
+            OptimizationLevel::O2,
+        )
+        .unwrap_err();
+        match redact_err {
+            CompileError::CompilationFailed {
+                diagnostics,
+                raw_stderr,
+            } => {
+                assert!(!diagnostics.is_empty());
+                assert!(!raw_stderr.contains("/etc/shadow"));
+                for d in &diagnostics {
+                    assert!(!d.file.contains("/etc/shadow"));
+                    assert!(!d.message.contains("/etc/shadow"));
+                }
+            }
+            other => panic!("expected CompilationFailed, got {:?}", other),
+        }
     }
 }

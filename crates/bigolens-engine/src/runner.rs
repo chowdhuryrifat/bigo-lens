@@ -1298,15 +1298,28 @@ mod tests {
     use crate::compiler::{compile_cpp, discover_compiler, CppStandard, OptimizationLevel};
     use std::fs;
 
-    fn make_test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "bigolens_runner_test_{}_{}",
-            name,
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("failed to create test directory");
-        dir
+    struct TestDir(tempfile::TempDir);
+
+    impl std::ops::Deref for TestDir {
+        type Target = std::path::Path;
+        fn deref(&self) -> &std::path::Path {
+            self.0.path()
+        }
+    }
+
+    impl AsRef<std::path::Path> for TestDir {
+        fn as_ref(&self) -> &std::path::Path {
+            self.0.path()
+        }
+    }
+
+    fn make_test_dir(name: &str) -> TestDir {
+        TestDir(
+            tempfile::Builder::new()
+                .prefix(&format!("bigolens_runner_test_{}_", name))
+                .tempdir()
+                .expect("failed to create test directory"),
+        )
     }
 
     #[test]
