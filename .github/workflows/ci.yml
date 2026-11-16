@@ -23,18 +23,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install stable Rust toolchain
-        run: rustup update stable && rustup default stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.90.0
+          components: clippy, rustfmt
       - name: Test workspace
-        run: cargo test --workspace --verbose
+        run: cargo test --workspace --locked --verbose
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Format check
         run: cargo fmt --check
       - name: Engine smoke check
-        run: cargo run --bin bigolens-engine -- --request shared/examples/capabilities.request.json
+        run: cargo run --locked --bin bigolens-engine -- --request shared/examples/capabilities.request.json
       - name: Differential test harness
-        run: cargo run --bin differential-harness -- --output target/differential-results.json
+        run: cargo run --locked --bin differential-harness -- --output target/differential-results.json
       - name: Upload differential test results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -42,6 +45,23 @@ jobs:
           name: differential-results
           path: target/differential-results.json
           if-no-files-found: ignore
+
+  rust-latest-stable:
+    name: Rust · Latest stable (canary)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install latest stable Rust
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Test workspace on latest stable
+        run: cargo test --workspace --verbose
+      - name: Clippy on latest stable
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   native-linux:
     name: Native · Ubuntu · Clang frontend
@@ -266,15 +286,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install stable Rust toolchain
-        run: rustup update stable && rustup default stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.90.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: extension/package-lock.json
       - name: Build Rust engine
-        run: cargo build --release --bin bigolens-engine
+        run: cargo build --release --locked --bin bigolens-engine
       - name: Stage engine into extension
         shell: bash
         run: |
@@ -307,15 +329,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install stable Rust toolchain
-        run: rustup update stable && rustup default stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: 1.90.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: extension/package-lock.json
       - name: Build Rust engine
-        run: cargo build --release --bin bigolens-engine
+        run: cargo build --release --locked --bin bigolens-engine
       - name: Stage engine into extension
         run: |
           mkdir -p extension/bin
