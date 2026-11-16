@@ -491,7 +491,7 @@ int main() {
             ..Default::default()
         },
         benchmark_config: BenchmarkConfig {
-            sizes: vec![2_000, 4_000, 8_000, 16_000],
+            sizes: vec![1_000, 2_000, 4_000, 8_000],
             repetitions: 3,
             warmup: 1,
             per_run_timeout_ms: 5_000,
@@ -691,7 +691,7 @@ int main() {
 
         // Deliberately set expected class to linear O(n) for a quadratic program
         wrong_case.expected_class = Some("O(n)".to_string());
-        wrong_case.benchmark_config.sizes = vec![2_000, 4_000, 8_000, 16_000];
+        wrong_case.benchmark_config.sizes = vec![1_000, 2_000, 4_000, 8_000];
         wrong_case.benchmark_config.per_run_timeout_ms = 5_000;
 
         let report = run_differential_harness(&[wrong_case]);

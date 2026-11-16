@@ -299,7 +299,7 @@ Response includes:
 - `results.feasibility.time`: evaluated based on the empirical runtime estimate
 - `results.benchmark`:
   - `isolated`: boolean indicating whether sandboxing was applied
-  - `isolation_level`: e.g. `"linux-namespaces-seccomp"` or `"process-limits-only"`
+  - `isolation_level`: e.g. `"linux-namespaces-seccomp"` (unprivileged user, mount, network, PID namespaces with capability dropping and hardened seccomp-BPF deny-list with argument-filtered `execveat`) or `"process-limits-only"` (Windows Job Objects / POSIX rlimits without namespace or syscall isolation)
   - `samples`: array of measurements per size (`size`, `wall_time_median_ms`, `wall_time_mad_ms`, `peak_rss_bytes`, `raw_samples_ms`)
   - `empirical_fit`: `{ model, r_squared, rss, slope, intercept, ambiguous }`
   - `extrapolated_runtime`: `{ target_size, min_ms, central_ms, max_ms, extrapolated }`

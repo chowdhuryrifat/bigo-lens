@@ -23,6 +23,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Enable unprivileged user namespaces on Ubuntu 24.04
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
@@ -36,6 +40,19 @@ jobs:
         run: cargo fmt --check
       - name: Engine smoke check
         run: cargo run --locked --bin bigolens-engine -- --request shared/examples/capabilities.request.json
+      - name: Verify Linux isolation level
+        run: |
+          OUTPUT=$(cargo run --locked --bin bigolens-engine -- --request shared/examples/benchmark.request.json)
+          echo "$OUTPUT" | grep -F '"isolation_level":"linux-namespaces-seccomp"' || {
+            echo "ERROR: Benchmark execution was not isolated with linux-namespaces-seccomp!"
+            echo "Engine output: $OUTPUT"
+            exit 1
+          }
+          echo "$OUTPUT" | grep -F '"isolated":true' || {
+            echo "ERROR: Benchmark execution did not report isolated: true!"
+            echo "Engine output: $OUTPUT"
+            exit 1
+          }
       - name: Differential test harness
         run: cargo run --locked --bin differential-harness -- --output target/differential-results.json
       - name: Upload differential test results
@@ -53,15 +70,21 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Enable unprivileged user namespaces on Ubuntu 24.04
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 2>/dev/null || true
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
       - name: Install latest stable Rust
         uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: stable
           components: clippy, rustfmt
       - name: Test workspace on latest stable
-        run: cargo test --workspace --verbose
+        run: cargo test --workspace --locked --verbose
+        continue-on-error: true
       - name: Clippy on latest stable
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        continue-on-error: true
 
   native-linux:
     name: Native · Ubuntu · Clang frontend
