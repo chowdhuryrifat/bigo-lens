@@ -18,11 +18,19 @@ The JSON protocol is versioned separately (see [JSON_PROTOCOL.md](docs/specifica
   - Replaced predictable temporary directories in `lib.rs`, `runner.rs`, and `differential.rs` with RAII `tempfile` handles.
 
 - Kernel isolation hardening & honest platform labeling (ADR 0014, BL-405):
-  - Upgraded Linux seccomp-BPF filter to an allow-list with architecture checking (`AUDIT_ARCH`) killing x32 ABI calls, and argument-filtered `execveat` permitting execution only for the benchmark binary descriptor (`fd 200`) before child closes it under low `RLIMIT_NOFILE`.
-  - Enhanced Linux namespace sandbox: mounted root read-only (`MS_REC | MS_PRIVATE | MS_RDONLY`), masked `/home` with tmpfs, masked `/etc/passwd` with `/dev/null`, and created private writable tmpfs scratch space.
-  - Adopted `CLONE_NEWPID` to terminate all descendant processes in the namespace on child exit.
+  - Configured Linux seccomp-BPF as a hardened deny-list with architecture checking (`AUDIT_ARCH`) killing x32 ABI calls, and argument-filtered `execveat` permitting execution only for the benchmark binary descriptor (`fd 200`) before child closes it under low `RLIMIT_NOFILE`.
+  - Executed benchmark inside a new PID namespace (`CLONE_NEWPID`) via an intermediate launcher in `pre_exec` so the benchmark runs as PID 1 with a fresh private, read-only `/proc` mount (`hidepid=2`), completely concealing host PIDs, environments, and command lines.
+  - Retained exact `wait4` cumulative rusage accounting (CPU time and peak RSS) across the intermediate launcher boundary.
+  - Dropped all Linux capabilities before executing benchmark: cleared bounding set (`PR_CAPBSET_DROP`), zeroed `capset` for effective, permitted, and inheritable sets, and configured securebits (`SECBIT_NOROOT | SECBIT_NO_SETUID_FIXUP` with locks) alongside `PR_SET_NO_NEW_PRIVS`.
+  - Extended seccomp deny-list with 15 container escape and privilege escalation syscalls (`mount`, `umount2`, `unshare`, `setns`, `pivot_root`, `chroot`, `bpf`, `io_uring_setup`, `userfaultfd`, `keyctl`, `process_vm_readv`, `process_vm_writev`, `perf_event_open`, `open_by_handle_at`, `clone3`).
+  - Enhanced Linux namespace sandbox: mounted root read-only (`MS_REC | MS_PRIVATE | MS_RDONLY`), masked `/home` and `/root` with empty non-executable tmpfs, masked `/etc/passwd` with `/dev/null`, and isolated `/tmp` with a private tmpfs remounted read-only containing a private writable tmpfs scratch space at `/tmp/scratch`.
+  - Replaced silent `let _ =` failure ignore with fail-closed error checking across all mount operations in `apply_linux_namespaces` and `is_linux_isolation_available`, using `stat` to check for `ENOENT` before treating missing directories as nothing to hide.
+  - Documented residual readable system paths (`/usr`, `/lib`, `/bin`, `/etc`) in `THREAT_MODEL.md`.
+  - Documented Linux syscall filtering as a hardened deny-list with argument filtering rather than an allow-list across ADR 0014, `SECURITY.md`, `THREAT_MODEL.md`, and `JSON_PROTOCOL.md`.
   - Made `pre_exec` strictly async-signal-safe by pre-compiling the BPF program before fork with zero heap allocation or locking.
   - Enforced truthful Windows labeling: Job Objects report `isolation_level: "process-limits-only"` with `isolated: false` and fail closed (`isolation_unavailable`) unless `allow_unsandboxed: true` is provided.
+  - Removed duplicate `#[cfg(not(any(target_os = "linux", windows)))]` block in `runner.rs`.
+  - Added CI step asserting `isolation_level: "linux-namespaces-seccomp"` and `isolated: true` on `ubuntu-24.04`.
 
 - Engine disambiguation & truthful capability reporting (ADR 0015):
   - Disambiguated C++ Clang-based engine (`bigolens-clang-engine`) and Rust multi-language engine (`bigolens-rust-engine`) in protocol metadata, examples, and docs.

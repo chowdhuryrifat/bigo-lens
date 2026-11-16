@@ -1319,12 +1319,6 @@ pub fn run_benchmark_series(
         vec!["not sandboxed: running with process resource limits only".to_string()],
     );
 
-    #[cfg(not(any(target_os = "linux", windows)))]
-    let (isolation_level, warnings) = (
-        "process-limits-only",
-        vec!["not sandboxed: running with process resource limits only".to_string()],
-    );
-
     // Warm-up runs (unmeasured)
     for _ in 0..warmup {
         let run = execute_single_run(executable, input, limits);
