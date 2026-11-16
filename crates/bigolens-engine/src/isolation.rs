@@ -212,19 +212,51 @@ pub fn is_linux_isolation_available() -> bool {
                     libc::_exit(8);
                 }
 
-                // Probe PR_SET_NO_NEW_PRIVS
-                if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                // Probe PID namespace child and fresh /proc mount
+                let child = libc::fork();
+                if child < 0 {
                     libc::_exit(9);
                 }
-
-                // Probe seccomp BPF filter
-                if let Ok(prog) = build_seccomp_filter(1000) {
-                    let fprog = prog.as_fprog();
-                    if libc::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog) != 0 {
+                if child == 0 {
+                    let proc_target = c"/proc".as_ptr();
+                    let proc_type = c"proc".as_ptr();
+                    let proc_flags =
+                        libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOEXEC | libc::MS_RDONLY;
+                    if libc::mount(
+                        proc_type,
+                        proc_target,
+                        proc_type,
+                        proc_flags,
+                        std::ptr::null(),
+                    ) != 0
+                    {
                         libc::_exit(10);
                     }
-                } else {
-                    libc::_exit(11);
+
+                    // Probe PR_SET_NO_NEW_PRIVS
+                    if libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                        libc::_exit(11);
+                    }
+
+                    // Probe seccomp BPF filter
+                    if let Ok(prog) = build_seccomp_filter(1000) {
+                        let fprog = prog.as_fprog();
+                        if libc::prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fprog) != 0 {
+                            libc::_exit(12);
+                        }
+                    } else {
+                        libc::_exit(13);
+                    }
+
+                    libc::_exit(0);
+                }
+
+                let mut cstatus = 0;
+                if libc::waitpid(child, &mut cstatus, 0) < 0
+                    || !libc::WIFEXITED(cstatus)
+                    || libc::WEXITSTATUS(cstatus) != 0
+                {
+                    libc::_exit(14);
                 }
 
                 libc::_exit(0);
