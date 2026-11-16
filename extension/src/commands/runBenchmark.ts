@@ -165,6 +165,29 @@ export async function runBenchmark(
           return;
         }
 
+        const isolationUnavailable = response.errors.find((e) => e.code === 'isolation_unavailable');
+        if (isolationUnavailable) {
+          deps.output.appendLine(`BigO Lens: ${isolationUnavailable.message}`);
+          if (options?.showInformation !== false) {
+            const proceed = await vscode.window.showWarningMessage(
+              `BigO Lens: Process isolation is unavailable on this host or platform (${isolationNotice}). Do you want to run unsandboxed with process limits only?`,
+              { modal: true },
+              'Run Unsandboxed',
+            );
+            if (proceed === 'Run Unsandboxed') {
+              await runBenchmark(deps, {
+                ...options,
+                benchmarkConfig: {
+                  ...options?.benchmarkConfig,
+                  allow_unsandboxed: true,
+                },
+              });
+              return;
+            }
+          }
+          return;
+        }
+
         const message = response.errors.map((e) => `${e.code}: ${e.message}`).join('; ');
         deps.output.appendLine(`Benchmark failed: ${message}`);
         if (options?.showInformation !== false) {

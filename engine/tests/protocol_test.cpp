@@ -33,6 +33,7 @@ TEST(Protocol, CapabilitiesSucceedWithoutFrontend) {
   EXPECT_EQ(r["status"], "ok");
   EXPECT_EQ(r["request_id"], "t-1");
   EXPECT_EQ(r["schema_version"], "1.0");
+  EXPECT_EQ(r["engine"]["name"], "bigolens-clang-engine");
   EXPECT_EQ(r["results"]["features"]["benchmark"], "not_implemented");
   const auto actions = r["results"]["actions"].get<std::vector<std::string>>();
   EXPECT_EQ(actions, (std::vector<std::string>{"capabilities", "analyze"}));

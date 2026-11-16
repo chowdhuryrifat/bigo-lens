@@ -4,7 +4,7 @@
 
 namespace bigolens {
 
-inline constexpr std::string_view kEngineName = "bigolens-engine";
+inline constexpr std::string_view kEngineName = "bigolens-clang-engine";
 inline constexpr std::string_view kEngineVersion = "@PROJECT_VERSION@";
 /// Protocol version spoken by this engine. Requests must share the major version.
 inline constexpr int kProtocolMajor = 1;

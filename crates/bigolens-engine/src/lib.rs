@@ -695,6 +695,7 @@ mod tests {
         assert_eq!(resp["status"], "ok", "unexpected response: {:?}", resp);
         assert_eq!(resp["request_id"], "test-cap-1");
         assert_eq!(resp["schema_version"], "1.1");
+        assert_eq!(resp["engine"]["name"], "bigolens-rust-engine");
 
         let results = &resp["results"];
         let expected_bench = if crate::isolation::is_linux_isolation_available() {

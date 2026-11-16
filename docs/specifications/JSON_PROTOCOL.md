@@ -147,7 +147,7 @@ frontend, `engine.frontend` holds the Clang version string.)
 | `schema_version` | string | Engine's protocol version |
 | `request_id` | string \| null | Echoed id; `null` if it could not be recovered (malformed JSON, oversize, invalid id) |
 | `status` | `"ok"` \| `"error"` | `error` ⇔ `errors` non-empty; `ok` ⇔ `errors` empty |
-| `engine` | object | `name`, `version`, `protocol_version`, `frontend` (string or `null` if built with `BIGOLENS_ENABLE_CLANG=OFF`) |
+| `engine` | object | `name` (`"bigolens-clang-engine"` for C++/Clang LibTooling engine, `"bigolens-rust-engine"` for Rust standalone engine), `version`, `protocol_version`, `frontend` (string or `null` if built without Clang frontend) |
 | `results` | object \| null | Action-specific (§6); `null` on error |
 | `diagnostics` | array | `{ severity: "error" \| "warning" \| "information", message, location: Location \| null }`. Compiler diagnostics for the analysed source |
 | `errors` | array | `{ code, message, path? }` (§7) |

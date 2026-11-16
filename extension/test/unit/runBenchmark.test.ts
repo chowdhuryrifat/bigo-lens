@@ -240,6 +240,103 @@ describe('runBenchmark - User Confirmation Flow & Engine Client Interactions (BL
     assert.ok(output.lines.some((l) => l.includes('not implemented')));
   });
 
+  it('prompts user when engine reports isolation_unavailable and retries with allow_unsandboxed', async () => {
+    window.showWarningMessage = ((msg: string) => {
+      if (msg.includes('Process isolation is unavailable')) {
+        return Promise.resolve('Run Unsandboxed');
+      }
+      return Promise.resolve('Run Benchmark');
+    }) as unknown as typeof window.showWarningMessage;
+
+    const sentRequests: EngineRequest[] = [];
+    const isolationUnavailableResp: EngineResponse = {
+      schema_version: '1.1',
+      request_id: 'test-req-1',
+      status: 'error',
+      engine: {
+        name: 'bigolens-rust-engine',
+        version: '0.1.0',
+        protocol_version: '1.1',
+        frontend: 'bigolens-syntax',
+      },
+      results: null,
+      diagnostics: [],
+      errors: [
+        {
+          code: 'isolation_unavailable',
+          message: 'process isolation is not available on this platform or host',
+        },
+      ],
+    };
+
+    const successResp: EngineResponse = {
+      schema_version: '1.1',
+      request_id: 'test-req-2',
+      status: 'ok',
+      engine: {
+        name: 'bigolens-rust-engine',
+        version: '0.1.0',
+        protocol_version: '1.1',
+        frontend: 'bigolens-syntax',
+      },
+      results: {
+        findings: [],
+        memory: {
+          static_storage_bytes: 0,
+          static_storage_saturated: false,
+          largest_local_array_bytes: 0,
+          estimated_minimum_bytes: 0,
+          estimated_minimum_status: 'proven',
+          assumptions: [],
+          items: [],
+        },
+        feasibility: {
+          time: { status: 'likely_safe', reason: 'ok' },
+          memory: { status: 'likely_safe', reason: 'ok' },
+        },
+        summary: {
+          finding_count: 0,
+          dominant_finding_id: null,
+          max_time_workload: 0,
+          coverage: 'partial',
+        },
+        benchmark: {
+          isolated: false,
+          isolation_level: 'process-limits-only',
+          samples: [],
+          empirical_fit: { model: 'linear', slope: 1, intercept: 0, r_squared: 1, rss: 0, ambiguous: false },
+          extrapolated_runtime: {
+            central_ms: 1,
+            min_ms: 1,
+            max_ms: 1,
+            extrapolated: false,
+            target_size: { n: 1000 },
+          },
+          warnings: [],
+        },
+      },
+      diagnostics: [],
+      errors: [],
+    };
+
+    const fakeClient = {
+      send: (req: EngineRequest): Promise<EngineResponse> => {
+        sentRequests.push(req);
+        if (sentRequests.length === 1) {
+          return Promise.resolve(isolationUnavailableResp);
+        }
+        return Promise.resolve(successResp);
+      },
+    } as unknown as EngineClient;
+
+    await runBenchmark({ ...deps, client: fakeClient });
+
+    assert.equal(sentRequests.length, 2);
+    assert.equal(sentRequests[0]?.benchmark_config?.allow_unsandboxed, undefined);
+    assert.equal(sentRequests[1]?.benchmark_config?.allow_unsandboxed, true);
+    assert.ok(output.lines.some((l) => l.includes('process isolation is not available')));
+  });
+
   it('handles general engine error responses with error dialog', async () => {
     window.showWarningMessage = () => Promise.resolve('Run Benchmark');
 
