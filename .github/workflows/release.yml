@@ -27,7 +27,7 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
       - id: version
-        name: Check that the tag matches the CMake and extension versions
+        name: Check that the tag matches the CMake, extension, and Cargo versions
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
@@ -37,8 +37,9 @@ jobs:
           version="${TAG#v}"
           cmake_version="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt)"
           ext_version="$(node -p "require('./extension/package.json').version")"
-          if [[ "$cmake_version" != "$version" || "$ext_version" != "$version" ]]; then
-            echo "::error::tag $version != CMake $cmake_version / extension $ext_version"; exit 1
+          cargo_version="$(sed -n '/^\[workspace\.package\]/,/^\[/ { /^version = / s/version = "\(.*\)"/\1/p }' Cargo.toml)"
+          if [[ "$cmake_version" != "$version" || "$ext_version" != "$version" || "$cargo_version" != "$version" ]]; then
+            echo "::error::tag $version != CMake $cmake_version / extension $ext_version / Cargo $cargo_version"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"

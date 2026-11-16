@@ -10,6 +10,10 @@
     "type": "git",
     "url": "https://github.com/chowdhuryrifat/bigo-lens.git"
   },
+  "bugs": {
+    "url": "https://github.com/chowdhuryrifat/bigo-lens/issues"
+  },
+  "homepage": "https://github.com/chowdhuryrifat/bigo-lens#readme",
   "engines": {
     "vscode": "^1.85.0",
     "node": ">=22"

@@ -4,7 +4,7 @@ This directory contains the validation corpus of representative algorithmic solu
 
 ## License
 
-All programs in this corpus are original works authored specifically for the BigO Lens project and are released under the project's [Apache-2.0 License](../../LICENSE) (or MIT where applicable). They do not incorporate copyrighted content or code scraped from competitive programming platforms or online judges.
+All programs in this corpus are original works authored specifically for the BigO Lens project and are released under the project's [MIT License](../../LICENSE). They do not incorporate copyrighted content or code scraped from competitive programming platforms or online judges.
 
 ## Structure
 
