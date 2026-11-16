@@ -1,5 +1,5 @@
-//! Linux platform isolation: unprivileged namespaces (user, mount, network, pid)
-//! and seccomp-bpf syscall allow-lists / argument filtering.
+//! Linux platform isolation: unprivileged namespaces (user, mount, network, pid),
+//! capability dropping, and hardened seccomp-bpf syscall deny-list with argument filtering.
 //!
 //! Conforms to ADR 0014 and BL-405.
 

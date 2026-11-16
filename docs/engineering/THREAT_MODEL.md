@@ -126,6 +126,18 @@ The benchmark isolation environment on Linux implements multi-layered filesystem
 4. **Private Temporary Filesystem:** `/tmp` is masked with a private empty tmpfs and remounted read-only, preventing the benchmark from viewing host temporary files or writing directly to `/tmp`. A writable tmpfs is mounted at `/tmp/scratch`, and the benchmark process `chdir`s into `/tmp/scratch`. Outside `/tmp/scratch`, writing fails with `EROFS`.
 5. **Residual Readable Filesystem:** System directories (`/usr`, `/lib`, `/bin`, and `/etc` minus `/etc/passwd`) remain readable to allow dynamic linking (`ld.so`), loading C/C++ runtime shared libraries (`libc.so`, `libstdc++.so`), and reading basic locale/time zone data. Code executing inside the benchmark cannot modify these files or persist changes past process termination.
 
+#### Syscall Filtering: Hardened Deny-List vs Allow-List Decision
+
+Seccomp-BPF on Linux implements a **hardened deny-list with argument filtering** rather than a default-deny allow-list:
+- **Decision & Compatibility Rationale:** BigO Lens compiles and benchmarks arbitrary user-supplied C++ solutions. Standard C++ algorithms legitimately exercise a wide variety of standard library features (file I/O, threads, mutexes, condition variables, heap allocators, locales, clocks, formatting, stack unwinding). Across Linux distributions, compiler toolchains (GCC vs Clang), and C libraries (glibc vs musl), standard library implementations invoke dozens of disparate, non-standardized syscalls. Profiling and maintaining a strict allow-list across all current and future Linux distributions would create severe brittleness, frequently breaking benign algorithms upon distribution upgrades.
+- **Hardened Deny-List Protections:**
+  1. Native architecture checking (`AUDIT_ARCH`) killing ABI mismatches and the x32 ABI on x86_64.
+  2. Unconditional denial of `execve`.
+  3. BPF argument filtering on `execveat`: permits only execution of the pre-opened binary file descriptor (`fd 200`), with `RLIMIT_NOFILE` capped at 64 so the descriptor cannot be re-opened once closed.
+  4. Denial of all network syscalls (`socket`, `connect`, `bind`, `listen`, `accept`, `accept4`), debugging/tracing (`ptrace`), and container-escape / privilege escalation syscalls (`mount`, `umount2`, `unshare`, `setns`, `pivot_root`, `chroot`, `bpf`, `io_uring_setup`, `userfaultfd`, `keyctl`, `process_vm_readv`, `process_vm_writev`, `perf_event_open`, `open_by_handle_at`, `clone3`).
+  5. Complete dropping of Linux capabilities inside the user namespace (`PR_CAPBSET_DROP`, `capset` zeroed, securebits).
+- **Known Limitations & Compensating Controls:** Because the seccomp policy is a deny-list rather than a default-deny allow-list, newly added kernel syscalls that do not require privileges or network sockets remain unblocked. However, compensating controls (complete capability zeroing, private mount namespace with read-only root, masked `/home`, `/root`, and `/etc/passwd`, private `/tmp` remounted read-only, separate PID namespace with fresh read-only `/proc`, and isolated network namespace) prevent unlisted syscalls from exfiltrating data, accessing sensitive files, or altering system state.
+
 ### 4.3 Compiler argument injection (TB3, TB6)
 
 | Threat | STRIDE | Mitigation | Status |

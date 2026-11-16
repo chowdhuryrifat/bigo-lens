@@ -728,7 +728,7 @@ All M4 issues are subject to [THREAT_MODEL.md §4.2](../engineering/THREAT_MODEL
 - **Estimated complexity:** XL (relative).
 - **Dependencies:** BL-404
 
-**Description.** Add network and file system isolation for the benchmark process, using unprivileged user namespaces where available, plus a seccomp allow-list. When isolation cannot be established, fail closed: either refuse to run, or run only with an explicit "not sandboxed" user confirmation, as decided in BL-401.
+**Description.** Add network and file system isolation for the benchmark process, using unprivileged user namespaces where available, plus a hardened seccomp deny-list with argument filtering and capability dropping. When isolation cannot be established, fail closed: either refuse to run, or run only with an explicit "not sandboxed" user confirmation, as decided in BL-401.
 
 **Motivation.** A timeout is not a sandbox.
 
