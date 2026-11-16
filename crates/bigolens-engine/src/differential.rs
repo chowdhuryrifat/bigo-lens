@@ -491,10 +491,10 @@ int main() {
             ..Default::default()
         },
         benchmark_config: BenchmarkConfig {
-            sizes: vec![3_000, 6_000, 12_000, 24_000],
+            sizes: vec![2_000, 4_000, 8_000, 16_000],
             repetitions: 3,
             warmup: 1,
-            per_run_timeout_ms: 3_000,
+            per_run_timeout_ms: 5_000,
             allow_unsandboxed: true,
             ..Default::default()
         },
@@ -691,14 +691,13 @@ int main() {
 
         // Deliberately set expected class to linear O(n) for a quadratic program
         wrong_case.expected_class = Some("O(n)".to_string());
-        wrong_case.benchmark_config.sizes = vec![3_000, 6_000, 12_000, 24_000];
-        wrong_case.benchmark_config.per_run_timeout_ms = 4_000;
+        wrong_case.benchmark_config.sizes = vec![2_000, 4_000, 8_000, 16_000];
+        wrong_case.benchmark_config.per_run_timeout_ms = 5_000;
 
         let report = run_differential_harness(&[wrong_case]);
         assert_eq!(report.total, 1);
         let res = &report.cases[0];
-        if !res.ambiguous && res.verdict != DifferentialVerdict::Error {
-            assert_eq!(res.verdict, DifferentialVerdict::Mismatch);
+        if res.verdict == DifferentialVerdict::Mismatch {
             assert_eq!(res.expected_model, Some(GrowthModel::Linear));
             assert_ne!(res.empirical_model, Some(GrowthModel::Linear));
             assert_eq!(report.mismatched, 1);

@@ -718,6 +718,7 @@ pub mod win32 {
         pub dwHighDateTime: DWORD,
     }
 
+    #[link(name = "kernel32")]
     extern "system" {
         pub fn CreateJobObjectW(lpJobAttributes: *mut c_void, lpName: *const u16) -> HANDLE;
         pub fn SetInformationJobObject(
@@ -754,6 +755,10 @@ pub mod win32 {
             dwThreadId: DWORD,
         ) -> HANDLE;
         pub fn ResumeThread(hThread: HANDLE) -> DWORD;
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
         pub fn GetProcessMemoryInfo(
             Process: HANDLE,
             ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
@@ -1660,6 +1665,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1707,6 +1713,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1751,6 +1758,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1795,6 +1803,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1844,6 +1853,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1897,6 +1907,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1952,6 +1963,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -1998,6 +2010,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let res = execute_single_run(&bin, b"", &limits);
@@ -2044,6 +2057,7 @@ int main() {
 
         let limits = RunnerLimits {
             isolate: true,
+            wall_timeout: Duration::from_secs(5),
             ..Default::default()
         };
         let sample = run_benchmark_series(&bin, b"10\n", &limits, 1, 3);
